@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>連打おみくじ</title>
+<meta name="description" content="タップ一回で一枚、待ち時間ゼロで何回でも引けるおみくじ。大吉の連続記録と、九種の運勢がそろう「おみくじ帳」をめざす、ログイン不要のワンタップゲーム。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="連打おみくじ">
+<meta property="og:description" content="ワンポチで何回でも引けるおみくじ。大吉は何連続まで出る？超大吉、出せる？">
+<meta property="og:url" content="https://asobi.enludus.com/games/omikuji/">
+<meta property="og:image" content="https://asobi.enludus.com/games/omikuji/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9B%A9%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+/* 構成: 神社の境内（鳥居・玉砂利）を背景に、上で紙が開き、下でおみくじ筒を振る。DOMは固定数を使い回す */
+:root {
+  --shu: #c8402a;        /* 朱 */
+  --shu-deep: #8f2a1a;
+  --wood: #e6cc98;       /* 白木 */
+  --wood-deep: #b58f58;
+  --washi: #fbf6ea;      /* 和紙 */
+  --sumi: #221b17;       /* 墨 */
+  --ground: #d9d2c3;     /* 玉砂利 */
+  --gold: #c99a2e;
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  --ph: max(300px, min(440px, calc(100dvh - 300px)));   /* 紙の高さ */
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: #f1e8d6; color: var(--sumi);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+}
+
+/* ---------- 境内 ---------- */
+#scene { position: fixed; inset: 0; overflow: hidden; cursor: pointer;
+  background: linear-gradient(#efe4cf 0%, #f6efe1 62%, var(--ground) 62.2%, #cfc6b4 100%); }
+#scene::after { /* 玉砂利の粒 */
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 37.8%;
+  background-image: radial-gradient(circle at 30% 40%, rgba(120,108,90,.28) 1.4px, transparent 2px),
+                    radial-gradient(circle at 70% 70%, rgba(255,255,255,.6) 1.2px, transparent 2px);
+  background-size: 14px 11px, 19px 15px; pointer-events: none; z-index: 0;
+}
+.torii { position: absolute; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 58px); width: min(560px, 128vw);
+  transform: translateX(-50%); height: 62%; opacity: .92; pointer-events: none; }
+
+.hud {
+  position: fixed; left: 0; right: 0; top: 0; pointer-events: none; z-index: 3;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.pill {
+  background: var(--shu); color: var(--washi);
+  border-radius: 6px; padding: 6px 12px 7px;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+  box-shadow: 0 2px 0 var(--shu-deep);
+}
+.pill .lab { font-size: 11px; letter-spacing: .12em; opacity: .8; display: block; }
+.pill .val { font-family: var(--font-display); font-size: 24px; }
+.pill .unit { font-size: 13px; margin-left: 2px; }
+.pill.right { text-align: right; background: var(--washi); color: var(--sumi); box-shadow: 0 2px 0 rgba(0,0,0,.18); }
+.pill.right .unit { margin-left: 0; }
+
+#stage { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; align-items: center;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 74px);
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 62px); pointer-events: none; }
+.paperArea { flex: 1; display: grid; place-items: center; width: 100%; padding-inline: 16px; min-height: 0; }
+
+/* ---------- おみくじの紙（縦書き） ---------- */
+.sheet {
+  position: relative; height: var(--ph); width: min(312px, 100%);
+  background:
+    repeating-linear-gradient(97deg, rgba(160,130,90,.05) 0 2px, transparent 2px 7px),
+    repeating-linear-gradient(8deg, rgba(160,130,90,.04) 0 1px, transparent 1px 5px),
+    var(--washi);
+  box-shadow: 0 1px 0 rgba(0,0,0,.08), 0 10px 28px rgba(60,30,10,.22);
+  border-radius: 2px; padding: 14px; overflow: hidden;
+  transform-origin: 50% 100%;
+}
+.sheet .frame { position: absolute; inset: 9px; border: 2px solid var(--shu); outline: 1px solid var(--shu); outline-offset: -6px; pointer-events: none; }
+.kv { writing-mode: vertical-rl; height: 100%; margin-inline: auto; display: block; padding: 10px 8px; position: relative; }
+.kv > * { margin-block-end: 8px; }
+.no { font-size: 13px; letter-spacing: .2em; color: var(--shu); font-weight: 700; }
+.fortune { font-family: var(--font-display); font-size: calc(var(--ph) * .155); line-height: 1.15; letter-spacing: .04em;
+  margin-inline-start: 6px; color: var(--sumi); }
+.fortune.long { font-size: calc(var(--ph) * .1); }
+.fortune.red { color: #b4301c; }
+.word { font-size: max(12px, min(14px, calc(var(--ph) * .033))); font-weight: 700; margin-inline-start: 10px; line-height: 1.5; }
+.items { border-right: 1px solid rgba(200,64,42,.45); padding-right: 8px; margin-block-end: 0; }
+.item { font-size: max(12px, min(15px, calc(var(--ph) * .035))); line-height: 1.75; margin-inline-start: 2px; }
+.item .lab { display: inline-block; color: var(--shu); border: 1.5px solid var(--shu); padding: 3px 0; margin-inline-end: 6px; font-weight: 700; font-size: .88em; line-height: 1.25; }
+.stamp { position: absolute; right: 22px; bottom: 24px; width: 52px; height: 52px; border-radius: 50%;
+  border: 3px solid var(--shu); color: var(--shu); display: grid; place-items: center;
+  font-family: var(--font-display); font-size: 17px; transform: rotate(-14deg); background: rgba(251,246,234,.6); }
+.shine { position: absolute; inset: -20% -60%; background: linear-gradient(105deg, transparent 40%, rgba(255,255,255,.75) 50%, transparent 60%);
+  transform: translateX(-100%); pointer-events: none; }
+/* レア運勢の紙 */
+.sheet.cho { background: linear-gradient(140deg, #f8e7a8, #ddb44e 45%, #f6dd8f 70%, #cf9f37); }
+.sheet.cho .frame { border-color: #8f2a1a; outline-color: #8f2a1a; }
+.sheet.cho .fortune { color: #8f1f10; text-shadow: 0 2px 0 rgba(255,240,190,.8); }
+.sheet.aruimi { background: repeating-linear-gradient(97deg, rgba(40,60,100,.05) 0 2px, transparent 2px 7px), #e8ecef; }
+.sheet.aruimi .frame { border-color: #2b3d64; outline-color: #2b3d64; }
+.sheet.aruimi .fortune, .sheet.aruimi .no { color: #2b3d64; }
+.sheet.aruimi .item .lab { color: #2b3d64; border-color: #2b3d64; }
+.sheet.daikyo { background: repeating-linear-gradient(97deg, rgba(0,0,0,.04) 0 2px, transparent 2px 7px), #e9e4da; }
+.sheet.empty .kv { visibility: hidden; }
+.sheet.empty::before { content: "おみくじ"; position: absolute; inset: 0; display: grid; place-items: center; writing-mode: vertical-rl;
+  font-family: var(--font-display); font-size: 40px; color: rgba(200,64,42,.25); letter-spacing: .3em; }
+
+/* ---------- おみくじ筒（六角） ---------- */
+.boxWrap { position: relative; width: 120px; height: 150px; flex: none; margin-top: 8px; transform-origin: 50% 85%; }
+.boxWrap svg.box { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.stick { position: absolute; left: 50%; top: 17px; width: 13px; height: 92px; margin-left: -6.5px;
+  background: linear-gradient(90deg, #f2dfb7, #d9bb84); border-radius: 3px 3px 1px 1px;
+  writing-mode: vertical-rl; font-size: 9px; font-weight: 700; color: var(--sumi); text-align: start; padding-top: 6px;
+  line-height: 13px; box-shadow: inset 0 3px 0 var(--shu); }
+.boxShade { position: absolute; left: 50%; bottom: -6px; width: 130px; height: 14px; margin-left: -65px; border-radius: 50%; background: rgba(60,45,25,.22); }
+
+.bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 3;
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.bar .hint { font-size: 12px; opacity: .65; }
+
+#toast { position: fixed; left: 50%; top: calc(env(safe-area-inset-top, 0px) + 74px); z-index: 4; pointer-events: none;
+  transform: translateX(-50%); background: var(--sumi); color: var(--washi); border-radius: 99px;
+  padding: 6px 16px 7px; font-weight: 700; font-size: 15px; white-space: nowrap; opacity: 0; }
+#toast.gold { background: var(--gold); color: #2a1a05; }
+#flash { position: fixed; inset: 0; z-index: 2; pointer-events: none; opacity: 0; background: radial-gradient(circle at 50% 45%, rgba(255,222,120,.9), rgba(255,210,90,0) 70%); }
+
+/* ---------- タイトル / おみくじ帳 ---------- */
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: center; z-index: 5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: calc(env(safe-area-inset-top, 0px) + 16px) calc(env(safe-area-inset-bottom, 0px) + 16px);
+  background: rgba(34, 27, 23, .38); cursor: pointer;
+}
+.card {
+  width: min(360px, 100%); max-height: 100%; overflow-y: auto; touch-action: pan-y; cursor: default;
+  background: var(--washi); color: var(--sumi);
+  border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,.3); text-align: center;
+}
+#title .card { cursor: pointer; }
+.noren { background: var(--shu); color: var(--washi); display: flex; gap: 3px; padding-top: 16px; }
+.noren span {
+  flex: 1; background: var(--shu); border-bottom: 3px solid rgba(255,255,255,.1);
+  font-family: var(--font-display); font-size: 30px; line-height: 1; padding-block: 6px 14px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.2);
+}
+.noren.gold, .noren.gold span { background: var(--gold); color: #2a1a05; }
+.body { padding: 18px 20px 20px; display: grid; gap: 12px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.7; text-wrap: balance; }
+.score { font-family: var(--font-display); font-size: 52px; line-height: 1; font-variant-numeric: tabular-nums; }
+.score small { font-size: 20px; margin-left: 4px; }
+.meta { display: flex; justify-content: center; gap: 16px; font-size: 13px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.meta b { font-size: 16px; }
+.badge {
+  justify-self: center; background: var(--shu); color: #fff; font-weight: 700;
+  font-size: 12px; letter-spacing: .14em; padding: 3px 10px; border-radius: 99px;
+}
+.complete { background: linear-gradient(120deg, #f6e3a1, #d9b04a, #f3d98a); color: #4a2a05; font-weight: 700; border-radius: 6px; padding: 7px 8px; font-size: 14px; }
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.cell { border: 1.5px solid rgba(34,27,23,.18); border-radius: 6px; padding: 7px 2px 6px; background: #fff; min-width: 0; }
+.cell .n { font-family: var(--font-display); font-size: 17px; line-height: 1.2; white-space: nowrap; }
+.cell .n.long { font-size: 12.5px; line-height: 1.65; }
+.cell .c { font-size: 12px; opacity: .7; font-variant-numeric: tabular-nums; }
+.cell.none { background: transparent; border-style: dashed; }
+.cell.none .n { color: rgba(34,27,23,.3); }
+.cell.rare { border-color: var(--gold); }
+.cell.rare:not(.none) { background: linear-gradient(140deg, #fbefc4, #ecd08a); }
+.btns { display: grid; gap: 8px; }
+button {
+  font: inherit; font-weight: 700; font-size: 16px; border: 0; border-radius: 8px;
+  padding: 12px 16px; cursor: pointer;
+  background: var(--shu); color: var(--washi); box-shadow: 0 3px 0 var(--shu-deep);
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--shu-deep); }
+button.small { font-size: 14px; padding: 9px 14px; }
+a.xbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font-weight: 700; font-size: 15px; border-radius: 8px; padding: 12px 14px;
+  background: #0f1419; color: #fff; box-shadow: 0 3px 0 #000;
+}
+a.xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+a.xbtn:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+a.xbtn svg { width: 16px; height: 16px; fill: currentColor; flex: none; }
+button.sub { background: transparent; color: var(--sumi); box-shadow: inset 0 0 0 2px var(--sumi); }
+button.sub.light { background: var(--washi); box-shadow: 0 2px 0 rgba(0,0,0,.2), inset 0 0 0 2px var(--sumi); }
+button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.how { font-size: 12px; opacity: .7; margin: 0; }
+.back { font-size: 13px; color: var(--sumi); opacity: .75; }
+.back:hover { opacity: 1; }
+</style>
+</head>
+<body>
+
+<main id="scene" aria-label="連打おみくじのゲーム画面">
+  <svg class="torii" viewBox="0 0 400 420" preserveAspectRatio="xMidYMin meet" aria-hidden="true">
+    <path d="M6 30 Q200 2 394 30 L388 50 Q200 30 12 50 Z" fill="#2a211c"/>
+    <rect x="30" y="48" width="340" height="20" fill="#c8402a"/>
+    <rect x="44" y="96" width="312" height="16" fill="#c8402a"/>
+    <rect x="186" y="66" width="28" height="32" fill="#c8402a"/>
+    <rect x="62" y="66" width="26" height="354" fill="#c8402a"/>
+    <rect x="312" y="66" width="26" height="354" fill="#c8402a"/>
+    <rect x="62" y="66" width="7" height="354" fill="#a8331f"/>
+    <rect x="312" y="66" width="7" height="354" fill="#a8331f"/>
+    <rect x="56" y="396" width="38" height="24" fill="#2a211c"/>
+    <rect x="306" y="396" width="38" height="24" fill="#2a211c"/>
+  </svg>
+  <div id="flash"></div>
+  <div id="stage">
+    <div class="paperArea">
+      <div class="sheet empty" id="sheet">
+        <div class="frame"></div>
+        <div class="kv">
+          <div class="no" id="pNo">第一番</div>
+          <div class="fortune" id="pF">大吉</div>
+          <div class="word" id="pW"></div>
+          <div class="items" id="pItems">
+            <div class="item"><span class="lab"></span><span class="txt"></span></div>
+            <div class="item"><span class="lab"></span><span class="txt"></span></div>
+            <div class="item"><span class="lab"></span><span class="txt"></span></div>
+          </div>
+        </div>
+        <div class="stamp" id="pFirst" hidden>初！</div>
+        <div class="shine" id="shine"></div>
+      </div>
+    </div>
+    <div class="boxWrap" id="box" aria-hidden="true">
+      <div class="boxShade"></div>
+      <div class="stick" id="stick">一</div>
+      <svg class="box" viewBox="0 0 120 150">
+        <!-- 六角柱の筒。上面の穴から棒が出る -->
+        <polygon points="6,20 28,28 28,146 6,138" fill="#c9a46a"/>
+        <polygon points="28,28 92,28 92,146 28,146" fill="#e6cc98"/>
+        <polygon points="92,28 114,20 114,138 92,146" fill="#b08752"/>
+        <polygon points="6,20 28,12 92,12 114,20 92,28 28,28" fill="#f2deb4"/>
+        <ellipse cx="60" cy="19" rx="9" ry="3.6" fill="#3a2a1c"/>
+        <polygon points="6,34 28,42 28,50 6,42" fill="#a8331f"/>
+        <rect x="28" y="42" width="64" height="8" fill="#c8402a"/>
+        <polygon points="92,42 114,34 114,42 92,50" fill="#8f2a1a"/>
+        <polygon points="6,120 28,128 28,136 6,128" fill="#a8331f"/>
+        <rect x="28" y="128" width="64" height="8" fill="#c8402a"/>
+        <polygon points="92,128 114,120 114,128 92,136" fill="#8f2a1a"/>
+        <rect x="46" y="58" width="28" height="62" fill="#fbf6ea"/>
+        <text x="60" y="76" text-anchor="middle" font-size="15" font-weight="700" fill="#221b17" font-family="Zen Kaku Gothic New, sans-serif">御</text>
+        <text x="60" y="94" text-anchor="middle" font-size="15" font-weight="700" fill="#221b17" font-family="Zen Kaku Gothic New, sans-serif">神</text>
+        <text x="60" y="112" text-anchor="middle" font-size="15" font-weight="700" fill="#221b17" font-family="Zen Kaku Gothic New, sans-serif">籤</text>
+      </svg>
+    </div>
+  </div>
+</main>
+
+<div class="hud" id="hud">
+  <div class="pill"><span class="lab">引いた数</span><span class="val" id="hTotal">0</span><span class="unit">回</span></div>
+  <div class="pill right"><span class="lab">大吉 連続 / 最高</span><span class="val" id="hStreak">0</span><span class="unit" id="hBest"> / 最高 0</span></div>
+</div>
+<div class="bar" id="bar">
+  <button class="sub light small" id="bookBtn">おみくじ帳 <span id="bCount">0</span>/9</button>
+  <span class="hint">どこでもタップで次を引く</span>
+</div>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="noren" aria-hidden="true"><span>連</span><span>打</span><span>お</span><span>み</span><span>く</span><span>じ</span></div>
+    <div class="body">
+      <p class="lead">タップ一回で一枚。待ち時間ゼロ、何回でも。<br>大吉は何連続まで出る？</p>
+      <div class="meta"><span>引いた数 <b id="tTotal">0</b> 回</span><span>最高 <b id="tBest">0</b> 連続大吉</span><span>帳 <b id="tBook">0</b>/9</span></div>
+      <div class="btns"><button id="startBtn">引いてみる</button></div>
+      <p class="how">画面のどこでもタップ・スペースキーで引く</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="book" hidden>
+  <div class="card" role="dialog" aria-label="おみくじ帳">
+    <div class="noren" id="bookNoren" aria-hidden="true"><span>お</span><span>み</span><span>く</span><span>じ</span><span>帳</span></div>
+    <div class="body">
+      <div class="badge" id="newRec" hidden>新記録</div>
+      <div class="score"><span id="oTotal">0</span><small>回</small></div>
+      <div class="meta"><span>最高 <b id="oBest">0</b> 連続大吉</span><span>図鑑 <b id="oBook">0</b>/9</span></div>
+      <div class="complete" id="oComplete" hidden>満願成就 ― 九種すべて引きました</div>
+      <div class="grid" id="grid"></div>
+      <div class="btns">
+        <button id="againBtn">続けて引く</button>
+        <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>記録をXでシェア</a>
+        <a class="xbtn" id="xCard" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>「今日の一枚」をシェア</a>
+        <button class="sub" id="copyBtn">結果をコピー</button>
+      </div>
+      <p class="how" id="copyMsg">記録はこのブラウザだけに保存されます</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- 運勢（確率は%） ---------- */
+const FORTUNES = [
+  { id: 'cho',      name: '超大吉',       w: 0.5, rare: true, streak: true },
+  { id: 'daikichi', name: '大吉',         w: 17,  streak: true },
+  { id: 'chukichi', name: '中吉',         w: 15 },
+  { id: 'shokichi', name: '小吉',         w: 14 },
+  { id: 'kichi',    name: '吉',           w: 25 },
+  { id: 'suekichi', name: '末吉',         w: 14 },
+  { id: 'kyo',      name: '凶',           w: 10 },
+  { id: 'daikyo',   name: '大凶',         w: 3.5 },
+  { id: 'aruimi',   name: 'ある意味大吉', w: 1,   rare: true },
+];
+const BY_ID = Object.fromEntries(FORTUNES.map(f => [f.id, f]));
+function pickFortune() {
+  let r = Math.random() * 100;
+  for (const f of FORTUNES) { if ((r -= f.w) < 0) return f; }
+  return BY_ID.kichi;
+}
+
+/* ---------- 文言プール ---------- */
+const WORDS = {
+  cho: ['今日の運、使い切りました。', '神様もちょっと驚いている。', '宝くじは、ほどほどに。'],
+  daikichi: ['調子に乗らなければ、ずっと大吉。', '感謝を忘れずに。', 'いい日です。水を飲もう。'],
+  chukichi: ['あと一歩。靴ひもを結び直せ。', 'いい流れ。そのまま進め。', '昼ごはんが当たり。'],
+  shokichi: ['小さな幸せを数えよ。', '自販機で当たりが出るかも。', '小さく勝って、大きく笑え。'],
+  kichi: ['ふつうが一番むずかしい。', 'おだやかに過ごせば福来る。', '今日のおやつはおいしい。'],
+  suekichi: ['あとからじわじわ良くなる。', '春を待つ木のごとし。', '最後に笑う者になれ。'],
+  kyo: ['木に結べば、ちゃらです。', '今日は早く寝よう。', 'ここが底。あとは上がるだけ。'],
+  daikyo: ['逆にレア。おめでとう。', '結んで帰れば、すべて解決。', '大凶は出るほうがむずかしい。'],
+  aruimi: ['ころんでも、話のネタになる。', '見方を変えれば全部当たり。', '話のタネは大豊作。'],
+};
+const ITEMS = [
+  ['待ち人', ['来ない。が、宅配便は来る', '遅れて来る。駅で迷っている', 'すでに隣にいる', '来る。ただし手ぶら', '既読はすぐ付く', '三日後、ふいに来る',
+    '来る。お土産はせんべい', '思ったより早く来る', '来ない。猫は来る', '来る。髪型が変わっている', '呼べば来る。呼ばねば来ない', '来るが、すぐ帰る',
+    '同窓会で再会する', '来る。傘を借りに', '電話より先に本人が来る', '来る。寝ぐせのまま', '雨の日に来る', '来る。話が長い', '迎えに行けば早い',
+    '今日は来ない。明日は来る', '待つより探すが吉', '来る。なぜか二人で', '来る。行列の後ろに並んで', 'もう来た。気づいていない', '遅いが、必ず来る',
+    '来る。差し入れ付き', '連絡なしで来る。片付けよ', '来る。玄関で靴を間違える', '回転寿司の隣の席に来る', '来る。チャイムは二回', '来る。エレベーターが一緒',
+    '待ち合わせ場所を間違えて来る']],
+  ['失せ物', ['冷蔵庫の奥', '上着の右ポケット', 'いつものカバンの底', 'ソファのすき間', '本の間にはさまっている', '手に持っている', '頭の上（メガネなら）',
+    '洗濯機の中。急げ', '昨日の自分が隠した', '車のシートの下', '探すのをやめた頃に出る', '引き出しの二段目', '靴箱の上', '台所。鍋のふたの下', '布団の中',
+    'すぐ出る。足元を見よ', '人に貸したまま', '押し入れの手前', '駅の忘れ物センター', '出る。二個目を買った後に', '冷凍庫。なぜか', 'ゴミ袋の中。捨てる前に見よ',
+    '家族が知っている', 'いつもと逆のポケット', '本棚のいちばん下', '玄関マットの下', '机の裏に落ちている', '猫が持っていった', '出る。ついでに百円も出る',
+    'カーテンの裏', 'スマホのライトで照らせ', '最後に使った場所の左']],
+  ['商売', ['小さく始めて吉', '値上げより、おまけが吉', '朝の仕事がはかどる', '看板を拭けば客が増える', '声の大きい人に注意', 'メールは送る前に読み返せ',
+    '雨の日に売れる', '常連を大事にせよ', '欲張らねば利あり', '会議は短く、昼は早く', '新しい名刺が吉', 'ひらめきは風呂で来る', '数字に強い人を頼れ',
+    '三つ目の案が当たる', '急がば回れ', '試食を出せば売れる', '笑顔は値引きより効く', '来月、風向きが変わる', '古い道具を手入れせよ', '大きな話は半分で聞け',
+    '手書きの値札が吉', '売れ残りは翌日化ける', '休むと伸びる', '早起きは三文以上の得', 'ゆずった者が得をする', '棚の整理で運が開く', 'いい話は火曜に来る',
+    '断るのも商売のうち', '紙に書けば叶う', '迷ったら原価を見よ', '帳簿をつければ福来る', 'お茶をいれると話がまとまる']],
+  ['学問', ['朝の十分は夜の一時間', 'ノートの字が丁寧なら吉', '寝る前の暗記が効く', '分からぬところは人に聞け', '机を片付けてから始めよ', '赤ペンが運を呼ぶ',
+    '苦手から片付けよ', '図書館の窓際が吉', '問題は最後まで読め', 'ヤマは半分当たる', '消しゴムを新しくせよ', '音読すれば覚える', '解いた問題を、もう一度',
+    'スマホは別の部屋へ', '甘いものは一つまで', '答案に名前を書け', '教えると自分が覚える', '昨日の自分に勝てばよし', '休憩は五分で切り上げよ',
+    '鉛筆は削っておけ', '辞書を引けば思わぬ発見', 'コツコツが最後に勝つ', '早く寝た者が勝つ', '得意を伸ばせば苦手も伸びる', '間違いノートが宝になる',
+    '計算は二回たしかめよ', '地図を見れば歴史が分かる', '十分だけでも毎日やれ', '目標は小さく刻め', '友と競えば伸びる', '窓を開けて空気を入れよ', '最初の一問で勢いがつく']],
+  ['恋愛', ['押すより、話を聞け', '相手は意外と近くにいる', '返信は急がずとも吉', '共通の好物で話がはずむ', '雨の日の傘がきっかけ', '焦らず、季節を待て',
+    '笑いのツボが合う人が吉', '手紙を書けば伝わる', '今の人を大切にせよ', '褒めるなら靴を褒めよ', '誘うなら甘味処へ', '友達の友達に縁あり',
+    '寝ぐせを直して出かけよ', '思い切りが吉', '言いすぎに注意', '本屋で出会いあり', 'うなずきは三回', 'いい香りが運を呼ぶ', '待てば海路の日和あり',
+    '好きな物を語れば光る', '記念日を覚えよ', '散歩の途中に縁あり', '料理の腕を見られている', '誠実さが一番効く', '秋に動きあり', '自分を好きになれば吉',
+    '相手のペースに合わせよ', '朝のあいさつから始まる', '写真写りは気にするな', '猫好きと縁あり', '回り道が近道', 'ありがとうを多めに']],
+  ['旅行', ['北へ行けば吉', '忘れ物はハンカチ', '駅弁が当たり', '晴れ。ただし帰りは雨', '近場で大満足', '地図アプリを信じすぎるな', '温泉が吉',
+    '乗り換えは一本前で', '寄り道の店が当たり', '早めに出れば全部うまくいく', 'お土産は二つ買え', '旅先で知人に会う', '朝ごはんのおいしい宿',
+    '歩きやすい靴で行け', '窓側の席が吉', '写真は撮りすぎず目で見よ', '道を聞いた人が親切', '水辺へ行けば心晴れる', 'ご当地プリンが吉', '予定は八分目で',
+    '帰りの電車で寝過ごすな', '小銭を用意せよ', '行き当たりばったりも吉', '山へ行けば空気うまし', '充電器を忘れるな', '出発は火曜が吉', '城を見れば運気上昇',
+    '帰ってきた家がいちばん', '迷子になると名所に着く', '屋台の焼きそばが当たり', '折りたたみ傘を持て', '雨でも楽しめる場所を選べ']],
+];
+const pick = a => a[Math.floor(Math.random() * a.length)];
+function makeItems() {
+  const idx = [0, 1, 2, 3, 4, 5];
+  for (let i = idx.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+  return idx.slice(0, 3).sort((a, b) => a - b).map(i => [ITEMS[i][0], pick(ITEMS[i][1])]);
+}
+function kanjiNum(n) {
+  const d = '〇一二三四五六七八九';
+  if (n >= 100) return '百';
+  const t = Math.floor(n / 10), o = n % 10;
+  return (t > 1 ? d[t] : '') + (t ? '十' : '') + (o ? d[o] : '');
+}
+
+/* ---------- 記録（このブラウザだけ） ---------- */
+const KEY = 'omikuji:v1';
+const blank = () => ({ total: 0, counts: {}, streak: 0, bestStreak: 0, complete: false, last: null });
+function load() {
+  try {
+    const r = Object.assign(blank(), JSON.parse(localStorage.getItem(KEY) || '{}'));
+    if (typeof r.counts !== 'object' || !r.counts) r.counts = {};
+    return r;
+  } catch { return blank(); }
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch {} }
+let rec = load();
+let sessionNewBest = false;
+const found = () => FORTUNES.filter(f => rec.counts[f.id] > 0).length;
+
+/* ---------- 一枚引く ---------- */
+const sheet = $('sheet'), box = $('box'), stick = $('stick'), pF = $('pF'), toastEl = $('toast');
+const itemEls = [...$('pItems').children];
+let lastDrawAt = -1e9;
+
+function draw() {
+  wakeAudio();
+  const now = performance.now();
+  const quick = now - lastDrawAt < 620;   // 連打中は演出を省いて即表示
+  lastDrawAt = now;
+
+  const f = pickFortune();
+  const kuji = { no: 1 + Math.floor(Math.random() * 100), f: f.id, w: pick(WORDS[f.id]), items: makeItems() };
+  rec.total++;
+  rec.counts[f.id] = (rec.counts[f.id] || 0) + 1;
+  const first = rec.counts[f.id] === 1;
+  rec.streak = f.streak ? rec.streak + 1 : 0;
+  let bestUp = false;
+  if (rec.streak > rec.bestStreak) { rec.bestStreak = rec.streak; bestUp = true; sessionNewBest = true; }
+  let completeNow = false;
+  if (!rec.complete && found() === FORTUNES.length) { rec.complete = true; completeNow = true; }
+  rec.last = kuji;
+  save();
+
+  showKuji(kuji, first);
+  animate(f, quick);
+  sound(f, quick);
+
+  // ひとこと通知（優先度順に1つだけ）
+  if (completeNow) toast('九種そろった！満願成就', true);
+  else if (first && f.rare) toast(`初！ ${f.name} が出た`, true);
+  else if (bestUp && rec.streak >= 2) toast(`大吉 ${rec.streak}連続！ 最高記録`, true);
+  else if (rec.streak >= 2) toast(`大吉 ${rec.streak}連続！`);
+  else if (first && rec.total > 1) toast(`初！ ${f.name}`);
+  updateHud();
+}
+
+function showKuji(k, first) {
+  const f = BY_ID[k.f] || BY_ID.kichi;
+  sheet.className = 'sheet' + (f.id === 'cho' ? ' cho' : f.id === 'aruimi' ? ' aruimi' : f.id === 'daikyo' ? ' daikyo' : '');
+  $('pNo').textContent = `第${kanjiNum(k.no)}番`;
+  pF.textContent = f.name;
+  pF.className = 'fortune' + (f.name.length > 3 ? ' long' : '') + (f.id === 'daikichi' ? ' red' : '');
+  $('pW').textContent = k.w;
+  itemEls.forEach((el, i) => {
+    const it = k.items[i] || ['', ''];
+    el.firstChild.textContent = it[0]; el.lastChild.textContent = it[1];
+  });
+  $('pFirst').hidden = !first;
+  stick.textContent = kanjiNum(k.no);
+}
+
+function cancelAnims() {
+  for (const el of [sheet, box, stick, $('shine'), $('flash')]) el.getAnimations().forEach(a => a.cancel());
+}
+function animate(f, quick) {
+  cancelAnims();
+  const out = [{ transform: 'translateY(0)' }, { transform: 'translateY(-58px)' }];
+  if (quick || reduced) {
+    stick.animate(out, { duration: 1, fill: 'forwards' });
+    sheet.animate([{ transform: 'scale(.95)', opacity: .55 }, { transform: 'none', opacity: 1 }], { duration: 110, easing: 'ease-out' });
+    if (!reduced) box.animate([{ transform: 'rotate(-5deg)' }, { transform: 'rotate(4deg)' }, { transform: 'none' }], { duration: 110 });
+  } else {
+    // 振る(0-240ms) → 棒が出る(170-330ms) → 紙が開く(320-560ms)
+    box.animate([{ transform: 'none' }, { transform: 'rotate(-15deg) translateY(-4px)' }, { transform: 'rotate(13deg)' },
+      { transform: 'rotate(-9deg) translateY(-3px)' }, { transform: 'rotate(5deg)' }, { transform: 'none' }], { duration: 240, easing: 'ease-in-out' });
+    stick.animate(out, { duration: 160, delay: 170, easing: 'cubic-bezier(.3,1.6,.5,1)', fill: 'both' });
+    sheet.animate([{ transform: 'translateY(140px) scale(.22, .06)', opacity: 0 }, { transform: 'translateY(140px) scale(.22, .06)', opacity: 0, offset: .57 },
+      { transform: 'translateY(10px) scale(1.03, .7)', opacity: 1, offset: .8 }, { transform: 'none', opacity: 1 }], { duration: 560, easing: 'ease-out' });
+  }
+  if (f.rare) {
+    const d = quick ? 0 : 320;
+    $('shine').animate([{ transform: 'translateX(-100%)' }, { transform: 'translateX(100%)' }], { duration: 420, delay: d, easing: 'ease-in-out' });
+    if (f.id === 'cho' && !reduced) $('flash').animate([{ opacity: 0 }, { opacity: 1 }, { opacity: 0 }], { duration: 420, delay: d });
+  }
+}
+
+let toastAnim = null;
+function toast(text, gold = false) {
+  toastEl.textContent = text;
+  toastEl.className = gold ? 'gold' : '';
+  if (toastAnim) toastAnim.cancel();
+  toastAnim = toastEl.animate([{ opacity: 0, transform: 'translate(-50%, 8px)' }, { opacity: 1, transform: 'translate(-50%, 0)', offset: .12 },
+    { opacity: 1, transform: 'translate(-50%, 0)', offset: .8 }, { opacity: 0, transform: 'translate(-50%, -6px)' }], { duration: 1100 });
+}
+
+/* ---------- HUD ---------- */
+function updateHud() {
+  $('hTotal').textContent = rec.total;
+  $('hStreak').textContent = rec.streak;
+  $('hBest').textContent = ` / 最高 ${rec.bestStreak}`;
+  $('bCount').textContent = found();
+}
+function fillTitle() { $('tTotal').textContent = rec.total; $('tBest').textContent = rec.bestStreak; $('tBook').textContent = found(); }
+
+/* ---------- おみくじ帳 ---------- */
+const BOOK_ORDER = ['cho', 'daikichi', 'chukichi', 'shokichi', 'kichi', 'suekichi', 'kyo', 'daikyo', 'aruimi'];
+const grid = $('grid');
+const cells = BOOK_ORDER.map(() => {   // セルは最初に9個作って使い回す
+  const c = document.createElement('div'); c.className = 'cell';
+  c.innerHTML = '<div class="n"></div><div class="c"></div>';
+  grid.appendChild(c); return c;
+});
+function openBook() {
+  BOOK_ORDER.forEach((id, i) => {
+    const f = BY_ID[id], n = rec.counts[id] || 0, c = cells[i];
+    c.className = 'cell' + (n ? '' : ' none') + (f.rare ? ' rare' : '');
+    c.firstChild.textContent = n ? f.name : (f.rare ? '？？？' : '？');
+    c.firstChild.className = 'n' + (n && f.name.length > 3 ? ' long' : '');
+    c.lastChild.textContent = n ? `${n}回` : (f.rare ? '隠し運勢' : 'まだ');
+  });
+  const k = found();
+  $('oTotal').textContent = rec.total; $('oBest').textContent = rec.bestStreak; $('oBook').textContent = k;
+  $('newRec').hidden = !(sessionNewBest && rec.bestStreak >= 2);
+  $('oComplete').hidden = !rec.complete;
+  $('bookNoren').classList.toggle('gold', rec.complete);
+  $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({ text: shareText() + '\n', url: gameUrl(), hashtags: '連打おみくじ' });
+  $('xCard').href = 'https://x.com/intent/post?' + new URLSearchParams({ text: cardText() + '\n', url: gameUrl(), hashtags: '連打おみくじ' });
+  $('xCard').hidden = !rec.last;
+  $('copyMsg').textContent = '記録はこのブラウザだけに保存されます';
+  $('book').hidden = false;
+  $('againBtn').focus({ preventScroll: true });
+}
+function closeBook() { $('book').hidden = true; }
+
+/* ---------- シェア ---------- */
+const PUBLIC_URL = 'https://asobi.enludus.com/games/omikuji/';
+function gameUrl() {
+  try {
+    if (/^https?:$/.test(location.protocol) && location.hostname !== 'localhost') return location.origin + location.pathname;
+  } catch {}
+  return PUBLIC_URL;
+}
+function shareText() {
+  const dk = rec.counts.daikichi || 0, b = rec.bestStreak;
+  const streak = b >= 2 ? `大吉が最高${b}連続` : dk ? `大吉${dk}回（連続はまだ）` : '大吉はまだ0回';
+  const cho = rec.counts.cho ? `超大吉も${rec.counts.cho}回出た！` : '超大吉はまだ…';
+  return `⛩️連打おみくじ ${rec.total}回引いて${streak}。${cho}（帳 ${found()}/9）`;
+}
+function cardText() {
+  const k = rec.last; if (!k) return shareText();
+  const f = BY_ID[k.f] || BY_ID.kichi;
+  return `⛩️連打おみくじ 今日の一枚は【${f.name}】第${kanjiNum(k.no)}番\n` + k.items.map(([a, b]) => `${a}：${b}`).join('\n');
+}
+
+/* ---------- 音（WebAudio） ---------- */
+let ac = null, noiseBuf = null;
+function wakeAudio() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      noiseBuf = ac.createBuffer(1, Math.floor(ac.sampleRate * 0.05), ac.sampleRate);
+      const d = noiseBuf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+    }
+    if (ac.state === 'suspended') ac.resume();
+  } catch {}
+}
+function rattle(at) {   // 筒の中で棒が鳴る音
+  const s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain();
+  s.buffer = noiseBuf; f.type = 'bandpass'; f.frequency.value = 1700 + Math.random() * 900; f.Q.value = 3;
+  g.gain.value = 0.35; s.connect(f).connect(g).connect(ac.destination); s.start(at);
+}
+function tone(freq, at, dur, vol, type = 'sine') {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at);
+  g.gain.setValueAtTime(vol, at); g.gain.exponentialRampToValueAtTime(0.001, at + dur);
+  o.connect(g).connect(ac.destination); o.start(at); o.stop(at + dur + 0.02);
+}
+function sound(f, quick) {
+  try {
+    if (!ac) return;
+    const t0 = ac.currentTime, tr = t0 + (quick ? 0 : 0.33);
+    if (!quick) { rattle(t0); rattle(t0 + 0.07); rattle(t0 + 0.14); }
+    tone(quick ? 1100 : 900, quick ? t0 : t0 + 0.2, 0.05, 0.12, 'triangle');   // 棒が出る「コッ」
+    const id = f.id;
+    if (id === 'cho') [1047, 1319, 1568, 2093].forEach((h, i) => tone(h, tr + i * 0.06, 0.5, 0.11));
+    else if (id === 'daikichi') { tone(1319, tr, 0.4, 0.12); tone(1760, tr + 0.05, 0.45, 0.1); }
+    else if (id === 'aruimi') { tone(660, tr, 0.18, 0.1, 'triangle'); tone(622, tr + 0.12, 0.3, 0.1, 'triangle'); }
+    else if (id === 'kyo' || id === 'daikyo') tone(id === 'kyo' ? 247 : 175, tr, 0.3, 0.14);
+    else tone({ chukichi: 1175, shokichi: 1047, kichi: 988, suekichi: 880 }[id] || 988, tr, 0.22, 0.09);
+  } catch {}
+}
+
+/* ---------- 入力 ---------- */
+function start() { $('title').hidden = true; draw(); }
+const isUi = el => el.closest && el.closest('button, a');
+document.addEventListener('pointerdown', e => {
+  if (e.button > 0 || isUi(e.target)) return;
+  if (!$('title').hidden) { e.preventDefault(); start(); return; }
+  if (!$('book').hidden) {
+    if (e.target.closest('.card')) return;   // 帳の中は読む・スクロールする場所
+    e.preventDefault(); closeBook(); draw(); return;
+  }
+  e.preventDefault(); draw();
+});
+window.addEventListener('keydown', e => {
+  if (e.code === 'Escape' && !$('book').hidden) { closeBook(); return; }
+  if (e.code !== 'Space' && e.code !== 'Enter') return;
+  if (isUi(e.target)) return;   // フォーカス中のボタンは標準動作に任せる
+  e.preventDefault();
+  if (!$('title').hidden) start();
+  else { if (!$('book').hidden) closeBook(); draw(); }
+});
+$('startBtn').addEventListener('click', start);
+$('bookBtn').addEventListener('click', () => { openBook(); });
+$('againBtn').addEventListener('click', () => { closeBook(); draw(); });
+$('copyBtn').addEventListener('click', () => {
+  const text = shareText() + '\n' + gameUrl();
+  const msg = $('copyMsg');
+  const fallback = () => { msg.textContent = text; const r = document.createRange(); r.selectNodeContents(msg); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.style.userSelect = 'text'; };
+  try {
+    navigator.clipboard.writeText(text).then(() => { msg.textContent = 'コピーしました'; }, fallback);
+  } catch { fallback(); }
+});
+
+// 前回の一枚を背景に出しておく
+if (rec.last && rec.last.items) { try { showKuji(rec.last, false); } catch { sheet.className = 'sheet empty'; } }
+else sheet.className = 'sheet empty';
+if (rec.last) stick.animate([{ transform: 'translateY(-58px)' }], { duration: 1, fill: 'forwards' });
+updateHud(); fillTitle();
+$('startBtn').focus({ preventScroll: true });
+})();
+</script>
+</body>
+</html>
