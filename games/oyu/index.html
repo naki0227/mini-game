@@ -1,0 +1,901 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>お湯ぴったり</title>
+<meta name="description" content="カップ麺の内側の線まで、長押しでお湯を注ぐ。止めても少し垂れる“余り”を読んで、何杯ぴったりにできるか。ログイン不要のワンタッチゲーム。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="お湯ぴったり">
+<meta property="og:description" content="長押しでヤカンを傾けて、カップ麺の線までぴったり注げるか。">
+<meta property="og:url" content="https://asobi.enludus.com/games/oyu/">
+<meta property="og:image" content="https://asobi.enludus.com/games/oyu/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%99%A8%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+:root { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+/* 全画面 canvas（台所）+ 上に HUD、タイトル/結果は中央のカード1枚 */
+:root {
+  --tile: #e4e7e3;       /* 台所の壁タイル */
+  --steel: #b9c0c6;      /* ステンレス */
+  --steel-deep: #59636c;
+  --ink: #1f2529;
+  --foam: #fbfaf5;       /* 発泡スチロール */
+  --noren: #2f3a42;      /* 鉄色ののれん */
+  --noren-ink: #f1efe8;
+  --accent: #c8532c;     /* しょうゆ味の帯 */
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--tile); color: var(--ink);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: pointer; }
+
+.hud {
+  position: fixed; left: 0; right: 0; top: 0; pointer-events: none;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.pill {
+  background: var(--noren); color: var(--noren-ink);
+  border-radius: 6px; padding: 6px 12px 7px;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+  box-shadow: 0 2px 0 rgba(0,0,0,.25);
+}
+.pill .lab { font-size: 11px; letter-spacing: .12em; opacity: .75; display: block; }
+.pill .val { font-family: var(--font-display); font-size: 26px; }
+.pill .unit { font-size: 13px; margin-left: 2px; }
+.pill.right { text-align: right; background: var(--foam); color: var(--ink); }
+.pill.right .val { font-size: 20px; }
+
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: center;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px;
+  background: rgba(31, 37, 41, .35);
+  touch-action: none; cursor: pointer;
+}
+.card {
+  width: min(360px, 100%); background: var(--foam); color: var(--ink);
+  border-radius: 10px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.3);
+  text-align: center; cursor: default;
+}
+.noren {
+  background: var(--noren); color: var(--noren-ink);
+  display: flex; gap: 3px;
+  padding-top: 18px;
+}
+.noren span {
+  flex: 1; background: var(--noren); border-bottom: 3px solid rgba(255,255,255,.08);
+  font-family: var(--font-display); font-size: 32px; line-height: 1; padding-block: 6px 16px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.2);
+}
+.noren.result span { font-size: 28px; }
+.body { padding: 20px 22px 22px; display: grid; gap: 14px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.7; text-wrap: balance; }
+.score { font-family: var(--font-display); font-size: 60px; line-height: 1; font-variant-numeric: tabular-nums; }
+.score small { font-size: 22px; margin-left: 4px; }
+.meta { display: flex; justify-content: center; gap: 6px 18px; font-size: 13px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.meta b { font-size: 16px; }
+.badge {
+  justify-self: center; background: var(--accent); color: #fff; font-weight: 700;
+  font-size: 12px; letter-spacing: .14em; padding: 3px 10px; border-radius: 99px;
+}
+.btns { display: grid; gap: 8px; }
+button {
+  font: inherit; font-weight: 700; font-size: 16px; border: 0; border-radius: 8px;
+  padding: 13px 16px; cursor: pointer;
+  background: var(--noren); color: var(--noren-ink); box-shadow: 0 3px 0 #151b1f;
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 #151b1f; }
+a.xbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font-weight: 700; font-size: 16px; border-radius: 8px; padding: 13px 16px;
+  background: #0f1419; color: #fff; box-shadow: 0 3px 0 #000;
+}
+a.xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+a.xbtn:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+a.xbtn svg { width: 16px; height: 16px; fill: currentColor; }
+button.sub { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
+button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.how { font-size: 12px; opacity: .7; margin: 0; }
+.back { font-size: 13px; color: var(--ink); opacity: .75; }
+.back:hover { opacity: 1; }
+</style>
+</head>
+<body>
+
+<canvas id="c" aria-label="お湯ぴったりのゲーム画面"></canvas>
+
+<div class="hud" id="hud" hidden>
+  <div class="pill"><span class="lab">注いだ</span><span class="val" id="hCups">0</span><span class="unit">杯</span></div>
+  <div class="pill right"><span class="lab">合計 / 最高</span><span class="val" id="hScore">0点</span><br><span class="unit" id="hBest">最高 0点</span></div>
+</div>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="noren" aria-hidden="true"><span>お</span><span>湯</span><span>ぴっ</span><span>た</span><span>り</span></div>
+    <div class="body">
+      <p class="lead">押しているあいだだけヤカンが傾く。<br>カップの<b>内側の線</b>までぴったり注ごう。<br>離しても少し垂れるので、気持ち早めに。</p>
+      <div class="meta"><span>最高 <b id="tBest">0</b> 点</span><span>最多 <b id="tCups">0</b> 杯</span><span>ぴったり <b id="tPerfect">0</b> 回</span></div>
+      <div class="btns"><button id="startBtn">お湯をわかす</button></div>
+      <p class="how">長押し（クリック長押し・スペース長押し）で注ぐ</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <div class="noren result" aria-hidden="true"><span>ご</span><span>ち</span><span>そ</span><span>う</span><span>さ</span><span>ま</span></div>
+    <div class="body">
+      <div class="badge" id="newRec" hidden>新記録</div>
+      <div class="score"><span id="oScore">0</span><small>点</small></div>
+      <div class="meta"><span><b id="oCups">0</b> 杯</span><span>ぴったり <b id="oPerfect">0</b> 回</span><span>最高 <b id="oBest">0</b> 点</span></div>
+      <p class="how" id="oCause"></p>
+      <div class="btns">
+        <button id="retryBtn">もう一杯</button>
+        <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Xでシェア</a>
+        <button class="sub" id="copyBtn">結果をコピー</button>
+      </div>
+      <p class="how" id="copyMsg">記録はこのブラウザだけに保存されます</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const cvs = $('c'), ctx = cvs.getContext('2d');
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ---------- 記録（このブラウザだけ） ---------- */
+const KEY = 'oyu:v1';
+const DEF = { best: 0, bestCups: 0, bestPerfect: 0, perfects: 0, plays: 0 };
+function load() { try { return Object.assign({ ...DEF }, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { return { ...DEF }; } }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch {} }
+let rec = load();
+
+/* ---------- カップの種類（寸法は mm、z=内底からの高さ） ---------- */
+const CUPS = {
+  mini:  { kind: 'ミニ',     H: 62,  rTop: 36, rBot: 27, ratio: 0.74, speed: 0.85 },
+  std:   { kind: '普通',     H: 92,  rTop: 46, rBot: 32, ratio: 0.74, speed: 1.0 },
+  big:   { kind: 'BIG',      H: 108, rTop: 54, rBot: 38, ratio: 0.76, speed: 1.15 },
+  don:   { kind: 'どんぶり', H: 70,  rTop: 70, rBot: 44, ratio: 0.72, speed: 1.1 },
+};
+// 架空の商品
+const LABELS = [
+  { name: '湯けむり軒', flavor: 'しょうゆ', band: '#c8532c', ink: '#fff' },
+  { name: 'ちぢれ屋',   flavor: 'みそ',     band: '#d98b2b', ink: '#2b1a0c' },
+  { name: '夜ふかし麺', flavor: 'しお',     band: '#3f6f8f', ink: '#fff' },
+  { name: 'ゆげ太郎',   flavor: 'とんこつ', band: '#7a4b2a', ink: '#fbe9c8' },
+  { name: '三分堂',     flavor: 'カレー',   band: '#e1b23a', ink: '#3a2408' },
+  { name: '屋台の灯',   flavor: 'ごま担々', band: '#a83a2a', ink: '#ffe6c2' },
+];
+const FLAVOR_DON = [
+  { name: '湯けむり庵', flavor: 'きつねうどん', band: '#2f6a49', ink: '#fff' },
+  { name: '湯けむり庵', flavor: '天ぷらそば',   band: '#5a3a24', ink: '#f6e2b8' },
+];
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// n杯目（0始まり）の難しさ
+function makeCup(n) {
+  let type;
+  if (n < 2) type = 'std';
+  else if (n === 2) type = 'mini';
+  else if (n === 3) type = pick(['std', 'big']);
+  else type = pick(['mini', 'std', 'big', 'don']);
+  const base = CUPS[type];
+  const ratio = n < 1 ? base.ratio : clamp(base.ratio + rand(-1, 1) * Math.min(0.14, 0.03 + n * 0.02), 0.6, 0.86);
+  const powerSpread = Math.min(0.4, n * 0.06);
+  const power = n < 1 ? 1 : clamp(1 + rand(-1, 1) * powerSpread, 0.7, 1.4);
+  const wobble = clamp((n - 2) * 0.11, 0, 1);
+  const lab = type === 'don' ? pick(FLAVOR_DON) : pick(LABELS);
+  const c = {
+    ...base, type, n, lab, power, wobble,
+    L: Math.round(base.H * ratio),
+    overOut: Math.max(5, 8 - n * 0.25),
+    underOut: Math.max(6, 10 - n * 0.3),
+    level: 0, x: 0,
+    seed: Math.random() * 100,
+    waves: new Float32Array(NW), wv: new Float32Array(NW),
+    bits: Array.from({ length: 7 }, () => ({ u: rand(-0.7, 0.7), v: rand(-0.6, 0.6), k: Math.floor(rand(0, 3)), a: rand(0, 3) })),
+  };
+  c.noodleZ = Math.min(c.H * 0.4, c.L - 16);
+  c.Vline = volumeTo(c, c.L);
+  c.maxFlow = c.Vline / (2.5 * c.speed) * power;   // mm³/s
+  return c;
+}
+const rAt = (c, z) => c.rBot + (c.rTop - c.rBot) * clamp(z, 0, c.H) / c.H;
+function volumeTo(c, z) { let v = 0; const dz = 0.5; for (let h = 0; h < z; h += dz) v += Math.PI * rAt(c, h) ** 2 * dz; return v; }
+
+/* ---------- 画面サイズ ---------- */
+let W, H, dpr, scale, VW, VH, baseY;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cvs.width = Math.round(W * dpr); cvs.height = Math.round(H * dpr);
+  scale = Math.min(W / 380, H / 680);
+  VW = W / scale; VH = H / scale;
+  baseY = H * 0.72;
+}
+window.addEventListener('resize', resize); resize();
+
+/* ---------- 見え方（少し上から見下ろす） ---------- */
+const S = 2.0;              // 1mm あたりの描画単位
+const SIN = 0.55, COS = 0.835;
+const NW = 32;              // 水面の波の分割数
+const yAt = z => -z * COS * S;
+const STEP = 1 / 60;
+const DELAY = 8;            // 注ぎ口から水面までの時間（フレーム）
+
+/* ---------- ゲーム状態 ---------- */
+let state = 'title';   // title | play | over
+let phase = 'slide';   // slide | ready | pour | settle | judge | out
+let cup, prevCup, cupsDone, total, perfects, holding, released, tilt, buf, dribble, phaseT, slideDur, judge, t, shake, parts, steam, overCause, spillT, demo;
+
+function newGame() {
+  cupsDone = 0; total = 0; perfects = 0; t = 0; shake = 0; parts = []; steam = steam || [];
+  prevCup = null; cup = makeCup(0); startSlide(0.36);
+  updateHud();
+}
+function resetPourState() {
+  holding = false; released = false; tilt = 0; dribble = 0; buf = new Float32Array(DELAY); spillT = 0; judge = null;
+}
+function startSlide(dur) { phase = 'slide'; phaseT = 0; slideDur = dur; resetPourState(); }
+
+function press() {
+  if (state !== 'play') return;
+  if (phase === 'ready') { phase = 'pour'; holding = true; return; }
+  if (phase === 'judge') { goNext(); return; }
+  if (phase === 'slide') { phaseT = slideDur; return; }
+  if (phase === 'out') { phaseT = 99; return; }
+}
+function releaseHold() {
+  if (holding) { holding = false; released = true; dribble = 0.045 * cup.maxFlow * Math.min(1, tilt * 1.4); }
+}
+function goNext() {
+  prevCup = cup; cup = makeCup(cupsDone); startSlide(phase === 'judge' && phaseT < 0.6 ? 0.2 : 0.34);
+}
+
+/* ---------- 注ぐ（ステップごと） ---------- */
+function stepPour() {
+  const c = cup;
+  // 傾き: 押している間は傾き、離すと戻る
+  if (holding) tilt = Math.min(1, tilt + STEP / 0.32);
+  else tilt = Math.max(0, tilt - STEP / 0.24);
+  // 注ぎ口から出る量（勢い・ぶれで脈打つ）
+  const k = clamp((tilt - 0.22) / 0.78, 0, 1);
+  const pulse = 1 + c.wobble * 0.22 * Math.sin(t * 9.3 + c.seed) * Math.sin(t * 3.1);
+  let out = c.maxFlow * Math.pow(k, 1.3) * pulse;
+  // 止めた後の「垂れ」
+  if (released && tilt < 0.45 && dribble > 0) { out += dribble * 8; dribble -= dribble * 8 * STEP; if (dribble < cup.maxFlow * 0.0015) dribble = 0; }
+  // 遅れて水面に届く
+  const landing = buf[0];
+  for (let i = 0; i < DELAY - 1; i++) buf[i] = buf[i + 1];
+  buf[DELAY - 1] = out;
+
+  if (landing > 0) {
+    const off = streamOffset(c);
+    const lim = c.rTop - 4;
+    const spill = clamp((Math.abs(off) - lim) / 6, 0, 1);
+    const dv = landing * STEP * (1 - spill);
+    c.level += dv / (Math.PI * rAt(c, c.level) ** 2);
+    // 水面を波立たせる
+    const u = clamp(off / rAt(c, c.level), -0.95, 0.95);
+    const i = Math.round((u + 1) / 2 * (NW - 1));
+    const amp = Math.min(1, landing / c.maxFlow) * 0.9;
+    for (let j = -1; j <= 1; j++) if (c.wv[i + j] !== undefined) c.wv[i + j] += (Math.random() - 0.35) * amp * (j ? 0.5 : 1);
+    if (Math.random() < 0.5 * amp + 0.05) splash(c.x + off * S, yAt(c.level), 1);
+    if (spill > 0) { spillT += STEP; if (Math.random() < spill) spillDrop(c.x + Math.sign(off) * c.rTop * S, yAt(c.H)); }
+  }
+  pourSound(out / c.maxFlow, c.level / c.H);
+
+  if (c.level >= c.H - 0.5) { c.level = c.H - 0.5; finishCup(true); return; }
+  if (released && tilt === 0 && dribble === 0 && buf.every(v => v === 0)) { phase = 'settle'; phaseT = 0; }
+}
+function streamOffset(c) {
+  // 注ぎ口のぶれ（mm）: ゆっくり揺れ + 小刻み
+  const w = c.wobble;
+  return w * (c.rTop * 0.62) * Math.sin(t * 1.7 + c.seed) + w * 3.5 * Math.sin(t * 11 + c.seed * 2) + (1 - tilt) * 6;
+}
+
+function finishCup(overflow) {
+  const c = cup;
+  const d = c.level - c.L;
+  const ad = Math.abs(d);
+  let label, pts = 0, out = false, tone;
+  if (overflow) { label = 'あふれた！'; out = true; overCause = 'カップからあふれました'; }
+  else if (d > c.overOut) { label = '薄すぎ…'; out = true; overCause = `線を ${d.toFixed(1)}mm 超えました`; }
+  else if (d < -c.underOut) { label = 'お湯が足りない…'; out = true; overCause = `線まで あと ${(-d).toFixed(1)}mm でした`; }
+  else {
+    pts = ad <= 1 ? 100 : Math.max(10, Math.round(100 - (ad - 1) * 10));
+    if (ad <= 1) { label = 'ぴったり！'; perfects++; tone = 'perfect'; }
+    else if (ad <= 3) { label = 'うまい！'; tone = 'good'; }
+    else if (ad <= 5.5) { label = 'まあまあ'; tone = 'ok'; }
+    else { label = d > 0 ? 'ちょい薄い' : 'ちょい濃い'; tone = 'ok'; }
+    total += pts; cupsDone++;
+  }
+  judge = { label, d, pts, out, life: 0 };
+  holding = false; released = true; tilt = Math.min(tilt, 0.2);
+  phase = out ? 'out' : 'judge'; phaseT = 0;
+  pourSound(0, 0);
+  if (out) { if (!reduceMotion) shake = 7; chime('out'); } else chime(tone);
+  updateHud();
+}
+
+/* ---------- メインのステップ ---------- */
+function step() {
+  t += STEP;
+  if (state === 'play') {
+    phaseT += STEP;
+    if (phase === 'slide') {
+      const k = clamp(phaseT / slideDur, 0, 1), e = 1 - Math.pow(1 - k, 3);
+      cup.x = (1 - e) * (VW * 0.5 + 160);
+      if (prevCup) prevCup.x = -e * (VW * 0.5 + 180);
+      if (k >= 1) { cup.x = 0; prevCup = null; phase = 'ready'; phaseT = 0; }
+    } else if (phase === 'pour') stepPour();
+    else if (phase === 'settle') { if (phaseT > 0.12) finishCup(false); }
+    else if (phase === 'judge') { if (phaseT > 0.6) goNext(); }
+    else if (phase === 'out') { if (phaseT > 1.0) showOver(); }
+    if (phase !== 'pour') { tilt = Math.max(0, tilt - STEP / 0.24); }
+  } else if (state === 'title' || state === 'over') {
+    // タイトル背景: ゆっくり自動で注ぐデモ
+    stepDemo();
+  }
+  for (const c of [cup, prevCup]) if (c) stepWaves(c);
+  stepParticles();
+  shake *= 0.88;
+}
+function stepDemo() {
+  const c = cup;
+  demo = demo || { t: 0 };
+  demo.t += STEP;
+  const target = c.L - 7;
+  tilt = c.level < target && demo.t > 0.8 ? Math.min(0.7, tilt + STEP / 0.6) : Math.max(0, tilt - STEP / 0.4);
+  const k = clamp((tilt - 0.22) / 0.78, 0, 1);
+  if (k > 0) {
+    c.level += c.maxFlow * 0.5 * k * STEP / (Math.PI * rAt(c, c.level) ** 2);
+    const i = Math.round(NW * 0.5 + Math.sin(t * 2) * 2);
+    c.wv[i] += (Math.random() - 0.4) * 0.5 * k;
+    if (Math.random() < 0.3 * k) splash(c.x, yAt(c.level), 1);
+  }
+}
+
+function stepWaves(c) {
+  const h = c.waves, v = c.wv;
+  for (let i = 0; i < NW; i++) { v[i] += -h[i] * 0.06; v[i] *= 0.975; }
+  for (let pass = 0; pass < 2; pass++) {
+    for (let i = 0; i < NW; i++) {
+      const l = h[i - 1] ?? h[i], r = h[i + 1] ?? h[i];
+      v[i] += (l + r - 2 * h[i]) * 0.09;
+    }
+  }
+  for (let i = 0; i < NW; i++) h[i] = clamp(h[i] + v[i], -6, 6);
+  // 傾いた分のわずかな揺れ（スライド中）
+  if (state === 'play' && phase === 'slide' && c === cup) { const k = 0.08; c.wv[0] += k; c.wv[NW - 1] -= k; }
+}
+
+/* ---------- パーティクル（しぶき・湯気） ---------- */
+function splash(x, y, n) {
+  for (let i = 0; i < n; i++) parts.push({ x: x + rand(-3, 3), y, vx: rand(-1.4, 1.4), vy: rand(-3.2, -1.2), life: 1, floor: y, kind: 'drop' });
+  if (parts.length > 120) parts.splice(0, parts.length - 120);
+}
+function spillDrop(x, y) { parts.push({ x, y, vx: rand(-0.4, 0.4) + Math.sign(x - cup.x) * 0.8, vy: rand(-0.5, 0.5), life: 1.6, floor: 30 + Math.random() * 40, kind: 'spill' }); }
+function stepParticles() {
+  for (const p of parts) {
+    p.vy += 0.22; p.x += p.vx; p.y += p.vy; p.life -= STEP * 2.2;
+    if (p.kind === 'drop' && p.y > p.floor + 2) p.life = 0;
+    if (p.kind === 'spill' && p.y > p.floor) { p.y = p.floor; p.vy *= -0.2; p.vx *= 0.5; }
+  }
+  parts = parts.filter(p => p.life > 0);
+  // 湯気: カップの水面とヤカンの注ぎ口から
+  const c = cup;
+  if (c && c.level > 4 && Math.random() < 0.22 + (c.level / c.H) * 0.4) {
+    const r = rAt(c, c.level) * S * 0.7;
+    steam.push({ x: c.x + rand(-r, r), y: yAt(c.H) - 4, vx: rand(-0.15, 0.15), vy: rand(-0.9, -0.5), r: rand(10, 18), life: 1, a: rand(0.08, 0.16) });
+  }
+  if (Math.random() < 0.12) { const sp = spoutTip(); steam.push({ x: sp.x, y: sp.y - 4, vx: rand(-0.4, 0.1), vy: rand(-0.8, -0.4), r: rand(6, 10), life: 0.8, a: 0.14 }); }
+  for (const s of steam) { s.x += s.vx + Math.sin(t * 1.3 + s.y * 0.02) * 0.25; s.y += s.vy; s.r += 0.22; s.life -= STEP * 0.55; }
+  steam = steam.filter(s => s.life > 0);
+  if (steam.length > 70) steam.splice(0, steam.length - 70);
+}
+
+/* ---------- ヤカン ---------- */
+const KS = 0.8;                  // ヤカンの大きさ
+const KPIV = { x: 74, y: -238 }; // 回転の中心（ヤカン底の左端）
+const kAngle = () => -tilt * 0.56;
+function spoutTip() {
+  const a = kAngle(), lx = -52 * KS, ly = -80 * KS;
+  return { x: KPIV.x + lx * Math.cos(a) - ly * Math.sin(a), y: KPIV.y + lx * Math.sin(a) + ly * Math.cos(a) };
+}
+function drawKettle() {
+  ctx.save();
+  ctx.translate(KPIV.x, KPIV.y); ctx.rotate(kAngle()); ctx.scale(KS, KS);
+  // 注ぎ口
+  ctx.beginPath();
+  ctx.moveTo(14, -18); ctx.quadraticCurveTo(-18, -30, -52, -84); ctx.lineTo(-44, -88);
+  ctx.quadraticCurveTo(-14, -52, 22, -46); ctx.closePath();
+  const sg = ctx.createLinearGradient(-50, -80, 20, -20);
+  sg.addColorStop(0, '#eef1f3'); sg.addColorStop(0.5, '#a3abb2'); sg.addColorStop(1, '#cfd5da');
+  ctx.fillStyle = sg; ctx.fill(); ctx.strokeStyle = '#6e777f'; ctx.lineWidth = 1.5; ctx.stroke();
+  // 胴（つぶれたドーム）
+  ctx.beginPath();
+  ctx.moveTo(0, 0); ctx.lineTo(134, 0);
+  ctx.bezierCurveTo(144, -30, 136, -74, 104, -88); ctx.lineTo(30, -88);
+  ctx.bezierCurveTo(-2, -74, -10, -30, 0, 0); ctx.closePath();
+  const bg = ctx.createLinearGradient(0, 0, 134, 0);
+  bg.addColorStop(0, '#8c959d'); bg.addColorStop(0.2, '#f4f6f7'); bg.addColorStop(0.36, '#c7cdd2');
+  bg.addColorStop(0.7, '#9aa3ab'); bg.addColorStop(0.9, '#dde2e6'); bg.addColorStop(1, '#7c858d');
+  ctx.fillStyle = bg; ctx.fill(); ctx.strokeStyle = '#626b73'; ctx.lineWidth = 1.5; ctx.stroke();
+  // 底の帯と映り込み
+  ctx.fillStyle = 'rgba(40,46,52,.25)'; ctx.fillRect(2, -7, 131, 4);
+  ctx.fillStyle = 'rgba(255,255,255,.45)'; ctx.fillRect(22, -70, 6, 52);
+  // ふた・つまみ
+  ctx.beginPath(); ctx.ellipse(67, -88, 40, 6, 0, 0, Math.PI * 2); ctx.fillStyle = '#b8bfc5'; ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#23282c'; rr(58, -102, 18, 12, 5); ctx.fill();
+  // 取っ手（黒い樹脂）
+  ctx.lineCap = 'round'; ctx.strokeStyle = '#23282c'; ctx.lineWidth = 9;
+  ctx.beginPath(); ctx.moveTo(20, -84); ctx.bezierCurveTo(26, -150, 110, -150, 116, -84); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(30, -110); ctx.bezierCurveTo(44, -138, 92, -138, 106, -110); ctx.stroke();
+  ctx.restore();
+}
+
+/* ---------- お湯の流れ ---------- */
+function drawStream() {
+  const c = cup; if (!c) return;
+  const tip = spoutTip();
+  const off = state === 'play' ? streamOffset(c) : 0;
+  const lx = c.x + off * S, ly = yAt(c.level);
+  // 履歴: buf[DELAY-1] が注ぎ口、buf[0] が水面
+  const flows = state === 'play' ? buf : demoBuf();
+  const n = flows.length;
+  if (!flows.some(v => v > 0)) return;
+  const cx1 = tip.x - 10, cy1 = tip.y + 20;
+  const P = k => { // 0=注ぎ口 → 1=水面
+    const a = (1 - k) * (1 - k), b = 2 * (1 - k) * k, d = k * k;
+    return { x: a * tip.x + b * cx1 + d * lx, y: a * tip.y + b * cy1 + d * ly };
+  };
+  ctx.lineCap = 'round';
+  for (let i = 0; i < n; i++) {
+    const f = flows[n - 1 - i] / c.maxFlow;
+    if (f <= 0.001) continue;
+    const k0 = i / n, k1 = (i + 1) / n;
+    const p0 = P(k0), p1 = P(k1);
+    const w = (2.2 + 5.5 * Math.sqrt(Math.min(f, 1.5)) * (0.7 + c.power * 0.3)) * (1 - k0 * 0.35);
+    ctx.strokeStyle = 'rgba(205,224,234,.75)'; ctx.lineWidth = w;
+    ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x + Math.sin(t * 40 + i) * 0.6, p1.y); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.lineWidth = Math.max(0.8, w * 0.28);
+    ctx.beginPath(); ctx.moveTo(p0.x - w * 0.2, p0.y); ctx.lineTo(p1.x - w * 0.2, p1.y); ctx.stroke();
+  }
+  // 垂れのしずく
+  if (state === 'play' && released && dribble > 0 && Math.random() < 0.5) splash(tip.x, tip.y + 6, 0);
+}
+let _demoBuf = new Float32Array(DELAY);
+function demoBuf() {
+  const k = clamp((tilt - 0.22) / 0.78, 0, 1);
+  for (let i = 0; i < DELAY - 1; i++) _demoBuf[i] = _demoBuf[i + 1];
+  _demoBuf[DELAY - 1] = cup.maxFlow * 0.5 * k;
+  return _demoBuf;
+}
+
+/* ---------- カップ ---------- */
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+// z の高さの円周上、u∈[-1,1] の奥側(back)/手前側の点
+function ringPt(c, z, u, back) { const r = rAt(c, z) * S; return { x: c.x + u * r, y: yAt(z) + (back ? -1 : 1) * Math.sqrt(Math.max(0, 1 - u * u)) * r * SIN }; }
+
+function drawCup(c) {
+  const R = c.rTop * S, Rb = c.rBot * S, top = yAt(c.H);
+  // 影
+  ctx.fillStyle = 'rgba(30,36,40,.18)';
+  ctx.beginPath(); ctx.ellipse(c.x + 8, 4, Rb * 1.25, Rb * SIN * 1.1, 0, 0, Math.PI * 2); ctx.fill();
+  drawLid(c);
+
+  // ---- 内側（口の楕円で切り抜き） ----
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(c.x, top, R - 2, (R - 2) * SIN, 0, 0, Math.PI * 2); ctx.clip();
+  const ig = ctx.createLinearGradient(0, top - R * SIN, 0, top + R * SIN);
+  ig.addColorStop(0, '#f6f3ea'); ig.addColorStop(0.55, '#ddd7c8'); ig.addColorStop(1, '#bdb6a5');
+  ctx.fillStyle = ig; ctx.fillRect(c.x - R, top - R, R * 2, R * 2 + 40);
+  // 側面の陰
+  const sg = ctx.createLinearGradient(c.x - R, 0, c.x + R, 0);
+  sg.addColorStop(0, 'rgba(90,80,60,.28)'); sg.addColorStop(0.25, 'rgba(90,80,60,0)'); sg.addColorStop(0.75, 'rgba(90,80,60,0)'); sg.addColorStop(1, 'rgba(90,80,60,.32)');
+  ctx.fillStyle = sg; ctx.fillRect(c.x - R, top - R, R * 2, R * 2 + 40);
+
+  const underNoodle = c.level < c.noodleZ;
+  if (!underNoodle) drawNoodles(c);
+  drawLine(c);
+  if (c.level > 0.2) drawWater(c);
+  if (underNoodle) drawNoodles(c);
+  ctx.restore();
+
+  // ---- 手前の側面（発泡スチロール） ----
+  ctx.beginPath();
+  ctx.ellipse(c.x, top, R, R * SIN, 0, Math.PI, 0, true);
+  ctx.lineTo(c.x + Rb, 0);
+  ctx.ellipse(c.x, 0, Rb, Rb * SIN, 0, 0, Math.PI, false);
+  ctx.closePath();
+  const fg = ctx.createLinearGradient(c.x - R, 0, c.x + R, 0);
+  fg.addColorStop(0, '#c9c5b9'); fg.addColorStop(0.18, '#f3f1ea'); fg.addColorStop(0.42, '#fffefa');
+  fg.addColorStop(0.8, '#e2ded3'); fg.addColorStop(1, '#b7b2a5');
+  ctx.fillStyle = fg; ctx.fill();
+  ctx.strokeStyle = 'rgba(120,112,95,.35)'; ctx.lineWidth = 1; ctx.stroke();
+  // 帯（商品ラベル）
+  const z1 = c.H * 0.3, z2 = c.H * (c.type === 'don' ? 0.78 : 0.7);
+  ctx.save();
+  ctx.beginPath();
+  const pA = ringPt(c, z2, -1, false);
+  ctx.moveTo(pA.x, pA.y);
+  for (let i = 1; i <= 24; i++) { const p = ringPt(c, z2, -1 + i / 12, false); ctx.lineTo(p.x, p.y); }
+  for (let i = 24; i >= 0; i--) { const p = ringPt(c, z1, -1 + i / 12, false); ctx.lineTo(p.x, p.y); }
+  ctx.closePath(); ctx.fillStyle = c.lab.band; ctx.fill(); ctx.clip();
+  ctx.fillStyle = 'rgba(0,0,0,.12)'; ctx.fillRect(c.x + R * 0.55, yAt(c.H), R, c.H * S * 2);
+  ctx.fillStyle = 'rgba(255,255,255,.14)'; ctx.fillRect(c.x - R * 0.62, yAt(c.H), R * 0.18, c.H * S * 2);
+  ctx.restore();
+  const mid = ringPt(c, (z1 + z2) / 2, 0, false);
+  const fs = Math.max(12, Math.min(22, R * 0.36));
+  ctx.textAlign = 'center'; ctx.fillStyle = c.lab.ink;
+  ctx.font = `${fs}px ${FD}`;
+  ctx.fillText(c.lab.name, mid.x, mid.y - fs * 0.15);
+  ctx.font = `700 ${Math.round(fs * 0.58)}px ${FB}`;
+  ctx.fillText(c.lab.flavor + (c.type === 'big' ? ' 大盛' : c.type === 'mini' ? ' ミニ' : ''), mid.x, mid.y + fs * 0.75);
+  ctx.textAlign = 'start';
+  // 縁
+  ctx.lineWidth = 4.5; ctx.strokeStyle = '#fdfcf7';
+  ctx.beginPath(); ctx.ellipse(c.x, top, R - 1, (R - 1) * SIN, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(120,112,95,.45)';
+  ctx.beginPath(); ctx.ellipse(c.x, top, R + 1.2, (R + 1.2) * SIN, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.beginPath(); ctx.ellipse(c.x, top, R - 3.4, (R - 3.4) * SIN, 0, Math.PI, 0); ctx.stroke();
+}
+
+function drawLid(c) {
+  // 半分めくったふた（奥に立てかけた状態）
+  const R = c.rTop * S, top = yAt(c.H);
+  ctx.save();
+  ctx.translate(c.x, top - R * SIN * 0.55);
+  ctx.beginPath(); ctx.ellipse(0, -R * 0.5, R * 0.98, R * 0.62, 0, Math.PI * 0.98, Math.PI * 2.02); ctx.closePath();
+  ctx.fillStyle = '#efe9da'; ctx.fill();
+  ctx.strokeStyle = 'rgba(120,105,80,.4)'; ctx.lineWidth = 1; ctx.stroke();
+  ctx.clip();
+  ctx.fillStyle = c.lab.band; ctx.beginPath(); ctx.ellipse(0, -R * 0.5, R * 0.8, R * 0.5, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff6df'; ctx.beginPath(); ctx.ellipse(0, -R * 0.5, R * 0.62, R * 0.36, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = c.lab.band; ctx.textAlign = 'center';
+  const fs = Math.max(11, Math.min(20, R * 0.3));
+  ctx.font = `${fs}px ${FD}`; ctx.fillText(c.lab.name, 0, -R * 0.58);
+  ctx.font = `700 ${Math.round(fs * 0.6)}px ${FB}`; ctx.fillStyle = '#6b5a40';
+  ctx.fillText(`熱湯${c.type === "don" ? "5" : "3"}分`, 0, -R * 0.58 - fs * 1.05);
+  ctx.textAlign = 'start';
+  ctx.restore();
+}
+
+function drawNoodles(c) {
+  const z = c.noodleZ, r = (rAt(c, z) - 3) * S, y = yAt(z);
+  ctx.save();
+  ctx.beginPath(); ctx.ellipse(c.x, y, r, r * SIN, 0, 0, Math.PI * 2);
+  ctx.fillStyle = '#d9b77a'; ctx.fill(); ctx.clip();
+  // ちぢれ麺
+  ctx.strokeStyle = 'rgba(150,108,50,.55)'; ctx.lineWidth = 1.3;
+  for (let j = -5; j <= 5; j++) {
+    ctx.beginPath();
+    for (let i = 0; i <= 20; i++) {
+      const xx = c.x - r + i * r / 10, yy = y + j * r * SIN / 5 + Math.sin(i * 1.9 + j) * 2.4;
+      i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy);
+    }
+    ctx.stroke();
+  }
+  // 具（えび・たまご・ねぎ / どんぶりは あげ）
+  for (const b of c.bits) {
+    const bx = c.x + b.u * r * 0.8, by = y + b.v * r * SIN * 0.8;
+    if (c.type === 'don' && b.k === 0) { ctx.fillStyle = '#c98a3c'; rr(bx - 12, by - 6, 24, 12, 3); ctx.fill(); continue; }
+    ctx.fillStyle = ['#e9876a', '#f2d24a', '#5f9a4a'][b.k];
+    ctx.save(); ctx.translate(bx, by); ctx.rotate(b.a);
+    if (b.k === 0) { ctx.beginPath(); ctx.arc(0, 0, 4.5, 0.4, Math.PI * 1.7); ctx.lineWidth = 3; ctx.strokeStyle = '#e9876a'; ctx.stroke(); }
+    else if (b.k === 1) ctx.fillRect(-3.5, -3.5, 7, 7);
+    else { ctx.beginPath(); ctx.arc(0, 0, 2.8, 0, Math.PI * 2); ctx.fill(); }
+    ctx.restore();
+  }
+  ctx.restore();
+}
+
+function drawLine(c) {
+  // 内側の線（奥の壁の型押しライン）
+  const pts = [];
+  for (let i = 0; i <= 30; i++) pts.push(ringPt(c, c.L, -1 + i / 15, true));
+  ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.85)';
+  ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y + 1.4) : ctx.moveTo(p.x, p.y + 1.4)); ctx.stroke();
+  ctx.lineWidth = 2.4; ctx.strokeStyle = '#6d6453';
+  ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
+  // 「ここまで」の小さな刻印
+  const m = pts[15];
+  ctx.fillStyle = 'rgba(109,100,83,.8)'; ctx.font = `700 9px ${FB}`; ctx.textAlign = 'center';
+  ctx.fillText('▼ここまで', m.x, m.y - 4); ctx.textAlign = 'start';
+}
+
+function drawWater(c) {
+  const h = c.level, r = rAt(c, h) * S, cy = yAt(h);
+  const back = [];
+  for (let i = 0; i < NW; i++) {
+    const u = -1 + 2 * i / (NW - 1);
+    back.push({ x: c.x + u * r, y: cy - Math.sqrt(Math.max(0, 1 - u * u)) * r * SIN + c.waves[i] });
+  }
+  const tint = clamp(h / c.H, 0, 1);
+  ctx.beginPath();
+  back.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y));
+  ctx.lineTo(c.x + r + 4, cy + 200); ctx.lineTo(c.x - r - 4, cy + 200); ctx.closePath();
+  ctx.fillStyle = `rgba(${Math.round(200 + tint * 30)},${Math.round(196 - tint * 10)},${Math.round(150 - tint * 50)},.58)`;
+  ctx.fill();
+  // 水面の光
+  ctx.save(); ctx.clip();
+  ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1.2;
+  for (let k = 1; k <= 3; k++) {
+    ctx.beginPath();
+    back.forEach((p, i) => { const y = p.y + k * r * SIN * 0.42 + c.waves[(i + k * 5) % NW] * 0.6; i ? ctx.lineTo(p.x, y) : ctx.moveTo(p.x, y); });
+    ctx.stroke();
+  }
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(120,96,50,.5)'; ctx.lineWidth = 3;
+  ctx.beginPath(); back.forEach((p, i) => i ? ctx.lineTo(p.x, p.y + 1.5) : ctx.moveTo(p.x, p.y + 1.5)); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,.95)'; ctx.lineWidth = 1.6;
+  ctx.beginPath(); back.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.stroke();
+}
+
+/* ---------- 背景（タイル壁とステンレス台） ---------- */
+function drawRoom() {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#e4e7e3'; ctx.fillRect(0, 0, W, H);
+  // タイル目地
+  const ts = 44 * scale, counterTop = baseY - 70 * scale;
+  ctx.strokeStyle = 'rgba(120,130,128,.28)'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let y = counterTop; y > -ts; y -= ts) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  for (let x = (W / 2) % ts; x < W; x += ts) { ctx.moveTo(x, 0); ctx.lineTo(x, counterTop); }
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,.25)';
+  for (let y = counterTop - ts; y > -ts; y -= ts) for (let x = (W / 2) % ts - ts; x < W; x += ts) ctx.fillRect(x + 4, y + 4, ts * 0.3, 2);
+  // ステンレスの台
+  const g = ctx.createLinearGradient(0, counterTop, 0, H);
+  g.addColorStop(0, '#9aa2a9'); g.addColorStop(0.08, '#d4d9dd'); g.addColorStop(0.5, '#b4bcc2'); g.addColorStop(1, '#8e979e');
+  ctx.fillStyle = g; ctx.fillRect(0, counterTop, W, H - counterTop);
+  ctx.fillStyle = '#6f787f'; ctx.fillRect(0, counterTop, W, 3);
+  // ヘアライン
+  ctx.strokeStyle = 'rgba(255,255,255,.18)';
+  for (let i = 0; i < 26; i++) {
+    const y = counterTop + 8 + ((i * 37) % Math.max(1, H - counterTop - 8));
+    const x = (i * 97) % W;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 60 + (i % 5) * 30, y); ctx.stroke();
+  }
+  // 台の手前の縁
+  const edge = H - 18 - (parseFloat(getComputedStyle(document.documentElement).paddingBottom) || 0);
+  ctx.fillStyle = 'rgba(70,78,85,.35)'; ctx.fillRect(0, edge, W, 2);
+}
+
+/* ---------- 判定・案内の文字（台の上） ---------- */
+function drawInfo() {
+  if (state !== 'play') return;
+  const y0 = 70;
+  ctx.textAlign = 'center';
+  if (judge) {
+    const k = Math.min(1, phaseT / 0.12);
+    ctx.globalAlpha = k;
+    ctx.font = `${judge.label.length > 6 ? 30 : 36}px ${FD}`;
+    ctx.lineWidth = 6; ctx.strokeStyle = '#fbfaf5';
+    ctx.fillStyle = judge.out ? '#2f3a42' : judge.label === 'ぴったり！' ? '#c8532c' : '#2f3a42';
+    const yy = y0 + (1 - k) * 8;
+    ctx.strokeText(judge.label, 0, yy); ctx.fillText(judge.label, 0, yy);
+    ctx.font = `700 16px ${FB}`; ctx.fillStyle = '#1f2529';
+    const sign = judge.d >= 0 ? '+' : '−';
+    const sub = `線 ${sign}${Math.abs(judge.d).toFixed(1)}mm` + (judge.out ? '' : `　${judge.pts}点`);
+    ctx.strokeStyle = 'rgba(251,250,245,.8)'; ctx.lineWidth = 4;
+    ctx.strokeText(sub, 0, yy + 28); ctx.fillText(sub, 0, yy + 28);
+    ctx.globalAlpha = 1;
+  } else if (phase === 'ready' || phase === 'pour' || phase === 'settle') {
+    const c = cup;
+    const pw = c.power > 1.15 ? '強め' : c.power < 0.87 ? '弱め' : 'ふつう';
+    ctx.font = `700 13px ${FB}`; ctx.fillStyle = 'rgba(31,37,41,.75)';
+    ctx.fillText(`${cupsDone + 1}杯目・${c.kind}　内側の線 ${c.L}mm　勢い ${pw}`, 0, y0 + 2);
+    if (phase === 'ready' && cupsDone === 0 && rec.plays < 3) {
+      ctx.font = `20px ${FD}`; ctx.fillStyle = '#2f3a42';
+      ctx.globalAlpha = 0.6 + 0.4 * Math.sin(t * 5);
+      ctx.fillText('長押しで注ぐ', 0, y0 + 32);
+      ctx.globalAlpha = 1;
+    }
+  }
+  ctx.textAlign = 'start';
+}
+
+const FD = getComputedStyle(document.documentElement).getPropertyValue('--font-display');
+const FB = getComputedStyle(document.documentElement).getPropertyValue('--font-body');
+
+function render() {
+  drawRoom();
+  const sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake;
+  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * (W / 2 + sx), dpr * (baseY + sy));
+  if (prevCup) drawCup(prevCup);
+  if (cup) drawCup(cup);
+  // しぶき（カップ内）
+  ctx.fillStyle = 'rgba(235,244,248,.9)';
+  for (const p of parts) { ctx.globalAlpha = Math.min(1, p.life); ctx.beginPath(); ctx.arc(p.x, p.y, p.kind === 'spill' ? 2.2 : 1.6, 0, Math.PI * 2); ctx.fill(); }
+  ctx.globalAlpha = 1;
+  drawStream();
+  drawKettle();
+  // 湯気
+  for (const s of steam) {
+    const g = ctx.createRadialGradient(s.x, s.y, 0, s.x, s.y, s.r);
+    g.addColorStop(0, `rgba(255,255,255,${s.a * Math.min(1, s.life * 1.5)})`); g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill();
+  }
+  drawInfo();
+}
+
+/* ---------- 結果 ---------- */
+let overShownAt = 0;
+function showOver() {
+  state = 'over'; demo = { t: 0 };
+  rec.plays++;
+  rec.perfects += perfects;
+  const isNew = total > rec.best;
+  if (isNew) rec.best = total;
+  if (cupsDone > rec.bestCups) rec.bestCups = cupsDone;
+  if (perfects > rec.bestPerfect) rec.bestPerfect = perfects;
+  save();
+  $('oScore').textContent = total; $('oCups').textContent = cupsDone; $('oPerfect').textContent = perfects; $('oBest').textContent = rec.best;
+  $('oCause').textContent = `${cupsDone + 1}杯目：${overCause}`;
+  $('newRec').hidden = !(isNew && total > 0);
+  $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({
+    text: `${shareText()}${isNew && total > 0 ? ' 自己ベスト更新！' : ''}\n`,
+    url: gameUrl(), hashtags: 'お湯ぴったり'
+  });
+  $('copyMsg').textContent = '記録はこのブラウザだけに保存されます';
+  $('over').hidden = false; $('hud').hidden = true;
+  overShownAt = performance.now();
+  $('retryBtn').focus({ preventScroll: true });
+  // 背景はデモ用に新しいカップ
+  prevCup = null; cup = makeCup(0); cup.x = 0; resetPourState();
+}
+const shareText = () => `♨️お湯ぴったり ${cupsDone}杯 ${total}点（ぴったり${perfects}回）`;
+
+/* ---------- シェア ---------- */
+// 公開先のURL。ローカルで開いたときもこれをシェアする
+const PUBLIC_URL = 'https://asobi.enludus.com/games/oyu/';
+function gameUrl() {
+  try {
+    if (/^https?:$/.test(location.protocol) && location.hostname !== 'localhost') return location.origin + location.pathname;
+  } catch {}
+  return PUBLIC_URL;
+}
+
+/* ---------- HUD ---------- */
+function updateHud() {
+  $('hCups').textContent = cupsDone;
+  $('hScore').textContent = total + '点';
+  $('hBest').textContent = `最高 ${rec.best}点`;
+}
+function fillTitle() { $('tBest').textContent = rec.best; $('tCups').textContent = rec.bestCups; $('tPerfect').textContent = rec.bestPerfect; }
+
+/* ---------- 音 ---------- */
+let ac = null, pourNode = null;
+function wakeAudio() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      // 注ぐ音: ノイズをバンドパス。水位が上がると高くなる
+      const len = ac.sampleRate * 1.5, b = ac.createBuffer(1, len, ac.sampleRate), d = b.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+      const src = ac.createBufferSource(); src.buffer = b; src.loop = true;
+      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 2.2; bp.frequency.value = 500;
+      const g = ac.createGain(); g.gain.value = 0;
+      src.connect(bp).connect(g).connect(ac.destination); src.start();
+      pourNode = { bp, g };
+    }
+    if (ac.state === 'suspended') ac.resume();
+  } catch {}
+}
+function pourSound(flow, levelFrac) {
+  try {
+    if (!pourNode) return;
+    const now = ac.currentTime;
+    pourNode.g.gain.setTargetAtTime(Math.min(1, flow) * 0.16, now, 0.03);
+    pourNode.bp.frequency.setTargetAtTime(420 + levelFrac * 1500, now, 0.05);
+  } catch {}
+}
+function tone(freq, at, dur, vol, type = 'sine') {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at);
+  g.gain.setValueAtTime(vol, at); g.gain.exponentialRampToValueAtTime(0.001, at + dur);
+  o.connect(g).connect(ac.destination); o.start(at); o.stop(at + dur + 0.02);
+}
+function chime(kind) {
+  try {
+    if (!ac) return;
+    const n = ac.currentTime;
+    if (kind === 'perfect') { tone(988, n, 0.25, 0.16); tone(1319, n + 0.08, 0.35, 0.14); }
+    else if (kind === 'good') tone(880, n, 0.22, 0.14);
+    else if (kind === 'ok') tone(660, n, 0.18, 0.12);
+    else { tone(180, n, 0.3, 0.2, 'triangle'); tone(120, n + 0.1, 0.35, 0.16, 'triangle'); }
+  } catch {}
+}
+
+/* ---------- ループ ---------- */
+let acc = 0, lastTs = performance.now();
+function frame(ts) {
+  acc += Math.min(100, ts - lastTs); lastTs = ts;
+  while (acc >= 1000 / 60) { step(); acc -= 1000 / 60; }
+  render();
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 入力 ---------- */
+function start() {
+  wakeAudio(); state = 'play'; newGame();
+  $('title').hidden = true; $('over').hidden = true; $('hud').hidden = false;
+}
+cvs.addEventListener('pointerdown', e => { e.preventDefault(); wakeAudio(); press(); });
+window.addEventListener('pointerup', releaseHold);
+window.addEventListener('pointercancel', releaseHold);
+window.addEventListener('blur', releaseHold);
+cvs.addEventListener('contextmenu', e => e.preventDefault());
+// タイトル・結果: ボタンやリンク以外ならどこを押しても開始
+for (const id of ['title', 'over']) {
+  $(id).addEventListener('pointerdown', e => {
+    if (e.target.closest('button, a')) return;
+    if (id === 'over' && performance.now() - overShownAt < 350) return;
+    e.preventDefault(); start();
+  });
+}
+window.addEventListener('keydown', e => {
+  if (e.code !== 'Space' && e.code !== 'Enter') return;
+  if (state === 'play') {
+    e.preventDefault();
+    if (!e.repeat) { wakeAudio(); press(); }
+    return;
+  }
+  const el = document.activeElement;
+  if (el && el !== $('retryBtn') && el !== $('startBtn') && el.matches('button, a')) return;   // 他のボタンはそのまま
+  if (state === 'over' && performance.now() - overShownAt < 350) { e.preventDefault(); return; }
+  e.preventDefault(); start();
+});
+window.addEventListener('keyup', e => { if (e.code === 'Space' || e.code === 'Enter') releaseHold(); });
+$('startBtn').addEventListener('click', start);
+$('retryBtn').addEventListener('click', start);
+$('copyBtn').addEventListener('click', () => {
+  const text = `${shareText()} 最高${rec.best}点 ${gameUrl()}`;
+  const msg = $('copyMsg');
+  const fallback = () => { msg.textContent = text; const r = document.createRange(); r.selectNodeContents(msg); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.style.userSelect = 'text'; };
+  try {
+    navigator.clipboard.writeText(text).then(() => { msg.textContent = 'コピーしました'; }, fallback);
+  } catch { fallback(); }
+});
+
+// タイトル背景用
+cup = makeCup(0); cup.x = 0; prevCup = null; resetPourState(); steam = []; parts = []; t = 0; shake = 0; cupsDone = 0; total = 0; perfects = 0;
+fillTitle();
+$('startBtn').focus({ preventScroll: true });
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
