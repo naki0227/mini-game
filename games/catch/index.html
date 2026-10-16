@@ -1,0 +1,1258 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ハンガーキャッチ</title>
+<meta name="description" content="部屋の奥からハンガーを投げて、手前のラックや物干し竿にカチッと引っ掛けるトリックショット。本物の3D物理で、決まれば友達が「わーっ！」。ログイン不要のブラウザゲーム。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ハンガーキャッチ">
+<meta property="og:description" content="ハンガーを投げて、手前の竿にカチッと引っ掛けろ。10本で何本掛かるか。">
+<meta property="og:url" content="https://asobi.enludus.com/games/catch/">
+<meta property="og:image" content="https://asobi.enludus.com/games/catch/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%99%8C%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+:root { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+/* 全画面 WebGL（夜の部屋）+ 2D の演出レイヤー + HUD + 下の調整つまみ。タイトル/結果は中央のカード1枚 */
+:root {
+  --night: #1b1a20;      /* 夜の部屋 */
+  --lamp: #e9a253;       /* スタンドライトの灯り */
+  --ink: #221f24;
+  --paper: #f6f0e4;      /* 白いシャツ */
+  --noren: #2f4256;      /* 夜の藍 */
+  --noren-ink: #f5efe2;
+  --accent: #d9622f;
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--night); color: var(--ink);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+#gl, #fx { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#fx { touch-action: none; cursor: grab; }
+#fx:active { cursor: grabbing; }
+
+.hud {
+  position: fixed; left: 0; right: 0; top: 0; pointer-events: none;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.pill {
+  background: var(--noren); color: var(--noren-ink);
+  border-radius: 6px; padding: 6px 12px 7px;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+  box-shadow: 0 2px 0 rgba(0,0,0,.35);
+}
+.pill .lab { font-size: 11px; letter-spacing: .12em; opacity: .75; display: block; }
+.pill .val { font-family: var(--font-display); font-size: 26px; }
+.pill .unit { font-size: 13px; margin-left: 2px; }
+.pill.right { text-align: right; background: var(--paper); color: var(--ink); }
+.pill.right .val { font-size: 20px; }
+
+/* 投げ方の調整（高さ・回転） */
+.ctrl {
+  position: fixed; left: 0; right: 0; bottom: 0;
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+  padding: 8px max(16px, env(safe-area-inset-left, 0px)) calc(env(safe-area-inset-bottom, 0px) + 10px) max(16px, env(safe-area-inset-right, 0px));
+  background: linear-gradient(to top, rgba(20,18,24,.82), rgba(20,18,24,0));
+  touch-action: none; max-width: 560px; margin-inline: auto;
+}
+.knob { display: grid; gap: 2px; color: var(--noren-ink); font-size: 12px; }
+.knob .row { display: flex; justify-content: space-between; align-items: baseline; }
+.knob b { font-family: var(--font-display); font-weight: 400; font-size: 15px; font-variant-numeric: tabular-nums; }
+.knob input { width: 100%; margin: 0; height: 30px; accent-color: var(--lamp); touch-action: none; cursor: pointer; }
+.knob input:focus-visible { outline: 2px solid var(--lamp); outline-offset: 2px; border-radius: 4px; }
+
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: center;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px;
+  background: rgba(20, 18, 24, .38);
+  touch-action: none; cursor: pointer;
+}
+.card {
+  width: min(360px, 100%); background: var(--paper); color: var(--ink);
+  border-radius: 10px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.45);
+  text-align: center; cursor: default;
+}
+.noren {
+  background: var(--noren); color: var(--noren-ink);
+  display: flex; gap: 3px;
+  padding-top: 18px;
+}
+.noren span {
+  flex: 1; background: var(--noren); border-bottom: 3px solid rgba(255,255,255,.08);
+  font-family: var(--font-display); font-size: 30px; line-height: 1; padding-block: 6px 16px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.2);
+}
+.noren.result span { font-size: 30px; }
+.noren span.w { flex: 3.2; }
+.body { padding: 20px 22px 22px; display: grid; gap: 14px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.7; text-wrap: balance; }
+.score { font-family: var(--font-display); font-size: 60px; line-height: 1; font-variant-numeric: tabular-nums; }
+.score small { font-size: 22px; margin-left: 4px; }
+.meta { display: flex; justify-content: center; gap: 6px 18px; font-size: 13px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.meta b { font-size: 16px; }
+.badge {
+  justify-self: center; background: var(--accent); color: #fff; font-weight: 700;
+  font-size: 12px; letter-spacing: .14em; padding: 3px 10px; border-radius: 99px;
+}
+.btns { display: grid; gap: 8px; }
+button {
+  font: inherit; font-weight: 700; font-size: 16px; border: 0; border-radius: 8px;
+  padding: 13px 16px; cursor: pointer;
+  background: var(--noren); color: var(--noren-ink); box-shadow: 0 3px 0 #18222d;
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 #18222d; }
+button:disabled { opacity: .6; cursor: progress; }
+a.xbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font-weight: 700; font-size: 16px; border-radius: 8px; padding: 13px 16px;
+  background: #0f1419; color: #fff; box-shadow: 0 3px 0 #000;
+}
+a.xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+a.xbtn:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+a.xbtn svg { width: 16px; height: 16px; fill: currentColor; }
+button.sub { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
+button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.how { font-size: 12px; opacity: .7; margin: 0; }
+.err { font-size: 13px; color: #b3361b; margin: 0; font-weight: 700; }
+.back { font-size: 13px; color: var(--ink); opacity: .75; }
+.back:hover { opacity: 1; }
+</style>
+</head>
+<body>
+
+<canvas id="gl" aria-hidden="true"></canvas>
+<canvas id="fx" aria-label="ハンガーキャッチのゲーム画面"></canvas>
+
+<div class="hud" id="hud" hidden>
+  <div class="pill"><span class="lab">掛かった</span><span class="val" id="hHung">0</span><span class="unit">/10本</span></div>
+  <div class="pill right"><span class="lab">スコア / 最高</span><span class="val" id="hScore">0点</span><br><span class="unit" id="hBest">最高 0点</span></div>
+</div>
+
+<div class="ctrl" id="ctrl" hidden>
+  <label class="knob"><span class="row"><span>高さ（角度）</span><b id="vPitch">17°</b></span><input type="range" id="pitch" min="0" max="45" step="1" value="17"></label>
+  <label class="knob"><span class="row"><span>回転</span><b id="vSpin">なし</b></span><input type="range" id="spin" min="0" max="30" step="1" value="0"></label>
+</div>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="noren" aria-hidden="true"><span>ハ</span><span>ン</span><span>ガ</span><span>ー</span><span class="w">キャッチ</span></div>
+    <div class="body">
+      <p class="lead">部屋の奥からハンガーを投げて、<br>手前の竿に<b>カギを引っ掛けろ</b>。<br>カギが竿の<b>ちょい上</b>を通るように。</p>
+      <div class="meta"><span>最高 <b id="tBest">0</b> 点</span><span>最多 <b id="tHung">0</b>/10本</span><span>連続 <b id="tStreak">0</b> 回</span></div>
+      <div class="btns"><button id="startBtn" disabled>よみこみ中…</button></div>
+      <p class="err" id="loadErr" hidden></p>
+      <p class="how">下へドラッグして狙い、離して投げる（キーボード: ←→ 向き・↑↓ 強さ・スペースで投げる）</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <div class="noren result" aria-hidden="true"><span>お</span><span>ひ</span><span>ら</span><span>き</span></div>
+    <div class="body">
+      <div class="badge" id="newRec" hidden>新記録</div>
+      <div class="score"><span id="oScore">0</span><small>点</small></div>
+      <div class="meta"><span><b id="oHung">0</b>/10本 掛かった</span><span>最多連続 <b id="oStreak">0</b></span><span>最高 <b id="oBest">0</b> 点</span></div>
+      <div class="btns">
+        <button id="retryBtn">もう一回</button>
+        <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Xでシェア</a>
+        <button class="sub" id="copyBtn">結果をコピー</button>
+      </div>
+      <p class="how" id="copyMsg">画面タップ・スペースでもう一回</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+const RAPIER_URL = 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/rapier.es.js';
+let THREE, RAPIER;
+try {
+  const [t, r] = await Promise.all([import(THREE_URL), import(RAPIER_URL)]);
+  THREE = t; RAPIER = r.default;
+  await RAPIER.init();
+} catch (e) {
+  $('startBtn').textContent = '読み込めませんでした';
+  $('loadErr').hidden = false;
+  $('loadErr').textContent = '3D/物理エンジンの読み込みに失敗しました。通信状況を確かめて、ページを再読み込みしてください。';
+  throw e;
+}
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FD = getComputedStyle(document.documentElement).getPropertyValue('--font-display');
+const FB = getComputedStyle(document.documentElement).getPropertyValue('--font-body');
+
+/* ---------- 記録（このブラウザだけ） ---------- */
+const KEY = 'catch:v1';
+const DEF = { best: 0, bestHung: 0, bestStreak: 0, plays: 0 };
+function load() { try { return Object.assign({ ...DEF }, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { return { ...DEF }; } }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch {} }
+let rec = load();
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+
+/* ---------- ベクトル・クォータニオン（物理側は three に頼らない） ---------- */
+const qaxis = (ax, ay, az, ang) => { const s = Math.sin(ang / 2); return { x: ax * s, y: ay * s, z: az * s, w: Math.cos(ang / 2) }; };
+function qFromTo(u, v) {
+  const d = u.x * v.x + u.y * v.y + u.z * v.z;
+  if (d < -0.99999) return { x: 1, y: 0, z: 0, w: 0 };
+  const q = { x: u.y * v.z - u.z * v.y, y: u.z * v.x - u.x * v.z, z: u.x * v.y - u.y * v.x, w: 1 + d };
+  const n = Math.hypot(q.x, q.y, q.z, q.w); return { x: q.x / n, y: q.y / n, z: q.z / n, w: q.w / n };
+}
+function qrot(q, v) {
+  const { x, y, z, w } = q;
+  const ix = w * v.x + y * v.z - z * v.y, iy = w * v.y + z * v.x - x * v.z, iz = w * v.z + x * v.y - y * v.x, iw = -x * v.x - y * v.y - z * v.z;
+  return { x: ix * w + iw * -x + iy * -z - iz * -y, y: iy * w + iw * -y + iz * -x - ix * -z, z: iz * w + iw * -z + ix * -y - iy * -x };
+}
+
+/* ---------- 針金ハンガーの形（ローカル: 面 = y-z、カギは +z 側へ巻く。原点 = 下の棒の中央） ---------- */
+const HG = { W: 0.2, NECK: 0.15, SHAFT: 0.08, CR: 0.032, TIP: 0.85, WR: 0.004 };
+function hangerPts() {
+  const { W, NECK, SHAFT, CR, TIP } = HG, top = NECK + SHAFT;
+  const hook = [], N = 10;
+  for (let i = N; i >= 0; i--) { const f = (Math.PI + TIP) * i / N; hook.push({ x: 0, y: top + CR * Math.sin(f), z: CR - CR * Math.cos(f) }); }
+  hook.push({ x: 0, y: NECK, z: 0 });
+  const body = [{ x: 0, y: NECK, z: 0 }, { x: 0, y: 0.012, z: -W }, { x: 0, y: 0, z: -W + 0.02 }, { x: 0, y: 0, z: W - 0.02 }, { x: 0, y: 0.012, z: W }, { x: 0, y: NECK, z: 0 }];
+  return { hook, body, curlC: { x: 0, y: top, z: CR } };
+}
+const HP = hangerPts();
+
+/* ---------- 部屋と掛ける場所（m。y=上、+z=手前のカメラ側） ---------- */
+const ROOM = { x0: -3, x1: 3, z0: -5, z1: 1.9, h: 2.5 };
+const FIX = {
+  rack: { kind: 'bar', name: 'ハンガーラック', x: 0, y: 1.52, z: 0, len: 0.9, r: 0.0125, bonus: 0 },
+  pole: { kind: 'bar', name: '室内物干し', x: -1.75, y: 1.72, z: 0.25, len: 1.5, r: 0.015, bonus: 20 },
+  peg:  { kind: 'peg', name: 'コート掛けのフック', x: 1.635, y: 1.74, z: 0.2, len: 0.13, r: 0.011, bonus: 60 },
+};
+// 1投ごとの立ち位置（投げる人）。だんだん遠く・斜めに
+const STAGES = [
+  { f: 'rack', tx: 0.0,   tz: -1.7, vlo: 3.15, vhi: 8.15 },
+  { f: 'rack', tx: 0.2,   tz: -2.1, vlo: 3.5,  vhi: 8.5 },
+  { f: 'pole', tx: -1.6,  tz: -2.1, vlo: 5.0,  vhi: 10.0 },
+  { f: 'rack', tx: -0.25, tz: -2.6, vlo: 3.9,  vhi: 8.9 },
+  { f: 'pole', tx: -1.95, tz: -2.8, vlo: 5.5,  vhi: 10.5 },
+  { f: 'peg',  tx: 1.6,   tz: -1.9, vlo: 5.2,  vhi: 10.2 },
+  { f: 'rack', tx: 0.35,  tz: -3.2, vlo: 4.7,  vhi: 9.7 },
+  { f: 'pole', tx: -1.5,  tz: -3.4, vlo: 6.2,  vhi: 11.2 },
+  { f: 'peg',  tx: 1.55,  tz: -2.7, vlo: 5.6,  vhi: 10.6 },
+  { f: 'rack', tx: 0.0,   tz: -3.9, vlo: 5.5,  vhi: 10.5 },
+];
+const TOTAL = STAGES.length;
+const RELEASE_Y = 1.28;
+function releasePoint(st) { return { x: st.tx, y: RELEASE_Y, z: st.tz + 0.3 }; }
+function aimPoint(st) {
+  const f = FIX[st.f];
+  if (f.kind === 'peg') return { x: f.x - 0.01, y: f.y, z: f.z };
+  return { x: clamp(st.tx, f.x - f.len / 2 + 0.12, f.x + f.len / 2 - 0.12), y: f.y, z: f.z };
+}
+const stageDist = st => { const a = aimPoint(st), r = releasePoint(st); return Math.hypot(a.x - r.x, a.z - r.z); };
+
+/* ---------- 物理の世界 ---------- */
+const PDT = 1 / 240;
+const MAT = { f: 0.45, e: 0.05, d: 2500 };
+function fixedBox(w, hx, hy, hz, x, y, z, f = 0.6, e = 0.15) {
+  const b = w.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+  w.createCollider(RAPIER.ColliderDesc.cuboid(hx, hy, hz).setTranslation(x, y, z).setFriction(f).setRestitution(e), b);
+}
+function fixedCyl(w, ax, len, r, x, y, z, f = 0.5, e = 0.1) {
+  // ax: 'x' | 'y' | 'z'
+  const q = ax === 'x' ? qaxis(0, 0, 1, Math.PI / 2) : ax === 'z' ? qaxis(1, 0, 0, Math.PI / 2) : { x: 0, y: 0, z: 0, w: 1 };
+  const b = w.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+  return w.createCollider(RAPIER.ColliderDesc.cylinder(len / 2, r).setTranslation(x, y, z).setRotation(q).setFriction(f).setRestitution(e), b);
+}
+function buildStatic(w) {
+  // 床・壁・天井
+  fixedBox(w, 4, 0.1, 5, 0, -0.1, -1.5, 0.6, 0.18);
+  fixedBox(w, 0.1, 2, 5, ROOM.x0 - 0.1, 1.25, -1.5);
+  fixedBox(w, 0.1, 2, 5, ROOM.x1 + 0.1, 1.25, -1.5);
+  fixedBox(w, 4, 2, 0.1, 0, 1.25, ROOM.z0 - 0.1);
+  fixedBox(w, 4, 2, 0.1, 0, 1.25, ROOM.z1 + 0.1);
+  fixedBox(w, 4, 0.1, 5, 0, ROOM.h + 0.1, -1.5);
+  // ソファ
+  fixedBox(w, 0.42, 0.22, 0.95, -2.55, 0.22, -3.2);
+  // ハンガーラック: 柱2本と足
+  const r = FIX.rack;
+  fixedCyl(w, 'x', r.len, r.r, r.x, r.y, r.z);
+  for (const s of [-1, 1]) {
+    fixedCyl(w, 'y', r.y + 0.03, 0.014, r.x + s * (r.len / 2 + 0.015), (r.y + 0.03) / 2, r.z);
+    fixedCyl(w, 'z', 0.5, 0.014, r.x + s * (r.len / 2 + 0.015), 0.03, r.z);
+  }
+  // 室内物干し: 竿と左右のスタンド
+  const p = FIX.pole;
+  fixedCyl(w, 'x', p.len, p.r, p.x, p.y, p.z);
+  for (const s of [-1, 1]) {
+    fixedCyl(w, 'y', p.y + 0.04, 0.016, p.x + s * (p.len / 2 + 0.02), (p.y + 0.04) / 2, p.z);
+    fixedCyl(w, 'z', 0.6, 0.016, p.x + s * (p.len / 2 + 0.02), 0.03, p.z);
+  }
+  fixedBox(w, 0.17, 0.3, 0.004, p.x - p.len / 2 + 0.2, p.y - 0.3, p.z, 0.8, 0.0);   // 干してあるタオル
+  // コート掛け: 柱・台・フック（一本だけ -x 向き、ほかは飾り）
+  const g = FIX.peg;
+  const px = g.x + g.len / 2 + 0.02;
+  fixedCyl(w, 'y', 1.9, 0.02, px, 0.95, g.z);
+  fixedCyl(w, 'y', 0.04, 0.2, px, 0.02, g.z);
+  fixedCyl(w, 'x', g.len, g.r, g.x, g.y, g.z);
+  const kb = w.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+  w.createCollider(RAPIER.ColliderDesc.ball(0.017).setTranslation(g.x - g.len / 2, g.y + 0.004, g.z).setFriction(0.5).setRestitution(0.1), kb);
+  fixedCyl(w, 'x', 0.12, 0.011, px + 0.08, g.y + 0.06, g.z);
+  fixedCyl(w, 'z', 0.12, 0.011, px, g.y - 0.08, g.z - 0.08);
+}
+function makeWorld() {
+  const w = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+  w.timestep = PDT;
+  w.integrationParameters.maxCcdSubsteps = 4;
+  buildStatic(w);
+  return w;
+}
+function addSegs(w, body, pts, r) {
+  for (let i = 0; i < pts.length - 1; i++) {
+    const a = pts[i], b = pts[i + 1], d = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z }, L = Math.hypot(d.x, d.y, d.z);
+    if (L < 1e-4) continue;
+    const q = qFromTo({ x: 0, y: 1, z: 0 }, { x: d.x / L, y: d.y / L, z: d.z / L });
+    w.createCollider(RAPIER.ColliderDesc.capsule(L / 2, r).setTranslation((a.x + b.x) / 2, (a.y + b.y) / 2, (a.z + b.z) / 2).setRotation(q)
+      .setFriction(MAT.f).setRestitution(MAT.e).setDensity(MAT.d), body);
+  }
+}
+function throwVectors(st, p) {
+  const from = releasePoint(st), a = aimPoint(st);
+  const yaw = Math.atan2(a.x - from.x, a.z - from.z) + p.yaw;
+  const dir = { x: Math.sin(yaw) * Math.cos(p.pitch), y: Math.sin(p.pitch), z: Math.cos(yaw) * Math.cos(p.pitch) };
+  const rot = qaxis(0, 1, 0, yaw);
+  const ax = qrot(rot, { x: 1, y: 0, z: 0 });      // 面の法線。+回転でカギが前へ倒れる
+  return { from, rot, lin: { x: dir.x * p.v, y: dir.y * p.v, z: dir.z * p.v }, ang: { x: ax.x * p.spin, y: ax.y * p.spin, z: ax.z * p.spin } };
+}
+function spawnHanger(w, st, p) {
+  const tv = throwVectors(st, p);
+  const d = RAPIER.RigidBodyDesc.dynamic().setTranslation(tv.from.x, tv.from.y, tv.from.z).setRotation(tv.rot)
+    .setLinvel(tv.lin.x, tv.lin.y, tv.lin.z).setAngvel(tv.ang).setCcdEnabled(true).setAngularDamping(0.05).setLinearDamping(0.02);
+  const b = w.createRigidBody(d);
+  addSegs(w, b, HP.hook, HG.WR); addSegs(w, b, HP.body, HG.WR);
+  return b;
+}
+// カギ（巻いた部分）の内側に竿の軸が入っているか — 実際の姿勢から判定するだけ
+function hookState(b, f) {
+  const t = b.translation(), r = b.rotation();
+  const cw = qrot(r, HP.curlC), c = { x: t.x + cw.x, y: t.y + cw.y, z: t.z + cw.z };
+  const d = Math.hypot(c.y - f.y, c.z - f.z);
+  return { inside: d < HG.CR * 1.1 && Math.abs(c.x - f.x) < f.len / 2 + 0.008, d, c };
+}
+function curlWorld(b) { const t = b.translation(), cw = qrot(b.rotation(), HP.curlC); return { x: t.x + cw.x, y: t.y + cw.y, z: t.z + cw.z }; }
+
+// 1投を最後までシミュレーション（テスト・デモ用。本番と同じ判定）
+const HOLD = 0.7;
+function judgeStep(h, f, dt) {
+  const hs = hookState(h.body, f);
+  if (hs.inside) { h.inT += dt; h.wasIn = true; if (h.firstIn < 0) h.firstIn = h.t; } else h.inT = 0;
+  const t = h.body.translation();
+  if (h.inT >= HOLD) return 'hang';
+  if (t.y < 0.3) { h.lowT += dt; if (h.lowT > 0.5) return 'miss'; } else h.lowT = 0;
+  if (h.t > 4.5) return 'miss';
+  return null;
+}
+function simulate(stIdx, p, world = null) {
+  const own = !world; const w = world || makeWorld();
+  const st = STAGES[stIdx], f = FIX[st.f];
+  const h = { body: spawnHanger(w, st, p), t: 0, inT: 0, lowT: 0, firstIn: -1, wasIn: false };
+  let res = null;
+  while (!res) { w.step(); h.t += PDT; res = judgeStep(h, f, PDT); }
+  if (own) w.free(); else w.removeRigidBody(h.body);
+  return res;
+}
+
+/* ---------- three.js ---------- */
+const glc = $('gl'), fxc = $('fx'), fx = fxc.getContext('2d');
+const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, powerPreference: 'high-performance' });
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#141318');
+scene.fog = new THREE.Fog('#141318', 6, 13);
+const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 30);
+let W = 0, H = 0, dpr = 1, safeB = 0, safeT = 0;
+function resize() {
+  W = innerWidth; H = innerHeight; dpr = Math.min(devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(Math.min(dpr, 1.75)); renderer.setSize(W, H, false);
+  fxc.width = Math.round(W * dpr); fxc.height = Math.round(H * dpr);
+  camera.aspect = W / H; camera.fov = W / H < 0.75 ? 64 : 52; camera.updateProjectionMatrix();
+  const cs = getComputedStyle(document.documentElement);
+  safeB = parseFloat(cs.paddingBottom) || 0; safeT = parseFloat(cs.paddingTop) || 0;
+}
+addEventListener('resize', resize); resize();
+
+function canvasTex(w, h, draw, repeat) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
+  t.anisotropy = 4;
+  return t;
+}
+const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
+
+// 光: 夜。スタンドライトと天井のペンダント、窓の青
+scene.add(new THREE.HemisphereLight('#8a92b8', '#3a2c22', 0.9));
+const lampLight = new THREE.PointLight('#ffb466', 9, 9, 1.3); lampLight.position.set(2.45, 1.55, -4.3); scene.add(lampLight);
+const pendLight = new THREE.PointLight('#ffd49a', 7, 9, 1.2); pendLight.position.set(0, 2.15, -1.6); scene.add(pendLight);
+const fillLight = new THREE.PointLight('#ffcf9a', 3.2, 5, 1.4); fillLight.position.set(0.3, 2.0, 1.2); scene.add(fillLight);
+
+function buildRoom() {
+  const g = new THREE.Group(); scene.add(g);
+  const RW = ROOM.x1 - ROOM.x0, RD = ROOM.z1 - ROOM.z0, cz = (ROOM.z0 + ROOM.z1) / 2;
+  // 床（フローリング）
+  const floorTex = canvasTex(512, 512, (c, w, h) => {
+    c.fillStyle = '#6b4a33'; c.fillRect(0, 0, w, h);
+    for (let i = 0; i < 8; i++) {
+      const x = i * 64;
+      c.fillStyle = ['#6f4d35', '#674630', '#73503a', '#634330'][i % 4]; c.fillRect(x, 0, 64, h);
+      c.fillStyle = 'rgba(0,0,0,.35)'; c.fillRect(x, 0, 2, h);
+      const cut = (i * 173) % h; c.fillRect(x, cut, 64, 2);
+      c.strokeStyle = 'rgba(30,18,10,.16)'; c.lineWidth = 1;
+      for (let k = 0; k < 6; k++) { c.beginPath(); c.moveTo(x + 8 + k * 9, 0); c.bezierCurveTo(x + 12 + k * 9, h * 0.3, x + 4 + k * 9, h * 0.7, x + 9 + k * 9, h); c.stroke(); }
+    }
+  }, [RW / 1.4, RD / 1.4]);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(RW, RD), lam('#ffffff', { map: floorTex }));
+  floor.rotation.x = -Math.PI / 2; floor.position.set(0, 0, cz); g.add(floor);
+  // ラグ
+  const rugTex = canvasTex(256, 384, (c, w, h) => {
+    c.fillStyle = '#7d3f30'; c.fillRect(0, 0, w, h);
+    c.strokeStyle = '#d4a467'; c.lineWidth = 6; c.strokeRect(14, 14, w - 28, h - 28);
+    c.lineWidth = 2; c.strokeRect(28, 28, w - 56, h - 56);
+    c.fillStyle = 'rgba(212,164,103,.5)';
+    for (let i = 0; i < 5; i++) { const y = 70 + i * 60; c.beginPath(); c.moveTo(w / 2, y - 18); c.lineTo(w / 2 + 26, y); c.lineTo(w / 2, y + 18); c.lineTo(w / 2 - 26, y); c.closePath(); c.fill(); }
+  });
+  const rug = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 3.0), lam('#ffffff', { map: rugTex }));
+  rug.rotation.x = -Math.PI / 2; rug.position.set(-0.3, 0.004, -2.5); g.add(rug);
+  // 壁
+  const wallTex = canvasTex(256, 256, (c, w, h) => {
+    c.fillStyle = '#b9ab98'; c.fillRect(0, 0, w, h);
+    c.fillStyle = 'rgba(255,255,255,.05)'; for (let x = 0; x < w; x += 32) c.fillRect(x, 0, 12, h);
+  }, [3, 1.2]);
+  const wallMat = lam('#ffffff', { map: wallTex });
+  const back = new THREE.Mesh(new THREE.PlaneGeometry(RW, ROOM.h), wallMat); back.position.set(0, ROOM.h / 2, ROOM.z0); g.add(back);
+  const front = new THREE.Mesh(new THREE.PlaneGeometry(RW, ROOM.h), wallMat); front.position.set(0, ROOM.h / 2, ROOM.z1); front.rotation.y = Math.PI; g.add(front);
+  for (const s of [-1, 1]) {
+    const sw = new THREE.Mesh(new THREE.PlaneGeometry(RD, ROOM.h), wallMat);
+    sw.position.set(s > 0 ? ROOM.x1 : ROOM.x0, ROOM.h / 2, cz); sw.rotation.y = -s * Math.PI / 2; g.add(sw);
+    // 幅木
+    const bb = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.08, RD), lam('#4a3628')); bb.position.set((s > 0 ? ROOM.x1 : ROOM.x0) - s * 0.01, 0.04, cz); g.add(bb);
+  }
+  const bbk = new THREE.Mesh(new THREE.BoxGeometry(RW, 0.08, 0.02), lam('#4a3628')); bbk.position.set(0, 0.04, ROOM.z0 + 0.01); g.add(bbk);
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(RW, RD), lam('#8c8378')); ceil.rotation.x = Math.PI / 2; ceil.position.set(0, ROOM.h, cz); g.add(ceil);
+  // 窓（夜の街）
+  const cityTex = canvasTex(512, 384, (c, w, h) => {
+    const sky = c.createLinearGradient(0, 0, 0, h); sky.addColorStop(0, '#0f1630'); sky.addColorStop(1, '#2b3560');
+    c.fillStyle = sky; c.fillRect(0, 0, w, h);
+    c.fillStyle = 'rgba(255,240,210,.8)'; c.beginPath(); c.arc(410, 70, 18, 0, Math.PI * 2); c.fill();
+    let x = 0, s = 7;
+    const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+    while (x < w) {
+      const bw = 40 + rnd() * 70, bh = 120 + rnd() * 200;
+      c.fillStyle = rnd() < 0.5 ? '#121831' : '#171e3b'; c.fillRect(x, h - bh, bw, bh);
+      for (let yy = h - bh + 10; yy < h - 8; yy += 16) for (let xx = x + 6; xx < x + bw - 8; xx += 12) if (rnd() < 0.3) { c.fillStyle = rnd() < 0.7 ? '#f3c77d' : '#cfe0ff'; c.fillRect(xx, yy, 6, 8); }
+      x += bw + 4;
+    }
+  });
+  const win = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 1.15), new THREE.MeshBasicMaterial({ map: cityTex, fog: false }));
+  win.position.set(-0.6, 1.45, ROOM.z0 + 0.02); g.add(win);
+  const frameMat = lam('#d8d0c2');
+  for (const [w, h, x, y] of [[1.6, 0.05, -0.6, 2.05], [1.6, 0.05, -0.6, 0.85], [0.05, 1.2, -1.38, 1.45], [0.05, 1.2, 0.18, 1.45], [0.03, 1.15, -0.6, 1.45]]) {
+    const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.04), frameMat); m.position.set(x, y, ROOM.z0 + 0.03); g.add(m);
+  }
+  // カーテン
+  const curTex = canvasTex(128, 256, (c, w, h) => {
+    c.fillStyle = '#5e6f63'; c.fillRect(0, 0, w, h);
+    for (let x = 0; x < w; x += 16) { const gr = c.createLinearGradient(x, 0, x + 16, 0); gr.addColorStop(0, 'rgba(0,0,0,.25)'); gr.addColorStop(0.5, 'rgba(255,255,255,.08)'); gr.addColorStop(1, 'rgba(0,0,0,.25)'); c.fillStyle = gr; c.fillRect(x, 0, 16, h); }
+  });
+  for (const x of [-1.62, 0.42]) { const cu = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 1.9), lam('#ffffff', { map: curTex })); cu.position.set(x, 1.15, ROOM.z0 + 0.06); g.add(cu); }
+  // ソファ（左の壁ぞい）
+  const sofaMat = lam('#365a60'), sofaDark = lam('#2a474c');
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.44, 1.9), sofaMat); seat.position.set(-2.55, 0.22, -3.2); g.add(seat);
+  const sback = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.5, 1.9), sofaDark); sback.position.set(-2.87, 0.66, -3.2); g.add(sback);
+  for (const z of [-4.12, -2.28]) { const arm = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.24, 0.18), sofaDark); arm.position.set(-2.55, 0.56, z); g.add(arm); }
+  for (const z of [-3.65, -2.75]) { const cu = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.1, 0.84), lam('#41686e')); cu.position.set(-2.5, 0.49, z); g.add(cu); }
+  // スタンドライト（右奥）
+  const lampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 1.5, 8), lam('#2b2b2e')); lampPole.position.set(2.45, 0.75, -4.3); g.add(lampPole);
+  const lampBase = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.04, 16), lam('#2b2b2e')); lampBase.position.set(2.45, 0.02, -4.3); g.add(lampBase);
+  const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.24, 0.3, 20, 1, true), new THREE.MeshBasicMaterial({ color: '#f6c27a', side: THREE.DoubleSide })); shade.position.set(2.45, 1.6, -4.3); g.add(shade);
+  // 天井のペンダント
+  const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 0.3, 4), lam('#222')); cord.position.set(0, ROOM.h - 0.15, -1.6); g.add(cord);
+  const pend = new THREE.Mesh(new THREE.SphereGeometry(0.2, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2), new THREE.MeshBasicMaterial({ color: '#f3d3a0', side: THREE.DoubleSide })); pend.position.set(0, ROOM.h - 0.3, -1.6); pend.scale.set(1, 0.6, 1); g.add(pend);
+  // 観葉植物（右の壁ぞい）
+  const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.12, 0.32, 14), lam('#8a5a3a')); pot.position.set(2.65, 0.16, -1.3); g.add(pot);
+  const leafMat = lam('#3d5e3f');
+  for (let i = 0; i < 7; i++) { const lf = new THREE.Mesh(new THREE.SphereGeometry(0.17, 8, 6), leafMat); lf.position.set(2.65 + Math.cos(i * 2.1) * 0.13, 0.5 + (i % 3) * 0.17, -1.3 + Math.sin(i * 2.1) * 0.13); lf.scale.set(1, 1.3, 0.8); g.add(lf); }
+  // 壁の額
+  const art = canvasTex(160, 120, (c, w, h) => { c.fillStyle = '#e9e1d2'; c.fillRect(0, 0, w, h); c.fillStyle = '#d9622f'; c.beginPath(); c.arc(60, 64, 30, 0, Math.PI * 2); c.fill(); c.fillStyle = '#2f4256'; c.fillRect(92, 26, 40, 70); c.strokeStyle = '#3a2a1e'; c.lineWidth = 10; c.strokeRect(0, 0, w, h); });
+  const fr = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.6), lam('#ffffff', { map: art })); fr.position.set(ROOM.x0 + 0.02, 1.55, -3.2); fr.rotation.y = Math.PI / 2; g.add(fr);
+}
+buildRoom();
+
+// 掛ける場所（見た目）
+const chrome = new THREE.MeshPhongMaterial({ color: '#cfd3d6', specular: '#ffffff', shininess: 90 });
+const blackMetal = new THREE.MeshPhongMaterial({ color: '#2a2b2e', specular: '#666', shininess: 40 });
+function cylMesh(ax, len, r, x, y, z, mat, seg = 12) {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, len, seg), mat);
+  if (ax === 'x') m.rotation.z = Math.PI / 2; if (ax === 'z') m.rotation.x = Math.PI / 2;
+  m.position.set(x, y, z); scene.add(m); return m;
+}
+const hl = {};
+function buildFixtures() {
+  const r = FIX.rack;
+  hl.rack = cylMesh('x', r.len + 0.04, r.r, r.x, r.y, r.z, chrome.clone(), 16);
+  for (const s of [-1, 1]) {
+    cylMesh('y', r.y + 0.03, 0.014, r.x + s * (r.len / 2 + 0.015), (r.y + 0.03) / 2, r.z, chrome);
+    cylMesh('z', 0.5, 0.014, r.x + s * (r.len / 2 + 0.015), 0.03, r.z, chrome);
+    for (const dz of [-0.25, 0.25]) { const wh = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 6), blackMetal); wh.position.set(r.x + s * (r.len / 2 + 0.015), 0.025, r.z + dz); scene.add(wh); }
+  }
+  const p = FIX.pole;
+  hl.pole = cylMesh('x', p.len + 0.06, p.r, p.x, p.y, p.z, new THREE.MeshPhongMaterial({ color: '#7fb1b0', specular: '#ffffff', shininess: 70 }), 16);
+  for (const s of [-1, 1]) {
+    cylMesh('y', p.y + 0.04, 0.016, p.x + s * (p.len / 2 + 0.02), (p.y + 0.04) / 2, p.z, chrome);
+    cylMesh('z', 0.6, 0.016, p.x + s * (p.len / 2 + 0.02), 0.03, p.z, chrome);
+  }
+  // 干してあるタオル（物干しの左端）
+  const towel = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.6), lam('#e9e2d4', { side: THREE.DoubleSide })); towel.position.set(p.x - p.len / 2 + 0.2, p.y - 0.3, p.z); scene.add(towel);
+  const stripe = new THREE.Mesh(new THREE.PlaneGeometry(0.34, 0.05), lam('#d9622f', { side: THREE.DoubleSide })); stripe.position.set(p.x - p.len / 2 + 0.2, p.y - 0.5, p.z + 0.002); scene.add(stripe);
+  const g = FIX.peg, px = g.x + g.len / 2 + 0.02, wood = lam('#8a5c3b');
+  cylMesh('y', 1.9, 0.02, px, 0.95, g.z, wood);
+  cylMesh('y', 0.04, 0.2, px, 0.02, g.z, wood, 20);
+  hl.peg = cylMesh('x', g.len, g.r, g.x, g.y, g.z, new THREE.MeshPhongMaterial({ color: '#d4a75a', specular: '#fff3c8', shininess: 80 }));
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.017, 12, 8), hl.peg.material); knob.position.set(g.x - g.len / 2, g.y + 0.004, g.z); scene.add(knob);
+  cylMesh('x', 0.12, 0.011, px + 0.08, g.y + 0.06, g.z, hl.peg.material);
+  cylMesh('z', 0.12, 0.011, px, g.y - 0.08, g.z - 0.08, hl.peg.material);
+  const top = new THREE.Mesh(new THREE.SphereGeometry(0.035, 12, 8), wood); top.position.set(px, 1.92, g.z); scene.add(top);
+  // 掛けてある帽子
+  const hat = new THREE.Mesh(new THREE.SphereGeometry(0.11, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2), lam('#c9a24a')); hat.position.set(px + 0.13, g.y + 0.02, g.z); scene.add(hat);
+}
+buildFixtures();
+
+// 簡易の丸い影
+const blobTex = canvasTex(64, 64, (c, w, h) => { const gr = c.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(0,0,0,.55)'); gr.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = gr; c.fillRect(0, 0, w, h); });
+const blobMat = new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false });
+function makeBlob(sx, sz) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), blobMat.clone()); m.rotation.x = -Math.PI / 2; m.scale.set(sx, sz, 1); m.position.y = 0.006; m.renderOrder = 1; scene.add(m); return m; }
+for (const [x, z, sx, sz] of [[FIX.rack.x, FIX.rack.z, 1.2, 0.5], [FIX.pole.x, FIX.pole.z, 1.8, 0.5], [FIX.peg.x + 0.08, FIX.peg.z, 0.5, 0.5], [-2.55, -3.2, 1.2, 2.2]]) { const b = makeBlob(sx, sz); b.position.x = x; b.position.z = z; }
+
+// ハンガーの見た目
+const hangerCurve = (() => {
+  const pts = [...HP.hook, ...HP.body.slice(1)].map(p => new THREE.Vector3(p.x, p.y, p.z));
+  return new THREE.CatmullRomCurve3(pts, false, 'centripetal', 0.2);
+})();
+const hangerGeo = new THREE.TubeGeometry(hangerCurve, 220, 0.0042, 6, false);
+const HCOLORS = ['#c9ced3', '#c9ced3', '#d9a65e', '#e48a97', '#7cb7d9', '#f0d36a', '#c9ced3'];
+function hangerMat(i) { return new THREE.MeshPhongMaterial({ color: HCOLORS[i % HCOLORS.length], specular: '#ffffff', shininess: 70 }); }
+
+/* ---------- 人（シルエットのビルボード） ---------- */
+class Person {
+  constructor(o) {
+    Object.assign(this, { up: 0, jump: 0, mood: 'idle', moodT: 0, seed: Math.random() * 10, arm: 0, armUp: 0, level: 0.5 }, o);
+    this.cv = document.createElement('canvas'); this.cv.width = 256; this.cv.height = 512; this.g = this.cv.getContext('2d');
+    this.tex = new THREE.CanvasTexture(this.cv); this.tex.colorSpace = THREE.SRGBColorSpace;
+    this.mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 2), new THREE.MeshBasicMaterial({ map: this.tex, transparent: true, depthWrite: false, fog: true }));
+    this.mesh.position.set(this.x, this.base || 0, this.z); this.mesh.geometry.translate(0, 1, 0); this.mesh.renderOrder = 2;
+    scene.add(this.mesh);
+    this.blob = makeBlob(0.6, 0.35); this.blob.position.set(this.x, 0.006, this.z);
+    this.key = '';
+  }
+  setMood(m, dur, level = 0.5) { this.mood = m; this.moodT = dur; this.level = level; }
+  update(dt, tt) {
+    if (this.moodT > 0) { this.moodT -= dt; if (this.moodT <= 0) this.mood = 'idle'; }
+    const wantUp = this.mood === 'cheer' ? 1 : this.mood === 'groan' ? 0.25 : 0;
+    this.up += (wantUp - this.up) * Math.min(1, dt * 9);
+    this.jump = this.mood === 'cheer' && this.up > 0.7 ? Math.abs(Math.sin(tt * 9 + this.seed)) * (reduceMotion ? 0.02 : 0.05 + this.level * 0.07) : 0;
+    this.mesh.position.x = this.x; this.mesh.position.z = this.z;
+    this.blob.position.x = this.x; this.blob.position.z = this.z;
+    // カメラの方を向く（y軸まわりだけ）
+    this.mesh.rotation.y = Math.atan2(camera.position.x - this.x, camera.position.z - this.z);
+    const key = [this.up.toFixed(2), this.jump.toFixed(2), this.mood, this.arm.toFixed(2), this.armUp.toFixed(2), this.mood === 'cheer' ? Math.round(tt * 12) : 0].join();
+    if (key !== this.key) { this.key = key; this.draw(tt); this.tex.needsUpdate = true; }
+  }
+  draw(tt) {
+    const g = this.g; g.clearRect(0, 0, 256, 512);
+    g.save(); g.translate(128, 512); g.scale(256, -256);
+    const sit = this.type === 'sofa' ? 1 - this.up : this.type === 'floor' ? 1 - this.up : 0;
+    const hipStand = 0.93, hipSit = this.type === 'floor' ? 0.16 : 0.5;
+    const hip = lerp(hipStand, hipSit, sit) + this.jump;
+    const sh = hip + 0.5, head = sh + 0.2, s = this.wide || 1;
+    const J = {
+      sL: { x: -0.18 * s, y: sh }, sR: { x: 0.18 * s, y: sh }, hL: { x: -0.12 * s, y: hip }, hR: { x: 0.12 * s, y: hip },
+    };
+    const feetY = this.jump;
+    const kneeY = lerp(hip * 0.52, hip + 0.03, sit * (this.type === 'floor' ? 0.6 : 1));
+    J.kL = { x: lerp(-0.11, -0.2, sit), y: kneeY }; J.kR = { x: lerp(0.11, 0.2, sit), y: kneeY };
+    J.fL = { x: lerp(-0.13, this.type === 'floor' ? 0.06 : -0.17, sit), y: this.type === 'floor' ? lerp(feetY, 0.06, sit) : feetY + 0.02 };
+    J.fR = { x: lerp(0.13, this.type === 'floor' ? -0.06 : 0.17, sit), y: this.type === 'floor' ? lerp(feetY, 0.06, sit) : feetY + 0.02 };
+    // 手の位置
+    let aL, aR;
+    const wig = Math.sin(tt * 14 + this.seed) * 0.05;
+    if (this.mood === 'cheer') { aL = { x: -0.36 - wig, y: head + 0.36 + wig }; aR = { x: 0.36 + wig, y: head + 0.34 - wig }; }
+    else if (this.mood === 'groan') { aL = { x: -0.14, y: head + 0.08 }; aR = { x: 0.14, y: head + 0.08 }; }
+    else if (this.phone) { aL = { x: -0.04, y: sh + 0.05 }; aR = { x: 0.04, y: sh + 0.05 }; }
+    else { aL = { x: -0.25, y: hip + (sit ? 0.06 : -0.05) }; aR = { x: 0.25, y: hip + (sit ? 0.06 : -0.05) }; }
+    if (this.thrower) {
+      // 投げる手（画面左側）: 構えで上げて、離すと前へ振り下ろす
+      const k = this.arm, up = this.armUp;
+      if (this.mood !== 'cheer' && this.mood !== 'groan') aL = { x: lerp(-0.27, -0.42, up) + k * 0.2, y: lerp(hip + 0.02, head + 0.18, up) - k * 0.35 };
+    }
+    const elbow = (a, b, side) => ({ x: (a.x + b.x) / 2 + side * 0.07, y: (a.y + b.y) / 2 - 0.05 });
+    const shape = (col, off) => {
+      g.save(); g.translate(off, 0);
+      g.strokeStyle = col; g.fillStyle = col; g.lineCap = 'round'; g.lineJoin = 'round';
+      const limb = (a, b, c, w) => { g.lineWidth = w; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.lineTo(c.x, c.y); g.stroke(); };
+      limb(J.hL, J.kL, J.fL, 0.14); limb(J.hR, J.kR, J.fR, 0.14);
+      g.beginPath(); g.moveTo(J.sL.x, J.sL.y); g.lineTo(J.sR.x, J.sR.y); g.lineTo(J.hR.x + 0.03, J.hR.y - 0.03); g.lineTo(J.hL.x - 0.03, J.hL.y - 0.03); g.closePath(); g.fill();
+      g.lineWidth = 0.08; g.stroke();
+      limb(J.sL, elbow(J.sL, aL, -1), aL, 0.085); limb(J.sR, elbow(J.sR, aR, 1), aR, 0.085);
+      g.lineWidth = 0.09; g.beginPath(); g.moveTo(0, sh); g.lineTo(0, head - 0.05); g.stroke();
+      g.beginPath(); g.ellipse(0, head + 0.03, 0.1, 0.12, 0, 0, Math.PI * 2); g.fill();
+      if (this.hair === 1) { g.beginPath(); g.arc(0.02, head + 0.16, 0.05, 0, Math.PI * 2); g.fill(); }
+      if (this.hair === 2) { g.beginPath(); g.ellipse(0, head + 0.09, 0.13, 0.04, 0, 0, Math.PI * 2); g.fill(); }
+      if (this.hair === 3) { g.beginPath(); g.ellipse(0, head - 0.02, 0.13, 0.16, 0, 0, Math.PI * 2); g.fill(); }
+      if (this.phone) { g.fillRect(-0.04, sh + 0.04, 0.08, 0.15); }
+      g.restore();
+    };
+    shape('rgba(233,162,83,.85)', 0.014);
+    shape('#141217', 0);
+    if (this.phone) { g.fillStyle = '#ff5a4a'; g.beginPath(); g.arc(0.02, sh + 0.16, 0.008, 0, Math.PI * 2); g.fill(); }
+    g.restore();
+  }
+}
+const friends = [
+  new Person({ type: 'sofa', x: -2.42, z: -3.65, hair: 3 }),
+  new Person({ type: 'sofa', x: -2.42, z: -2.8, hair: 0, wide: 1.1 }),
+  new Person({ type: 'stand', x: 1.55, z: -4.2, hair: 2, phone: true }),
+  new Person({ type: 'floor', x: 2.35, z: -2.5, hair: 1 }),
+];
+const thrower = new Person({ type: 'stand', x: 0, z: -2, hair: 0, thrower: true });
+
+/* ---------- ゲーム状態 ---------- */
+let world = null, hangers = [], heldMesh = null;
+let state = 'loading';      // loading | title | play | over
+let phase = 'aim';          // aim | fly | after
+let n = 0, hung = 0, score = 0, streak = 0, bestStreakG = 0, phaseT = 0, tt = 0, ts = 1, slowT = 0;
+let cur = null, flying = null, results = [], floats = [], pops = [], confetti = [], drag = null, kb = null, overShownAt = 0, ghost = null, lastWhy = '';
+const camGoal = { p: new THREE.Vector3(), l: new THREE.Vector3() }, camNow = { p: new THREE.Vector3(), l: new THREE.Vector3(), ready: false };
+
+function stageCam(st) {
+  const a = aimPoint(st), r = releasePoint(st);
+  const d = new THREE.Vector3(a.x - r.x, 0, a.z - r.z).normalize();
+  const side = new THREE.Vector3(d.z, 0, -d.x);   // 右側（カメラから見て）
+  const sideSign = st.f === 'pole' ? -1 : 1;
+  const p = new THREE.Vector3(a.x, a.y, a.z).addScaledVector(d, 1.45).addScaledVector(side, -0.5 * sideSign).add(new THREE.Vector3(0, 0.42, 0));
+  p.z = Math.min(p.z, ROOM.z1 - 0.15);
+  const l = new THREE.Vector3(lerp(a.x, r.x, 0.42), 1.12, lerp(a.z, r.z, 0.42));
+  return { p, l };
+}
+function overviewCam() { return { p: new THREE.Vector3(0.6, 2.1, 1.75), l: new THREE.Vector3(-0.4, 0.9, -1.6) }; }
+function setCam(c, snap) { camGoal.p.copy(c.p); camGoal.l.copy(c.l); if (snap || !camNow.ready) { camNow.p.copy(c.p); camNow.l.copy(c.l); camNow.ready = true; } }
+
+function resetWorld() {
+  if (world) world.free();
+  for (const h of hangers) scene.remove(h.mesh), scene.remove(h.blob);
+  hangers = []; world = makeWorld(); flying = null;
+}
+function newGame() {
+  resetWorld();
+  n = 0; hung = 0; score = 0; streak = 0; bestStreakG = 0; results = []; floats = []; pops = []; confetti = []; ghost = null; slowT = 0; ts = 1;
+  for (const f of friends) f.setMood('idle', 0);
+  beginStage(true);
+  updateHud();
+}
+function beginStage(snap) {
+  cur = STAGES[n]; phase = 'aim'; phaseT = 0; drag = null; kb = null;
+  thrower.x = cur.tx; thrower.z = cur.tz; thrower.arm = 0; thrower.armUp = 0; thrower.setMood('idle', 0);
+  setCam(stageCam(cur), snap);
+  for (const k of Object.keys(hl)) hl[k].material.emissive?.set(k === cur.f ? '#5a3c12' : '#000000');
+  showHeld(true);
+}
+function showHeld(on) {
+  if (!heldMesh) { heldMesh = new THREE.Mesh(hangerGeo, hangerMat(0)); scene.add(heldMesh); }
+  heldMesh.visible = on;
+  if (on) heldMesh.material.color.set(HCOLORS[n % HCOLORS.length]);
+}
+
+/* ---------- 狙い ---------- */
+const YAW_MAX = 0.22;
+function aimParams() {
+  const pitch = +$('pitch').value * Math.PI / 180, spinVal = +$('spin').value;
+  let p = null, yawK = 0;
+  if (drag) {
+    const L = dragLen(), dx = drag.x - drag.x0, dy = drag.y - drag.y0;
+    if (dy < 8 && Math.abs(dx) < 8) return null;
+    p = clamp(dy / L, 0, 1); yawK = clamp(dx / L, -1, 1);
+  } else if (kb) { p = kb.p; yawK = kb.yaw; }
+  else return null;
+  return { p, yaw: yawK * YAW_MAX, pitch, v: lerp(cur.vlo, cur.vhi, p), spin: spinVal };
+}
+const dragLen = () => clamp(Math.min(W, H) * 0.42, 140, 230);
+function throwNow(a) {
+  if (state !== 'play' || phase !== 'aim' || !a || a.p < 0.05) return;
+  drag = null; kb = null;
+  const body = spawnHanger(world, cur, a);
+  const mesh = new THREE.Mesh(hangerGeo, hangerMat(n)); scene.add(mesh);
+  const blob = makeBlob(0.42, 0.14);
+  flying = { body, mesh, blob, t: 0, inT: 0, lowT: 0, firstIn: -1, wasIn: false, touched: false, maxZ: -9, path: [], spinAcc: 0, lastV: null, cool: 0, slowDone: false, stage: n, params: a };
+  hangers.push(flying);
+  showHeld(false);
+  phase = 'fly'; phaseT = 0;
+  thrower.arm = 1;
+  sWhoosh(0, a.p);
+}
+
+/* ---------- 1ステップ（物理 240Hz） ---------- */
+function physStep() {
+  world.step();
+  const h = flying;
+  if (!h) return;
+  h.t += PDT;
+  const b = h.body, f = FIX[STAGES[h.stage].f];
+  const v = b.linvel();
+  // 衝突音: 速度の急変
+  if (h.lastV) {
+    const dv = Math.hypot(v.x - h.lastV.x, v.y - h.lastV.y + 9.81 * PDT, v.z - h.lastV.z);
+    h.cool -= PDT;
+    if (dv > 0.5 && h.cool <= 0) {
+      h.cool = 0.07;
+      const y = b.translation().y;
+      if (y < 0.35) { h.floored = true; sKashan(Math.min(1, dv / 3)); } else { if (!h.floored) h.touched = true; sClank(Math.min(1, dv / 4)); }
+    }
+  }
+  h.lastV = { x: v.x, y: v.y, z: v.z };
+  if (!h.touched && !h.floored) { const av = b.angvel(); h.spinAcc += Math.hypot(av.x, av.y, av.z) * PDT; }
+  const c = curlWorld(b); if (!h.floored) h.maxZ = Math.max(h.maxZ, c.z);
+  if (!h.touched && !h.floored && h.path.length < 400 && Math.round(h.t / PDT) % 4 === 0) h.path.push(c);
+  const wasIn = h.inT > 0;
+  const res = judgeStep(h, f, PDT);
+  if (!wasIn && h.inT > 0) {
+    if (!h.slowDone && state === 'play') { h.slowDone = true; slowT = reduceMotion ? 0.12 : 0.24; sHook(); }
+  }
+  if (res) resolve(res);
+}
+function resolve(res) {
+  const h = flying; flying = null;
+  const st = STAGES[h.stage], f = FIX[st.f];
+  ghost = { stage: h.stage, path: h.path };
+  if (state !== 'play') { phase = 'after'; phaseT = 0; return; }
+  if (res === 'hang') {
+    hung++; streak++; bestStreakG = Math.max(bestStreakG, streak);
+    const tags = [];
+    const dist = stageDist(st);
+    const rot = h.spinAcc / (Math.PI * 2);
+    let pts = 100;
+    if (f.bonus) { tags.push([f.kind === 'peg' ? '細いフック' : '長い竿', f.bonus]); pts += f.bonus; }
+    if (dist > 2.6) { const b = Math.round((dist - 2.6) * 25) * 2; tags.push([`${dist.toFixed(1)}m`, b]); pts += b; }
+    if (rot >= 0.75) { const b = 40 * Math.round(rot); tags.push([`${Math.max(1, Math.round(rot))}回転`, b]); pts += b; }
+    if (streak >= 2) { const b = Math.min(200, (streak - 1) * 30); tags.push([`${streak}連続`, b]); pts += b; }
+    score += pts;
+    results.push({ ok: true });
+    const lvl = clamp(0.35 + streak * 0.13 + (f.bonus ? 0.1 : 0), 0, 1);
+    celebrate(pts, tags, lvl);
+  } else {
+    streak = 0; results.push({ ok: false });
+    const why = h.wasIn ? 'すべり落ちた…' : h.touched ? '弾かれた…' : h.maxZ < f.z - 0.05 ? '届かない…' : '外れた…';
+    lastWhy = why;
+    pops.push({ text: why, sub: '', life: 0, dur: 1.2, size: 30, color: '#f5efe2', miss: true });
+    sGroan();
+    for (const fr of friends) fr.setMood('groan', 0.9);
+    thrower.setMood('groan', 0.9);
+  }
+  phase = 'after'; phaseT = 0;
+  updateHud();
+}
+function celebrate(pts, tags, lvl) {
+  pops.push({ text: 'かかった！', sub: `+${pts}`, tags, life: 0, dur: 1.7, size: 50, color: '#ffe7b8' });
+  sCheer(lvl);
+  for (const fr of friends) fr.setMood('cheer', 1.4 + lvl, lvl);
+  thrower.setMood('cheer', 1.4 + lvl, lvl);
+  const nC = reduceMotion ? 18 : Math.round(40 + lvl * 60);
+  const cols = ['#f0c94f', '#e5703e', '#6fb6aa', '#f4efe3', '#e07d92', '#8fb4e6'];
+  for (let i = 0; i < nC; i++) confetti.push({ x: rand(0, W), y: rand(-H * 0.4, -10), vx: rand(-40, 40), vy: rand(60, 160), r: rand(0, 6), vr: rand(-8, 8), s: rand(5, 9), c: cols[i % cols.length], life: rand(2, 3.2) });
+  if (navigator.vibrate) try { navigator.vibrate([12, 40, 18]); } catch {}
+}
+function nextStage() {
+  n++;
+  if (n >= TOTAL) { showOver(); return; }
+  beginStage(false);
+}
+
+/* ---------- メインのステップ（60Hz） ---------- */
+let physAcc = 0;
+function step(dt) {
+  // スロー
+  if (slowT > 0) { slowT -= dt; ts = 0.25; } else ts += (1 - ts) * Math.min(1, dt * 6);
+  const sdt = dt * ts;
+  tt += dt; phaseT += dt;
+  if (world) {
+    physAcc += sdt;
+    let k = 0;
+    while (physAcc >= PDT && k < 8) { physStep(); physAcc -= PDT; k++; }
+    if (k >= 8) physAcc = 0;
+  }
+  if (state === 'play') {
+    if (phase === 'after' && phaseT > (results.at(-1)?.ok ? 2.0 : 1.4)) nextStage();
+  } else if (state === 'title') demoStep(dt);
+  thrower.arm = Math.max(0, thrower.arm - dt * 2.2);
+  const a = state === 'play' && phase === 'aim' ? aimParams() : null;
+  const wantUp = a ? 0.4 + a.p * 0.6 : 0;
+  thrower.armUp += (wantUp - thrower.armUp) * Math.min(1, dt * 12);
+  thrower.update(dt, tt);
+  for (const f of friends) f.update(dt, tt);
+  for (const p of pops) p.life += dt;
+  pops = pops.filter(p => p.life < p.dur);
+  for (const c of confetti) { c.vy += 30 * dt; c.vx *= 0.99; c.x += (c.vx + Math.sin(tt * 3 + c.r * 7) * 30) * dt; c.y += c.vy * dt; c.r += c.vr * dt; c.life -= dt; }
+  confetti = confetti.filter(c => c.life > 0 && c.y < H + 20);
+}
+
+// タイトル背景のデモ: 見つけておいた「掛かる投げ方」で時々投げる
+let demoT = 1.5, demoParams = null;
+function demoStep(dt) {
+  demoT += dt;
+  if (phase === 'aim' && demoT > 2.2 && demoParams) {
+    demoT = 0;
+    if (hangers.length > 5) resetWorld();
+    const body = spawnHanger(world, cur, demoParams);
+    const mesh = new THREE.Mesh(hangerGeo, hangerMat(hangers.length + 1)); scene.add(mesh);
+    flying = { body, mesh, blob: makeBlob(0.42, 0.14), t: 0, inT: 0, lowT: 0, firstIn: -1, wasIn: false, touched: false, maxZ: -9, path: [], spinAcc: 0, lastV: null, cool: 0, slowDone: true, stage: 0, params: demoParams };
+    hangers.push(flying); showHeld(false); thrower.arm = 1; phase = 'fly';
+  }
+  if (phase === 'after' && phaseT > 0.6) { phase = 'aim'; showHeld(true); }
+}
+
+/* ---------- 描画 ---------- */
+const tmpV = new THREE.Vector3();
+function project(p) { tmpV.set(p.x, p.y, p.z).project(camera); return { x: (tmpV.x + 1) / 2 * W, y: (1 - tmpV.y) / 2 * H, front: tmpV.z < 1 }; }
+function syncMeshes() {
+  for (const h of hangers) {
+    const t = h.body.translation(), r = h.body.rotation();
+    h.mesh.position.set(t.x, t.y, t.z); h.mesh.quaternion.set(r.x, r.y, r.z, r.w);
+    const c = curlWorld(h.body);
+    h.blob.position.set(t.x, 0.006, t.z + 0.0);
+    const hh = clamp(1 - c.y / 2.6, 0.25, 1);
+    h.blob.material.opacity = hh; h.blob.scale.set(0.45 * (1.4 - hh * 0.4), 0.16 * (1.4 - hh * 0.4), 1);
+  }
+  if (heldMesh && heldMesh.visible && cur) {
+    const r = releasePoint(cur), a = aimPoint(cur);
+    const yaw = Math.atan2(a.x - r.x, a.z - r.z);
+    const up = thrower.armUp;
+    heldMesh.position.set(r.x - Math.cos(yaw) * 0.12, r.y - 0.12 + up * 0.35, r.z - 0.18 - up * 0.1);
+    heldMesh.rotation.set(-0.15 * up, yaw, 0);
+  }
+}
+let lastRender = performance.now();
+function render() {
+  const now = performance.now(), rdt = Math.min(0.1, (now - lastRender) / 1000); lastRender = now;
+  const ck = 1 - Math.exp(-rdt * (state === 'over' ? 2 : 5));
+  camNow.p.lerp(camGoal.p, ck); camNow.l.lerp(camGoal.l, ck);
+  camera.position.copy(camNow.p); camera.lookAt(camNow.l);
+  if (slowT > 0 && !reduceMotion) { camera.position.lerp(camNow.l, 0.04); }
+  syncMeshes();
+  renderer.render(scene, camera);
+  drawFx();
+}
+function drawFx() {
+  fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fx.clearRect(0, 0, W, H);
+  // スロー中のふち
+  if (ts < 0.9) {
+    const g = fx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75);
+    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(10,8,12,${(1 - ts) * 0.6})`);
+    fx.fillStyle = g; fx.fillRect(0, 0, W, H);
+  }
+  if (state === 'play') { drawStageInfo(); drawAim(); }
+  // 紙吹雪
+  for (const c of confetti) {
+    fx.save(); fx.translate(c.x, c.y); fx.rotate(c.r); fx.globalAlpha = Math.min(1, c.life);
+    fx.fillStyle = c.c; fx.fillRect(-c.s / 2, -c.s * 0.3, c.s, c.s * 0.6 * Math.abs(Math.cos(c.r * 1.7)) + 1);
+    fx.restore();
+  }
+  fx.globalAlpha = 1;
+  // 大きな文字
+  fx.textAlign = 'center';
+  for (const p of pops) {
+    const k = clamp(p.life / 0.16, 0, 1), out = clamp((p.dur - p.life) / 0.3, 0, 1);
+    const s = (p.miss ? 1 : 1 + (1 - k) * 0.6) * Math.min(1, W / 380 + 0.1);
+    const y = H * (p.miss ? 0.3 : 0.27);
+    fx.save(); fx.translate(W / 2, y); fx.scale(s, s); fx.globalAlpha = Math.min(k, out);
+    fx.font = `${p.size}px ${FD}`; fx.lineJoin = 'round';
+    if (!p.miss) { fx.fillStyle = 'rgba(217,98,47,.95)'; fx.fillText(p.text, 3, 4); }
+    fx.lineWidth = 8; fx.strokeStyle = '#1d1a20'; fx.strokeText(p.text, 0, 0);
+    fx.fillStyle = p.color; fx.fillText(p.text, 0, 0);
+    if (p.sub) {
+      fx.font = `26px ${FD}`; fx.lineWidth = 6; fx.strokeText(p.sub, 0, 40); fx.fillStyle = '#f5efe2'; fx.fillText(p.sub, 0, 40);
+    }
+    if (p.tags && p.tags.length) {
+      fx.font = `700 14px ${FB}`;
+      const line = p.tags.map(([a, b]) => `${a} +${b}`).join('　');
+      fx.lineWidth = 4; fx.strokeText(line, 0, 66); fx.fillStyle = '#ffe7b8'; fx.fillText(line, 0, 66);
+    }
+    fx.restore();
+  }
+  // わーっ！の吹き出し
+  for (const f of [...friends, thrower]) {
+    if (f.mood !== 'cheer' || f.up < 0.5) continue;
+    const p = project({ x: f.x, y: 2.05 + f.jump, z: f.z });
+    if (!p.front) continue;
+    fx.globalAlpha = clamp(f.moodT * 2, 0, 1);
+    fx.font = `${16 + f.level * 6}px ${FD}`; fx.lineWidth = 5; fx.strokeStyle = '#1d1a20'; fx.fillStyle = '#ffe7b8';
+    const tx = f.thrower ? 'ナイス！' : 'わーっ！';
+    fx.strokeText(tx, p.x, p.y); fx.fillText(tx, p.x, p.y);
+  }
+  fx.globalAlpha = 1; fx.textAlign = 'start';
+}
+function drawStageInfo() {
+  const st = cur, f = FIX[st.f];
+  const top = safeT + 84;
+  fx.textAlign = 'center'; fx.font = `700 13px ${FB}`;
+  fx.lineWidth = 4; fx.strokeStyle = 'rgba(20,18,24,.85)'; fx.fillStyle = '#f5efe2';
+  const line = `${Math.min(n + 1, TOTAL)}本目・${f.name}　${stageDist(st).toFixed(1)}m`;
+  fx.strokeText(line, W / 2, top); fx.fillText(line, W / 2, top);
+  if (streak >= 2) { fx.font = `15px ${FD}`; fx.fillStyle = '#ffd08a'; fx.strokeText(`${streak}連続中`, W / 2, top + 20); fx.fillText(`${streak}連続中`, W / 2, top + 20); }
+  // 目標の矢印
+  if (phase === 'aim') {
+    const a = aimPoint(st), p = project({ x: a.x, y: a.y + 0.2, z: a.z });
+    if (p.front) {
+      const bob = Math.sin(tt * 5) * 4;
+      fx.fillStyle = '#e9a253';
+      fx.beginPath(); fx.moveTo(p.x - 9, p.y - 14 + bob); fx.lineTo(p.x + 9, p.y - 14 + bob); fx.lineTo(p.x, p.y - 2 + bob); fx.closePath(); fx.fill();
+    }
+  }
+  fx.textAlign = 'start';
+}
+function drawAim() {
+  if (phase !== 'aim') return;
+  const a = aimParams();
+  if (!a) {
+    if (n < 2) {
+      const k = (tt * 0.7) % 1;
+      const x = W / 2, y0 = H * 0.5;
+      fx.globalAlpha = Math.sin(k * Math.PI);
+      fx.fillStyle = 'rgba(245,239,226,.85)'; fx.beginPath(); fx.arc(x, y0 + k * 110, 12, 0, Math.PI * 2); fx.fill();
+      fx.globalAlpha = 1;
+      fx.textAlign = 'center'; fx.font = `17px ${FD}`; fx.lineWidth = 5; fx.strokeStyle = 'rgba(20,18,24,.9)'; fx.fillStyle = '#f5efe2';
+      const ty = y0 + 150;
+      fx.strokeText('どこでも押して、下へ引いて離す', x, ty); fx.fillText('どこでも押して、下へ引いて離す', x, ty);
+      fx.font = `700 13px ${FB}`;
+      fx.strokeText('カギが竿の“ちょい上”を通るように', x, ty + 24); fx.fillText('カギが竿の“ちょい上”を通るように', x, ty + 24);
+      fx.textAlign = 'start';
+    }
+    return;
+  }
+  // 予測線（カギの通り道。先へ行くほど短く見せる）
+  const tv = throwVectors(cur, a);
+  const c0 = qrot(tv.rot, HP.curlC);
+  const start = { x: tv.from.x + c0.x, y: tv.from.y + c0.y, z: tv.from.z + c0.z };
+  const fz = FIX[cur.f].z;
+  const tReach = (fz - start.z) / Math.max(0.5, tv.lin.z);
+  const show = n < 2 ? 1.15 : n < 4 ? 0.6 : n < 7 ? 0.42 : 0.3;
+  const N = 26;
+  for (let i = 1; i <= N; i++) {
+    const t = tReach * show * i / N;
+    const p = { x: start.x + tv.lin.x * t, y: start.y + tv.lin.y * t - 4.905 * t * t, z: start.z + tv.lin.z * t };
+    const s = project(p); if (!s.front) continue;
+    fx.globalAlpha = 0.95 * (1 - i / (N + 4)) + 0.1;
+    fx.fillStyle = a.p >= 0.995 ? '#e5703e' : '#f5efe2';
+    fx.beginPath(); fx.arc(s.x, s.y, 2.6 + i * 0.12, 0, Math.PI * 2); fx.fill();
+  }
+  fx.globalAlpha = 1;
+  // 引っ張り
+  if (drag) {
+    fx.strokeStyle = 'rgba(245,239,226,.45)'; fx.lineWidth = 2; fx.setLineDash([5, 6]);
+    const L = dragLen(), dx = drag.x - drag.x0, dy = drag.y - drag.y0, len = Math.hypot(dx, dy), kk = Math.min(1, L * 1.2 / Math.max(1, len));
+    fx.beginPath(); fx.moveTo(drag.x0, drag.y0); fx.lineTo(drag.x0 + dx * kk, drag.y0 + dy * kk); fx.stroke(); fx.setLineDash([]);
+    fx.fillStyle = 'rgba(245,239,226,.35)'; fx.beginPath(); fx.arc(drag.x0, drag.y0, 7, 0, Math.PI * 2); fx.fill();
+  }
+  // 強さメーター
+  const mx = 16 + Math.max(0, (W - 400) / 2) * 0, my = H - safeB - 96;
+  const mw = Math.min(160, W * 0.4);
+  fx.fillStyle = 'rgba(20,18,24,.65)'; fx.fillRect(mx, my, mw, 10);
+  fx.fillStyle = a.p >= 0.995 ? '#e5703e' : '#e9a253'; fx.fillRect(mx, my, mw * a.p, 10);
+  fx.font = `700 12px ${FB}`; fx.fillStyle = '#f5efe2'; fx.lineWidth = 3; fx.strokeStyle = 'rgba(20,18,24,.8)';
+  const lab = `強さ ${Math.round(a.p * 100)}%　向き ${a.yaw > 0.01 ? '右' : a.yaw < -0.01 ? '左' : 'まっすぐ'}`;
+  fx.strokeText(lab, mx, my - 6); fx.fillText(lab, mx, my - 6);
+}
+
+/* ---------- 結果 ---------- */
+function showOver() {
+  state = 'over'; phase = 'over';
+  rec.plays++;
+  const isNew = score > rec.best;
+  if (isNew) rec.best = score;
+  if (hung > rec.bestHung) rec.bestHung = hung;
+  if (bestStreakG > rec.bestStreak) rec.bestStreak = bestStreakG;
+  save();
+  $('oScore').textContent = score; $('oHung').textContent = hung; $('oStreak').textContent = bestStreakG; $('oBest').textContent = rec.best;
+  $('newRec').hidden = !(isNew && score > 0);
+  $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({
+    text: `${shareText()}${isNew && score > 0 ? ' 自己ベスト更新！' : ''}\n`,
+    url: gameUrl(), hashtags: 'ハンガーキャッチ'
+  });
+  $('copyMsg').textContent = '画面タップ・スペースでもう一回';
+  $('over').hidden = false; $('hud').hidden = true; $('ctrl').hidden = true;
+  overShownAt = performance.now();
+  showHeld(false);
+  setCam(overviewCam(), false);
+  $('retryBtn').focus({ preventScroll: true });
+}
+const shareText = () => `🙌ハンガーキャッチ ${hung}/${TOTAL}本 掛かった${hung >= 5 ? '（わーっ！）' : ''} ${score}点${bestStreakG >= 3 ? `・${bestStreakG}連続` : ''}`;
+
+/* ---------- シェア ---------- */
+// 公開先のURL。ローカルで開いたときもこれをシェアする
+const PUBLIC_URL = 'https://asobi.enludus.com/games/catch/';
+function gameUrl() {
+  try {
+    if (/^https?:$/.test(location.protocol) && location.hostname !== 'localhost') return location.origin + location.pathname;
+  } catch {}
+  return PUBLIC_URL;
+}
+
+/* ---------- HUD ---------- */
+function updateHud() {
+  $('hHung').textContent = hung;
+  $('hScore').textContent = score + '点';
+  $('hBest').textContent = `最高 ${rec.best}点`;
+}
+function fillTitle() { $('tBest').textContent = rec.best; $('tHung').textContent = rec.bestHung; $('tStreak').textContent = rec.bestStreak; }
+function updateKnobs() {
+  $('vPitch').textContent = `${$('pitch').value}°`;
+  const s = +$('spin').value;
+  $('vSpin').textContent = s === 0 ? 'なし' : s < 10 ? `弱 ${s}` : s < 20 ? `中 ${s}` : `強 ${s}`;
+}
+$('pitch').addEventListener('input', updateKnobs); $('spin').addEventListener('input', updateKnobs);
+
+/* ---------- 音 ---------- */
+let ac = null, master = null, noiseBuf = null;
+function wakeAudio() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      master = ac.createDynamicsCompressor(); master.threshold.value = -14; master.ratio.value = 6; master.connect(ac.destination);
+      const len = ac.sampleRate * 1.2; noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (ac.state === 'suspended') ac.resume();
+  } catch {}
+}
+const live = () => ac && state === 'play';
+function tone(freq, at, dur, vol, type = 'sine', dest = master) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at);
+  g.gain.setValueAtTime(vol, at); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  o.connect(g).connect(dest); o.start(at); o.stop(at + dur + 0.02);
+}
+function noise(at, dur, vol, type, freq, q = 1, dest = master) {
+  const s = ac.createBufferSource(); s.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const g = ac.createGain(); g.gain.setValueAtTime(vol, at); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  s.connect(f).connect(g).connect(dest); s.start(at, Math.random() * 0.5); s.stop(at + dur + 0.02);
+  return { f, g };
+}
+function sWhoosh(pan, p) {
+  try {
+    if (!live()) return;
+    const n0 = ac.currentTime, { f } = noise(n0, 0.3, 0.12 + p * 0.1, 'bandpass', 500, 1.2);
+    f.frequency.exponentialRampToValueAtTime(1600 + p * 1200, n0 + 0.25);
+  } catch {}
+}
+function sClank(k) {
+  try {
+    if (!live()) return;
+    const n0 = ac.currentTime, v = 0.03 + k * 0.08;
+    tone(1850 * rand(0.95, 1.05), n0, 0.09, v, 'triangle'); tone(2960 * rand(0.95, 1.05), n0, 0.14, v * 0.6); tone(4100, n0, 0.08, v * 0.3);
+    noise(n0, 0.03, v * 0.8, 'highpass', 3000);
+  } catch {}
+}
+function sKashan(k) {
+  try {
+    if (!live()) return;
+    const n0 = ac.currentTime, v = 0.05 + k * 0.12;
+    for (const [dt, a] of [[0, 1], [0.07, 0.55], [0.13, 0.35]]) {
+      noise(n0 + dt, 0.12, v * a, 'highpass', 2200);
+      for (const fr of [2350, 3720, 5180]) tone(fr * rand(0.96, 1.04), n0 + dt, 0.22, v * a * 0.25, 'sine');
+    }
+  } catch {}
+}
+function sHook() {
+  try { if (!live()) return; const n0 = ac.currentTime; tone(2400, n0, 0.04, 0.12, 'square'); tone(1200, n0, 0.12, 0.1, 'triangle'); tone(420, n0, 0.16, 0.12); } catch {}
+}
+// 歓声: のこぎり波の「声」をたくさん重ねて、母音「あ」のフォルマントに通す
+function sCheer(level) {
+  try {
+    if (!live()) return;
+    const n0 = ac.currentTime + 0.02, dur = 0.8 + level * 0.8;
+    const out = ac.createGain(); out.gain.value = 0.55 + level * 0.5; out.connect(master);
+    const bus = ac.createGain();
+    for (const [fa, fb, q, gv] of [[420, 820, 5, 1], [800, 1250, 6, 0.7], [2300, 2700, 8, 0.22]]) {
+      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = q;
+      bp.frequency.setValueAtTime(fa, n0); bp.frequency.linearRampToValueAtTime(fb, n0 + 0.16);
+      const gg = ac.createGain(); gg.gain.value = gv; bus.connect(bp).connect(gg).connect(out);
+    }
+    const voices = Math.round(6 + level * 10);
+    for (let i = 0; i < voices; i++) {
+      const o = ac.createOscillator(); o.type = 'sawtooth';
+      const f0 = Math.random() < 0.5 ? rand(140, 230) : rand(250, 420), st = n0 + rand(0, 0.14);
+      o.frequency.setValueAtTime(f0 * 0.82, st); o.frequency.exponentialRampToValueAtTime(f0 * 1.08, st + 0.22); o.frequency.exponentialRampToValueAtTime(f0 * 0.9, st + dur);
+      const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = rand(4.5, 7.5); lg.gain.value = f0 * 0.03; lfo.connect(lg).connect(o.frequency);
+      const g = ac.createGain(), v = 0.12 / Math.sqrt(voices);
+      g.gain.setValueAtTime(0.0001, st); g.gain.exponentialRampToValueAtTime(v, st + 0.08); g.gain.setValueAtTime(v, st + dur * 0.5); g.gain.exponentialRampToValueAtTime(0.0001, st + dur + rand(0.1, 0.4));
+      o.connect(g).connect(bus); o.start(st); lfo.start(st); o.stop(st + dur + 0.5); lfo.stop(st + dur + 0.5);
+    }
+    const s = ac.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+    const nb = ac.createBiquadFilter(); nb.type = 'bandpass'; nb.frequency.value = 1500; nb.Q.value = 0.7;
+    const ng = ac.createGain(); ng.gain.setValueAtTime(0.0001, n0); ng.gain.exponentialRampToValueAtTime(0.06 + level * 0.08, n0 + 0.1); ng.gain.exponentialRampToValueAtTime(0.0001, n0 + dur + 0.5);
+    s.connect(nb).connect(ng).connect(out); s.start(n0); s.stop(n0 + dur + 0.6);
+    const claps = Math.round(4 + level * 14);
+    for (let i = 0; i < claps; i++) noise(n0 + 0.25 + rand(0, dur), 0.035, 0.12, 'highpass', 1100);
+  } catch {}
+}
+function sGroan() {
+  try {
+    if (!live()) return;
+    const n0 = ac.currentTime + 0.02;
+    const out = ac.createGain(); out.gain.value = 0.5; out.connect(master);
+    const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 4; bp.frequency.setValueAtTime(750, n0); bp.frequency.linearRampToValueAtTime(480, n0 + 0.6);
+    bp.connect(out);
+    for (let i = 0; i < 5; i++) {
+      const o = ac.createOscillator(); o.type = 'sawtooth'; const f0 = rand(150, 300), st = n0 + rand(0, 0.08);
+      o.frequency.setValueAtTime(f0, st); o.frequency.exponentialRampToValueAtTime(f0 * 0.72, st + 0.7);
+      const g = ac.createGain(); g.gain.setValueAtTime(0.0001, st); g.gain.exponentialRampToValueAtTime(0.05, st + 0.06); g.gain.exponentialRampToValueAtTime(0.0001, st + 0.75);
+      o.connect(g).connect(bp); o.start(st); o.stop(st + 0.8);
+    }
+  } catch {}
+}
+
+/* ---------- ループ ---------- */
+let acc = 0, lastTs = performance.now();
+function frame(ts2) {
+  acc += Math.min(100, ts2 - lastTs); lastTs = ts2;
+  let k = 0;
+  while (acc >= 1000 / 60 && k < 4) { step(1 / 60); acc -= 1000 / 60; k++; }
+  if (k >= 4) acc = 0;
+  render();
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 入力 ---------- */
+function start() {
+  wakeAudio(); state = 'play'; newGame();
+  $('title').hidden = true; $('over').hidden = true; $('hud').hidden = false; $('ctrl').hidden = false;
+}
+fxc.addEventListener('pointerdown', e => {
+  e.preventDefault(); wakeAudio();
+  if (state !== 'play') return;
+  if (phase === 'after') { if (phaseT < 0.5) return; nextStage(); if (state !== 'play') return; }
+  if (phase !== 'aim') return;
+  try { fxc.setPointerCapture(e.pointerId); } catch {}
+  drag = { x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, id: e.pointerId }; kb = null;
+});
+addEventListener('pointermove', e => { if (drag && e.pointerId === drag.id) { drag.x = e.clientX; drag.y = e.clientY; } });
+addEventListener('pointerup', e => { if (drag && e.pointerId === drag.id) { const a = aimParams(); drag = null; if (a) throwNow(a); } });
+addEventListener('pointercancel', () => { drag = null; });
+fxc.addEventListener('contextmenu', e => e.preventDefault());
+for (const id of ['title', 'over']) {
+  $(id).addEventListener('pointerdown', e => {
+    if (e.target.closest('button, a') || state === 'loading') return;
+    if (id === 'over' && performance.now() - overShownAt < 400) return;
+    e.preventDefault(); start();
+  });
+}
+addEventListener('keydown', e => {
+  if (state === 'play') {
+    if (e.target.matches && e.target.matches('input')) { if (e.code !== 'Space' && e.code !== 'Enter') return; }
+    const keys = { ArrowLeft: [-0.08, 0], ArrowRight: [0.08, 0], ArrowUp: [0, 0.03], ArrowDown: [0, -0.03] };
+    if (keys[e.code]) {
+      e.preventDefault();
+      if (phase !== 'aim') return;
+      if (!kb) kb = { p: 0.55, yaw: 0 };
+      kb.yaw = clamp(kb.yaw + keys[e.code][0], -1, 1); kb.p = clamp(kb.p + keys[e.code][1], 0.05, 1);
+      return;
+    }
+    if (e.code === 'Space' || e.code === 'Enter') {
+      e.preventDefault(); wakeAudio();
+      if (e.repeat) return;
+      if (phase === 'after' && phaseT > 0.5) { nextStage(); return; }
+      if (phase === 'aim') { if (!kb) { kb = { p: 0.55, yaw: 0 }; return; } const a = aimParams(); throwNow(a); }
+    }
+    return;
+  }
+  if (e.code !== 'Space' && e.code !== 'Enter') return;
+  if (state === 'loading') return;
+  const el = document.activeElement;
+  if (el && el !== $('retryBtn') && el !== $('startBtn') && el.matches('button, a')) return;
+  if (state === 'over' && performance.now() - overShownAt < 400) { e.preventDefault(); return; }
+  e.preventDefault(); start();
+});
+$('startBtn').addEventListener('click', start);
+$('retryBtn').addEventListener('click', start);
+$('copyBtn').addEventListener('click', () => {
+  const text = `${shareText()} 最高${rec.best}点 ${gameUrl()}`;
+  const msg = $('copyMsg');
+  const fallback = () => { msg.textContent = text; const r = document.createRange(); r.selectNodeContents(msg); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.style.userSelect = 'text'; };
+  try { navigator.clipboard.writeText(text).then(() => { msg.textContent = 'コピーしました'; }, fallback); } catch { fallback(); }
+});
+
+/* ---------- 調整用（#debug のときだけ） ---------- */
+if (location.hash === '#debug') {
+  window.__catch = {
+    info: () => ({ state, phase, n, hung, score, streak, flying: !!flying, hangers: hangers.length, demo: demoParams }),
+    sim: (i, p) => simulate(i, p),
+    // ステージ i の (強さ p, 高さ°) 格子で成功率を出す
+    sweep(i, { spin = 0, yaw = 0, pitches = [8, 12, 17, 22, 28, 34, 40], steps = 41 } = {}) {
+      const st = STAGES[i], out = { stage: i, rows: [], hits: 0, total: 0 };
+      for (const deg of pitches) {
+        let line = '';
+        for (let k = 0; k < steps; k++) {
+          const p = k / (steps - 1);
+          const r = simulate(i, { yaw, pitch: deg * Math.PI / 180, v: lerp(st.vlo, st.vhi, p), spin });
+          line += r === 'hang' ? '#' : '.'; out.total++; if (r === 'hang') out.hits++;
+        }
+        out.rows.push(`${String(deg).padStart(2)}° ${line}`);
+      }
+      return out;
+    },
+    throwWith: (p, yawK = 0, pitchDeg = null, spin = null) => {
+      if (pitchDeg != null) $('pitch').value = pitchDeg; if (spin != null) $('spin').value = spin; updateKnobs();
+      const st = STAGES[n];
+      throwNow({ p, yaw: yawK * YAW_MAX, pitch: +$('pitch').value * Math.PI / 180, v: lerp(st.vlo, st.vhi, p), spin: +$('spin').value });
+    },
+    skip: () => { if (phase === 'after') nextStage(); },
+  };
+}
+
+/* ---------- はじめ ---------- */
+world = makeWorld();
+cur = STAGES[0];
+// デモ用に「掛かる投げ方」をひとつ見つけておく
+{
+  const st = STAGES[0];
+  for (let k = 0; k < 60 && !demoParams; k++) {
+    const p = { yaw: 0, pitch: 17 * Math.PI / 180, v: lerp(st.vlo, st.vhi, 0.35 + (k % 30) / 60), spin: 0 };
+    if (simulate(0, p) === 'hang') demoParams = p;
+  }
+}
+beginStage(true);
+state = 'title';
+fillTitle(); updateKnobs();
+$('startBtn').disabled = false; $('startBtn').textContent = 'ハンガーを持つ';
+$('startBtn').focus({ preventScroll: true });
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>
