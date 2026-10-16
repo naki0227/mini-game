@@ -1,0 +1,946 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ハンコ押し</title>
+<meta name="description" content="机の上を流れてくる書類に、タップでハンコをポン。押印欄のど真ん中に押せるか。60秒で何枚さばけるか競う、ログイン不要のワンタップゲーム。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ハンコ押し">
+<meta property="og:description" content="流れてくる書類の押印欄に、タップでハンコをポン。60秒で何枚さばける？">
+<meta property="og:url" content="https://asobi.enludus.com/games/hanko/">
+<meta property="og:image" content="https://asobi.enludus.com/games/hanko/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%94%B4%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+:root { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+/* 全画面 canvas（事務机とデスクマット）+ 左上に HUD、タイトル/結果は中央のカード1枚 */
+:root {
+  --mat: #2f5a45;        /* 緑のデスクマット */
+  --steel: #c4c6bd;      /* スチール机 */
+  --ink: #23252a;
+  --paper: #fbfaf3;      /* 書類の紙 */
+  --noren: #a3291f;      /* 朱肉色ののれん */
+  --noren-ink: #f8efe2;
+  --accent: #2f5a45;
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--mat); color: var(--ink);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: pointer; }
+
+.hud {
+  position: fixed; left: 0; right: 0; top: 0; pointer-events: none;
+  display: flex; justify-content: flex-start; align-items: flex-start; gap: 8px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.pill {
+  background: var(--noren); color: var(--noren-ink);
+  border-radius: 6px; padding: 6px 12px 7px;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+  box-shadow: 0 2px 0 rgba(0,0,0,.3);
+  transition: background-color .15s;
+}
+.pill.hit { background: #1d1f22; }
+.pill .lab { font-size: 11px; letter-spacing: .12em; opacity: .75; display: block; }
+.pill .val { font-family: var(--font-display); font-size: 26px; }
+.pill .unit { font-size: 13px; margin-left: 2px; }
+.pill.time { min-width: 86px; }
+.pill.pts { background: var(--paper); color: var(--ink); }
+.pill.pts .val { font-size: 20px; }
+
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: center;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px;
+  background: rgba(16, 32, 24, .38);
+  touch-action: none; cursor: pointer;
+}
+.card {
+  width: min(360px, 100%); background: var(--paper); color: var(--ink);
+  border-radius: 10px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.35);
+  text-align: center; cursor: default;
+}
+.noren {
+  background: var(--noren); color: var(--noren-ink);
+  display: flex; gap: 3px;
+  padding-top: 18px;
+}
+.noren span {
+  flex: 1; background: var(--noren); border-bottom: 3px solid rgba(255,255,255,.08);
+  font-family: var(--font-display); font-size: 32px; line-height: 1; padding-block: 6px 16px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.2);
+}
+.noren.result span { font-size: 30px; }
+.body { padding: 20px 22px 22px; display: grid; gap: 14px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.7; text-wrap: balance; }
+.lead b { color: var(--noren); }
+.score { font-family: var(--font-display); font-size: 60px; line-height: 1; font-variant-numeric: tabular-nums; }
+.score small { font-size: 22px; margin-left: 4px; }
+.meta { display: flex; justify-content: center; gap: 6px 18px; font-size: 13px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.meta b { font-size: 16px; }
+.badge {
+  justify-self: center; background: var(--accent); color: #fff; font-weight: 700;
+  font-size: 12px; letter-spacing: .14em; padding: 3px 10px; border-radius: 99px;
+}
+.btns { display: grid; gap: 8px; }
+button {
+  font: inherit; font-weight: 700; font-size: 16px; border: 0; border-radius: 8px;
+  padding: 13px 16px; cursor: pointer;
+  background: var(--noren); color: var(--noren-ink); box-shadow: 0 3px 0 #5e140e;
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 #5e140e; }
+a.xbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font-weight: 700; font-size: 16px; border-radius: 8px; padding: 13px 16px;
+  background: #0f1419; color: #fff; box-shadow: 0 3px 0 #000;
+}
+a.xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+a.xbtn:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+a.xbtn svg { width: 16px; height: 16px; fill: currentColor; }
+button.sub { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
+button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.how { font-size: 12px; opacity: .7; margin: 0; }
+#oDetail { white-space: pre-line; line-height: 1.6; }
+.back { font-size: 13px; color: var(--ink); opacity: .75; }
+.back:hover { opacity: 1; }
+</style>
+</head>
+<body>
+
+<canvas id="c" aria-label="ハンコ押しのゲーム画面"></canvas>
+
+<div class="hud" id="hud" hidden>
+  <div class="pill time" id="hTimePill"><span class="lab">定時まで</span><span class="val" id="hTime">60</span><span class="unit">秒</span></div>
+  <div class="pill pts"><span class="lab">得点</span><span class="val" id="hScore">0点</span><br><span class="unit" id="hBest">最高 0点</span></div>
+</div>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="noren" aria-hidden="true"><span>ハ</span><span>ン</span><span>コ</span><span>押</span><span>し</span></div>
+    <div class="body">
+      <p class="lead">書類が次々すべってくる。<br>押印欄がハンコの影に重なった瞬間にタップ。<br><b>ど真ん中</b>なら「美しい」。定時（60秒）まで押しまくれ。</p>
+      <div class="meta"><span>最高 <b id="tBest">0</b> 点</span><span>最多 <b id="tDocs">0</b> 枚</span><span>最高 <b id="tCombo">0</b> コンボ</span></div>
+      <div class="btns"><button id="startBtn">始業する</button></div>
+      <p class="how">画面タップ・クリック・スペースキーで押す／赤字の書類は押さない</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <div class="noren result" aria-hidden="true"><span>定</span><span>時</span><span>で</span><span>す</span></div>
+    <div class="body">
+      <div class="badge" id="newRec" hidden>新記録</div>
+      <div class="score"><span id="oScore">0</span><small>点</small></div>
+      <div class="meta"><span>処理 <b id="oDocs">0</b> 枚</span><span>美しい <b id="oPerfect">0</b> 回</span><span>最高 <b id="oCombo">0</b> コンボ</span></div>
+      <p class="how" id="oDetail"></p>
+      <div class="btns">
+        <button id="retryBtn">もう一日</button>
+        <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Xでシェア</a>
+        <button class="sub" id="copyBtn">結果をコピー</button>
+      </div>
+      <p class="how" id="copyMsg">画面タップ・スペースでもう一日</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const cvs = $('c'), ctx = cvs.getContext('2d');
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FD = getComputedStyle(document.documentElement).getPropertyValue('--font-display');
+const FB = getComputedStyle(document.documentElement).getPropertyValue('--font-body');
+try { document.fonts && document.fonts.load(`40px ${FD}`, '承認済検印確受領理了'); } catch {}
+
+/* ---------- 記録（このブラウザだけ） ---------- */
+const KEY = 'hanko:v1';
+const DEF = { best: 0, bestDocs: 0, bestStamps: 0, bestCombo: 0, bestPerfect: 0, plays: 0 };
+function load() { try { return Object.assign({ ...DEF }, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { return { ...DEF }; } }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch {} }
+let rec = load();
+
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+function rng(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+/* ---------- 書類の種類（押印欄は左から並ぶ。右側ほど先に回ってくる） ---------- */
+const TYPES = [
+  { title: '稟議書',     cells: ['部長', '課長', '担当'], stamp: '承認', style: 'ringi' },
+  { title: '経費精算書', cells: ['経理', '担当'],         stamp: '済',   style: 'ringi' },
+  { title: '請求書',     cells: ['検印'],                 stamp: '検印', style: 'invoice' },
+  { title: '見積書',     cells: ['確認'],                 stamp: '確認', style: 'invoice' },
+  { title: '納品書',     cells: ['受領'],                 stamp: '受領', style: 'invoice' },
+  { title: '回覧板',     cells: ['3班', '2班', '1班'],    stamp: '済',   style: 'kairan' },
+  { title: '婚姻届',     cells: ['受理'],                 stamp: '受理', style: 'konin', ink: '#7a4a22', rule: 'rgba(122,74,34,.75)' },
+  { title: '休暇届',     cells: ['課長', '係長'],         stamp: '承認', style: 'plain' },
+  { title: '出張申請書', cells: ['部長', '課長'],         stamp: '承認', style: 'plain' },
+  { title: '始末書',     cells: ['確認'],                 stamp: '確認', style: 'plain' },
+  { title: '残業申請書', cells: ['課長'],                 stamp: '承認', style: 'plain' },
+];
+const BAD = ['回収', '差戻し', '見本', '期限切れ'];
+const CW = 66;                  // 押印欄の一マス
+const DOC_W = 230, DOC_TOP = -95, DOC_H = 300;   // 書類（押印欄の中心が y=0）
+const STAMP_R = 19;             // 印影の半径
+const GOOD_PX = 16;             // これより外は枠からはみ出す
+const LATE_PX = 21;             // これを過ぎたら見逃し
+
+/* ---------- 印影（かすれ・にじみ） ---------- */
+function makeInk(text, q) {
+  const S = 128, c = document.createElement('canvas'); c.width = c.height = S;
+  const g = c.getContext('2d');
+  const col = q === 'pre' ? '168,46,58' : '204,40,30';
+  g.translate(S / 2, S / 2); g.rotate(rand(-1, 1) * (q === 'perfect' ? 0.05 : q === 'pre' ? 0.25 : 0.18));
+  g.shadowColor = `rgba(${col},.6)`; g.shadowBlur = 3.5;
+  g.strokeStyle = g.fillStyle = `rgb(${col})`;
+  g.lineWidth = 7.5; g.beginPath(); g.arc(0, 0, 54, 0, Math.PI * 2); g.stroke();
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  if (text.length === 1) { g.font = `66px ${FD}`; g.fillText(text, 0, 4); }
+  else { g.font = `41px ${FD}`; g.fillText(text[0], 0, -19); g.fillText(text[1], 0, 23); }
+  g.shadowBlur = 0;
+  // 押す力のむら（片側が薄い）
+  g.setTransform(1, 0, 0, 1, 0, 0);
+  g.globalCompositeOperation = 'destination-out';
+  const a = rand(0, Math.PI * 2), k = q === 'perfect' ? 0.22 : q === 'pre' ? 0.4 : 0.5;
+  const lg = g.createLinearGradient(S / 2 + Math.cos(a) * 62, S / 2 + Math.sin(a) * 62, S / 2 - Math.cos(a) * 62, S / 2 - Math.sin(a) * 62);
+  lg.addColorStop(0, `rgba(0,0,0,${k})`); lg.addColorStop(0.45, 'rgba(0,0,0,0)'); lg.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = lg; g.fillRect(0, 0, S, S);
+  // かすれの点
+  g.fillStyle = '#000';
+  const n = q === 'perfect' ? 120 : 260;
+  for (let i = 0; i < n; i++) { g.globalAlpha = rand(0.3, 1); g.beginPath(); g.arc(rand(4, S - 4), rand(4, S - 4), rand(0.4, 1.9), 0, Math.PI * 2); g.fill(); }
+  // 縁の切れ
+  g.strokeStyle = '#000';
+  for (let i = 0; i < 5; i++) { g.globalAlpha = rand(0.3, 0.8); g.lineWidth = rand(0.8, 2.4); const s = rand(0, 6.3); g.beginPath(); g.arc(S / 2, S / 2, rand(50, 58), s, s + rand(0.15, 0.6)); g.stroke(); }
+  g.globalAlpha = 1; g.globalCompositeOperation = 'source-over';
+  return c;
+}
+
+/* ---------- 画面サイズ ---------- */
+let W, H, dpr, scale, VW, VH, Y0;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cvs.width = Math.round(W * dpr); cvs.height = Math.round(H * dpr);
+  scale = Math.min(W / 380, H / 680);
+  VW = W / scale; VH = H / scale;
+  Y0 = clamp(VH * 0.52, 300, Math.max(300, VH - 300));
+}
+window.addEventListener('resize', resize); resize();
+const pileX = () => VW / 2 - 60;
+const pileBase = () => -Y0 + 236;
+const STAMP_REST = -112;
+
+/* ---------- ゲーム状態 ---------- */
+const STEP = 1 / 60;
+let state = 'title';   // title | play | ending | over
+let doc, leaving, pile, floats, rings, stamp, elapsed, timeLeft, score, combo, maxCombo, perfects, goods, misses, passes, stampsOk, docsDone, docCount, lastBad, shake, endT, t = 0, lastTick;
+
+function resetWorld() {
+  doc = null; leaving = []; pile = []; floats = []; rings = []; stamp = { t: -1, hit: null };
+  elapsed = 0; timeLeft = 60; score = 0; combo = 0; maxCombo = 0; perfects = 0; goods = 0; misses = 0; passes = 0;
+  stampsOk = 0; docsDone = 0; docCount = 0; lastBad = false; shake = 0; endT = 0; lastTick = 6;
+}
+
+// 流れる速さ（px/s）: 時間でじわじわ、コンボでさらに
+function speed() {
+  if (state === 'title') return 170;
+  return Math.min(285, (135 + elapsed * 1.5) * (1 + Math.min(combo, 20) * 0.013));
+}
+const perfectPx = () => clamp(speed() * 0.05, 6.5, 9);
+
+function makeDoc() {
+  const demo = state === 'title';
+  let n = 1;
+  const r = Math.random();
+  if (demo) n = r < 0.4 ? 2 : 1;
+  else if (docCount >= 3) {
+    if (elapsed > 20 && r < 0.2) n = 3;
+    else if (elapsed > 6 && r < 0.45) n = 2;
+  }
+  const bad = !demo && !lastBad && docCount > 4 && elapsed > 10 && Math.random() < 0.14 ? pick(BAD) : (demo && docCount % 6 === 5 ? pick(BAD) : null);
+  let pool = TYPES.filter(T => T.cells.length >= n);
+  if (!demo && docCount < 3) pool = TYPES.filter(T => T.cells.length === 1);
+  // 朝いちばんの2枚は毎回同じ（請求書→婚姻届、まん中に押印欄）
+  const first = !demo && docCount < 2 ? TYPES.find(T => T.title === (docCount ? '婚姻届' : '請求書')) : null;
+  const T = first || pick(pool), k = T.cells.length, rowW = k * CW;
+  const place = first || k === 3 ? 'c' : pick(['c', 'r', 'l']);
+  const lx0 = place === 'c' ? -rowW / 2 : place === 'r' ? DOC_W / 2 - 12 - rowW : -DOC_W / 2 + 12;
+  const cells = T.cells.map((label, i) => ({ label, lx: lx0 + CW / 2 + i * CW, target: !bad && i < n, res: null }));
+  const marks = [];
+  if (!bad) for (const c of cells) if (!c.target) marks.push({ lx: c.lx + rand(-3, 3), ly: rand(-3, 3), ink: makeInk(T.stamp, 'pre'), at: -1 });
+  docCount++; lastBad = !!bad;
+  return { T, cells, marks, bad, x: -VW / 2 - DOC_W / 2 - 20, hold: 0, failed: false, mode: 'in', seed: (Math.random() * 1e9) | 0, a: 0, rot: 0 };
+}
+const targetsLeft = d => d.cells.filter(c => c.target && !c.res);
+function nextCell(d) {
+  // 右にあるものから順に回ってくる
+  const list = d.bad ? d.cells : targetsLeft(d);
+  let best = null; for (const c of list) if (!best || c.lx > best.lx) best = c;
+  return best;
+}
+
+/* ---------- 押す ---------- */
+function press() {
+  if (state !== 'play' && state !== 'title') return;
+  if (stamp.t >= 0 && stamp.t < 0.1) return;           // 前の一押しがまだ紙の上
+  stamp.t = 0; stamp.hit = 'mat';
+  const d = doc;
+  if (!d || d.mode !== 'in' || Math.abs(d.x) > DOC_W / 2 - 4) { sfx('mat'); return; }
+  stamp.hit = 'paper';
+  const v = speed();
+  if (d.bad) {
+    d.marks.push({ lx: -d.x, ly: rand(-2, 2), ink: makeInk(d.T.stamp, 'miss'), at: t + 0.05 });
+    d.failed = true; d.hold = 0.16;
+    miss('押しちゃダメ！');
+    return;
+  }
+  // いちばん近い空欄
+  let c = null, dx = 1e9;
+  for (const cc of targetsLeft(d)) { const ddx = d.x + cc.lx; if (Math.abs(ddx) < Math.abs(dx)) { dx = ddx; c = cc; } }
+  let q;
+  if (Math.abs(dx) <= perfectPx()) q = 'perfect';
+  else if (Math.abs(dx) <= GOOD_PX) q = 'good';
+  else q = 'miss';
+  d.marks.push({ lx: -d.x, ly: rand(-1.2, 1.2), ink: makeInk(d.T.stamp, q), at: t + 0.05 });
+  d.hold = 0.12;
+  if (q === 'miss') {
+    if (c && Math.abs(dx) < 60) c.res = 'miss';
+    d.failed = true;
+    miss('やり直し');
+    return;
+  }
+  c.res = q;
+  if (!targetsLeft(d).length) d.hold = 0.2;   // 最後の一押しは少し見せてから片付ける
+  if (state === 'play') {
+    stampsOk++;
+    if (q === 'perfect') { combo++; perfects++; maxCombo = Math.max(maxCombo, combo); score += 100 + Math.min(combo - 1, 20) * 10; }
+    else { combo = 0; goods++; score += 50; }
+    updateHud();
+  }
+  addFloat(q === 'perfect' ? '美しい' : 'よし', q);
+  rings.push({ r: STAMP_R + 2, life: 1, gold: q === 'perfect' && combo >= 5 });
+  sfx(q, combo);
+  void v;
+}
+function miss(label) {
+  if (state === 'play') {
+    misses++; combo = 0; timeLeft = Math.max(0, timeLeft - 2);
+    addFloat('−2秒', 'pen', -VW / 2 + 60, -Y0 + 92);
+    const p = $('hTimePill'); p.classList.add('hit'); setTimeout(() => p.classList.remove('hit'), 260);
+    updateHud();
+  }
+  addFloat(label, 'miss');
+  if (!reduceMotion) shake = 5;
+  sfx('miss');
+}
+function addFloat(text, kind, x = 0, y = 86) { floats.push({ text, kind, x, y, life: 1, at: t + 0.04 }); if (floats.length > 8) floats.shift(); }
+
+/* ---------- メインのステップ ---------- */
+function step() {
+  t += STEP;
+  if (state === 'play') {
+    elapsed += STEP; timeLeft -= STEP;
+    const sec = Math.ceil(timeLeft);
+    if (sec < lastTick && sec <= 5 && sec > 0) { lastTick = sec; sfx('tick'); }
+    if (timeLeft <= 0) { timeLeft = 0; state = 'ending'; endT = 0; sfx('bell'); combo = 0; }
+    updateTime();
+  }
+  if (state === 'ending') { endT += STEP; if (endT > 1.2) showOver(); }
+
+  // 流れてくる書類
+  if (!doc && (state === 'play' || state === 'title')) doc = makeDoc();
+  if (doc && state !== 'ending' && state !== 'over') stepDoc(doc);
+
+  // 片付く書類
+  for (const d of leaving) {
+    d.a += STEP;
+    if (d.mode === 'pile') { if (d.a >= 0.36) { d.done = true; pile.push(d); if (pile.length > 220) pile.shift(); } }
+    else { d.x += (d.mode === 'fail' ? 1300 : 950) * STEP; d.rot += (d.mode === 'fail' ? 0.9 : 0.15) * STEP; if (d.x - DOC_W > VW / 2) d.done = true; }
+  }
+  leaving = leaving.filter(d => !d.done);
+
+  // ハンコ
+  if (stamp.t >= 0) { stamp.t += STEP; if (stamp.t > 0.32) stamp.t = -1; }
+  for (const f of floats) if (t >= f.at) f.life -= STEP / 0.7;
+  floats = floats.filter(f => f.life > 0);
+  for (const r of rings) { r.life -= STEP / 0.3; r.r += 90 * STEP; }
+  rings = rings.filter(r => r.life > 0);
+  shake *= 0.85;
+}
+
+function stepDoc(d) {
+  const ref = nextCell(d);
+  if (d.hold > 0) { d.hold -= STEP; }
+  else if (!d.failed) {
+    const dx = ref ? d.x + ref.lx : d.x;
+    const base = d.bad ? speed() * 1.5 : speed();
+    d.x += (base + Math.max(0, -105 - dx) * 8) * STEP;
+  }
+  // デモ: ど真ん中で自動で押す
+  if (state === 'title' && !d.bad && ref && d.hold <= 0 && Math.abs(d.x + ref.lx) < 3) press();
+  // 見逃し / 見送り
+  if (!d.failed && d.hold <= 0) {
+    if (d.bad) {
+      let minLx = 1e9; for (const c of d.cells) minLx = Math.min(minLx, c.lx);
+      if (d.x + minLx > LATE_PX + 4) {
+        d.passed = true;
+        if (state === 'play') { passes++; score += 50; updateHud(); }
+        addFloat('見送り', 'pass'); sfx('pass');
+      }
+    } else if (ref && d.x + ref.lx > LATE_PX) {
+      ref.res = 'miss'; d.failed = true; miss('見逃し');
+    }
+  }
+  // 片付ける
+  if (d.hold <= 0) {
+    if (d.failed) finish(d, 'fail');
+    else if (d.bad && d.passed) finish(d, 'pass');
+    else if (!d.bad && targetsLeft(d).length === 0) finish(d, 'pile');
+  }
+}
+function finish(d, mode) {
+  d.mode = mode; d.a = 0;
+  if (mode === 'pile') {
+    d.rot = rand(-0.12, 0.12); d.jx = rand(-5, 5); d.from = d.x;
+    if (state === 'play') { docsDone++; updateHud(); }
+    sfx('swish');
+  }
+  leaving.push(d); doc = null;
+}
+
+/* ---------- 描画 ---------- */
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+function bars(R, x, y, maxW, h = 4) {
+  const w = maxW * (0.45 + R() * 0.55);
+  ctx.fillRect(x, y - h / 2, w, h);
+}
+function drawDoc(d, lite) {
+  const T = d.T, ink = T.ink || '#2a2c31', rule = T.rule || 'rgba(52,60,70,.6)';
+  const L = -DOC_W / 2, R0 = DOC_W / 2, TOP = DOC_TOP, BOT = DOC_TOP + DOC_H;
+  const R = rng(d.seed);
+  if (T.style === 'kairan') {
+    // 回覧板: 板とクリップ
+    ctx.fillStyle = 'rgba(8,24,16,.3)'; rr(L - 9, TOP - 18, DOC_W + 26, DOC_H + 32, 10); ctx.fill();
+    ctx.fillStyle = '#a8743f'; rr(L - 13, TOP - 24, DOC_W + 26, DOC_H + 34, 10); ctx.fill();
+    ctx.strokeStyle = 'rgba(90,52,20,.35)'; ctx.lineWidth = 1;
+    for (let i = 0; i < 7; i++) { ctx.beginPath(); ctx.moveTo(L - 13, TOP + i * 48); ctx.bezierCurveTo(L + 40, TOP + i * 48 + 10, R0 - 40, TOP + i * 48 - 8, R0 + 13, TOP + i * 48 + 4); ctx.stroke(); }
+  } else {
+    ctx.fillStyle = 'rgba(8,24,16,.3)'; ctx.fillRect(L + 4, TOP + 6, DOC_W, DOC_H);
+  }
+  ctx.fillStyle = '#fbfaf3'; ctx.fillRect(L, TOP, DOC_W, DOC_H);
+  ctx.fillStyle = 'rgba(0,0,0,.04)'; ctx.fillRect(R0 - 3, TOP, 3, DOC_H);
+  if (T.style === 'kairan') {
+    const g = ctx.createLinearGradient(-34, 0, 34, 0);
+    g.addColorStop(0, '#8c949b'); g.addColorStop(0.5, '#eef1f3'); g.addColorStop(1, '#8c949b');
+    ctx.fillStyle = g; rr(-34, TOP - 22, 68, 26, 5); ctx.fill();
+    ctx.fillStyle = '#5b636a'; ctx.fillRect(-24, TOP - 2, 48, 3);
+  }
+  if (T.style === 'konin') {
+    ctx.strokeStyle = rule; ctx.lineWidth = 1.5; ctx.strokeRect(L + 6, TOP + 6, DOC_W - 12, DOC_H - 12);
+    ctx.lineWidth = 0.7; ctx.strokeRect(L + 9, TOP + 9, DOC_W - 18, DOC_H - 18);
+  }
+  ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+  // 表題
+  ctx.fillStyle = ink;
+  const titleX = d.cells.length === 3 ? 0 : (d.cells[0].lx < 0 ? 52 : -52);
+  ctx.font = `700 ${T.title.length > 4 ? 15 : 19}px ${FB}`;
+  ctx.fillText(T.title.split('').join(T.title.length > 4 ? '' : ' '), d.cells.length === 3 ? -60 : titleX, -64);
+  if (d.cells.length === 3) { ctx.font = `500 9px ${FB}`; ctx.fillText(`No.${(d.seed % 9000) + 1000}`, 74, -68); }
+  if (T.style === 'invoice') { ctx.fillRect((d.cells.length === 3 ? -60 : titleX) - 34, -58, 68, 1.2); ctx.fillRect((d.cells.length === 3 ? -60 : titleX) - 34, -55.5, 68, 1.2); }
+  // 押印欄
+  ctx.lineWidth = 1.2; ctx.strokeStyle = rule;
+  for (const c of d.cells) {
+    ctx.strokeRect(c.lx - CW / 2, -51, CW, 18);
+    ctx.strokeRect(c.lx - CW / 2, -33, CW, 66);
+    ctx.fillStyle = ink; ctx.font = `700 10.5px ${FB}`;
+    ctx.fillText(c.label, c.lx, -38.5);
+    if (d.bad) {
+      ctx.strokeStyle = 'rgba(204,40,30,.8)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(c.lx - 24, -24); ctx.lineTo(c.lx + 24, 24); ctx.moveTo(c.lx + 24, -24); ctx.lineTo(c.lx - 24, 24); ctx.stroke();
+      ctx.strokeStyle = rule; ctx.lineWidth = 1.2;
+    } else if (c.target && !c.res && !lite) {
+      // 空欄のかすかな目印（四隅）
+      ctx.strokeStyle = 'rgba(52,60,70,.25)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(c.lx - 5, 0); ctx.lineTo(c.lx + 5, 0); ctx.moveTo(c.lx, -5); ctx.lineTo(c.lx, 5); ctx.stroke();
+      ctx.strokeStyle = rule; ctx.lineWidth = 1.2;
+    }
+  }
+  // 本文
+  ctx.fillStyle = 'rgba(40,44,52,.5)'; ctx.strokeStyle = rule; ctx.lineWidth = 1;
+  const x0 = L + 14, x1 = R0 - 14, wIn = x1 - x0;
+  const label = (s, x, y) => { ctx.fillStyle = ink; ctx.font = `700 9.5px ${FB}`; ctx.textAlign = 'left'; ctx.fillText(s, x, y); ctx.fillStyle = 'rgba(40,44,52,.5)'; };
+  if (T.style === 'ringi') {
+    const rows = ['件名', '目的', '金額', '期日', '備考'];
+    ctx.strokeRect(x0, 48, wIn, rows.length * 24 + 30);
+    rows.forEach((s, i) => {
+      const y = 48 + i * 24;
+      if (i) { ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke(); }
+      label(s, x0 + 6, y + 16); bars(R, x0 + 50, y + 12, wIn - 60);
+    });
+    ctx.beginPath(); ctx.moveTo(x0 + 42, 48); ctx.lineTo(x0 + 42, 48 + rows.length * 24); ctx.stroke();
+    const y = 48 + rows.length * 24;
+    ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+    bars(R, x0 + 6, y + 12, wIn * 0.8, 3); bars(R, x0 + 6, y + 21, wIn * 0.6, 3);
+  } else if (T.style === 'invoice') {
+    bars(R, x0, 54, 90); label('御中', x0 + 96, 58);
+    ctx.fillStyle = ink; ctx.font = `700 10px ${FB}`; ctx.textAlign = 'left';
+    ctx.fillText('ご請求金額', x0, 84);
+    ctx.font = `15px ${FD}`; ctx.fillText(`¥ ${((d.seed % 900) + 12) * 1000}-`.replace(/\B(?=(\d{3})+(?!\d))/g, ','), x0 + 62, 86);
+    ctx.fillRect(x0, 91, wIn, 1.2); ctx.fillRect(x0, 94, wIn, 1.2);
+    ctx.fillStyle = 'rgba(40,44,52,.5)';
+    ctx.strokeRect(x0, 106, wIn, 92);
+    ctx.fillStyle = 'rgba(52,60,70,.12)'; ctx.fillRect(x0, 106, wIn, 16); ctx.fillStyle = 'rgba(40,44,52,.5)';
+    label('品名', x0 + 6, 118); label('数量', x0 + wIn - 84, 118); label('金額', x0 + wIn - 42, 118);
+    for (let i = 0; i < 4; i++) {
+      const y = 122 + i * 19;
+      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+      bars(R, x0 + 6, y + 10, wIn - 110, 3.5); bars(R, x0 + wIn - 80, y + 10, 18, 3.5); bars(R, x0 + wIn - 40, y + 10, 32, 3.5);
+    }
+    ctx.beginPath(); ctx.moveTo(x0 + wIn - 90, 106); ctx.lineTo(x0 + wIn - 90, 198); ctx.moveTo(x0 + wIn - 48, 106); ctx.lineTo(x0 + wIn - 48, 198); ctx.stroke();
+  } else if (T.style === 'kairan') {
+    ctx.fillStyle = ink; ctx.font = `15px ${FD}`; ctx.textAlign = 'center';
+    ctx.fillText(pick2(R, ['ごみ当番のお知らせ', '夏祭りのお知らせ', '防災訓練のお知らせ', '町内清掃のお知らせ']), 0, 66);
+    ctx.fillStyle = 'rgba(40,44,52,.5)';
+    for (let i = 0; i < 7; i++) bars(R, x0 + 4, 88 + i * 15, wIn - 8, 3.5);
+    ctx.strokeStyle = rule; ctx.strokeRect(x0 + 30, 184 - 2, wIn - 60, 14);
+    label('回覧後は次の班へ', x0 + 44, 192);
+  } else if (T.style === 'konin') {
+    ctx.beginPath(); ctx.moveTo(0, 48); ctx.lineTo(0, 196); ctx.stroke();
+    ctx.strokeRect(x0, 48, wIn, 148);
+    label('夫になる人', x0 + 22, 62); label('妻になる人', 22, 62);
+    for (let i = 1; i < 6; i++) {
+      const y = 48 + i * 24.6;
+      ctx.beginPath(); ctx.moveTo(x0, y); ctx.lineTo(x1, y); ctx.stroke();
+      if (i < 5) { ctx.fillStyle = 'rgba(122,74,34,.55)'; bars(R, x0 + 6, y + 13, 80, 3.5); bars(R, 6, y + 13, 80, 3.5); }
+    }
+  } else {
+    ctx.fillStyle = ink; ctx.font = `500 9.5px ${FB}`; ctx.textAlign = 'left';
+    ctx.fillText('下記のとおり届け出ます。', x0, 58);
+    ctx.textAlign = 'center'; ctx.font = `700 11px ${FB}`; ctx.fillText('記', 0, 78);
+    ctx.fillStyle = 'rgba(40,44,52,.5)';
+    ['期間', '理由', '連絡先', '備考'].forEach((s, i) => {
+      const y = 98 + i * 24;
+      label(s, x0, y);
+      ctx.beginPath(); ctx.moveTo(x0 + 40, y + 4); ctx.lineTo(x1, y + 4); ctx.stroke();
+      bars(R, x0 + 44, y - 2, wIn - 50, 3.5);
+    });
+    ctx.textAlign = 'right'; ctx.fillStyle = ink; ctx.font = `500 9px ${FB}`; ctx.fillText('以上', x1, 192);
+  }
+  ctx.textAlign = 'start';
+  // 印影
+  for (const m of d.marks) {
+    if (m.at > t) continue;
+    const k = m.at < 0 ? 1 : clamp((t - m.at) / 0.06, 0, 1);
+    ctx.globalAlpha = m.at < 0 ? 0.88 : 0.75 + 0.2 * k;
+    const s = (STAMP_R + 2) * 2 * (1 + (1 - k) * 0.04);
+    ctx.drawImage(m.ink, m.lx - s / 2, m.ly - s / 2, s, s);
+  }
+  ctx.globalAlpha = 1;
+  // 押してはいけない書類
+  if (d.bad) {
+    ctx.save(); ctx.translate(0, 112); ctx.rotate(-0.16);
+    ctx.font = `${d.bad.length > 3 ? 30 : 38}px ${FD}`;
+    const tw = ctx.measureText(d.bad).width + 30;
+    ctx.fillStyle = 'rgba(251,250,243,.85)'; ctx.fillRect(-tw / 2, -30, tw, 50);
+    ctx.strokeStyle = '#cc261e'; ctx.lineWidth = 3.5; ctx.strokeRect(-tw / 2, -30, tw, 50);
+    ctx.lineWidth = 1.2; ctx.strokeRect(-tw / 2 + 5, -25, tw - 10, 40);
+    ctx.fillStyle = '#cc261e'; ctx.textAlign = 'center'; ctx.fillText(d.bad, 0, d.bad.length > 3 ? 6 : 9);
+    ctx.restore();
+    ctx.fillStyle = '#cc261e'; ctx.font = `700 10px ${FB}`; ctx.textAlign = 'center';
+    ctx.fillText('※押印しないこと', 0, 196);
+    ctx.textAlign = 'start';
+  }
+}
+function pick2(R, a) { return a[Math.floor(R() * a.length)]; }
+
+const PILE_S = 0.36;
+function pileStep() { return Math.min(1.6, 128 / Math.max(1, pile.length)); }
+function pileSpot(i) { return { x: pileX(), y: pileBase() - DOC_H * PILE_S / 2 - i * pileStep() }; }
+function drawPile() {
+  const px = pileX(), base = pileBase(), w = DOC_W * PILE_S, h = DOC_H * PILE_S;
+  // 既決の箱
+  ctx.fillStyle = 'rgba(8,24,16,.3)'; rr(px - w / 2 - 10, base - h - 4, w + 24, h + 16, 4); ctx.fill();
+  ctx.fillStyle = '#9fa49a'; rr(px - w / 2 - 12, base - h - 8, w + 24, h + 16, 4); ctx.fill();
+  ctx.fillStyle = '#868b81'; rr(px - w / 2 - 6, base - h - 2, w + 12, h + 4, 3); ctx.fill();
+  ctx.fillStyle = '#f2efe2'; ctx.fillRect(px - 20, base + 0, 40, 12);
+  ctx.fillStyle = '#2a2c31'; ctx.font = `700 9px ${FB}`; ctx.textAlign = 'center'; ctx.fillText('既 決', px, base + 9.5);
+  const st = pileStep(), from = Math.max(0, pile.length - 140);
+  for (let i = from; i < pile.length; i++) {
+    const d = pile[i], p = pileSpot(i);
+    if (i === pile.length - 1) { drawSheet(d, p.x + d.jx, p.y, d.rot, PILE_S); continue; }
+    ctx.save(); ctx.translate(p.x + d.jx * 0.6, p.y); ctx.rotate(d.rot * 0.6);
+    ctx.fillStyle = i % 2 ? '#f4f2e8' : '#e9e6da'; ctx.fillRect(-w / 2, -h / 2, w, h);
+    ctx.fillStyle = 'rgba(0,0,0,.12)'; ctx.fillRect(-w / 2, h / 2 - Math.max(0.6, st * 0.6), w, Math.max(0.6, st * 0.6));
+    ctx.restore();
+  }
+  if (pile.length) {
+    const top = pileSpot(pile.length - 1).y - h / 2;
+    ctx.font = `13px ${FD}`; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(20,40,30,.85)'; ctx.fillStyle = '#f8efe2';
+    const s = `${state === 'title' ? pile.length : docsDone}枚`;
+    ctx.strokeText(s, px, top - 6); ctx.fillText(s, px, top - 6);
+  }
+  ctx.textAlign = 'start';
+}
+function drawSheet(d, x, y, rot, s) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); ctx.scale(s, s); ctx.translate(0, -(DOC_TOP + DOC_H / 2));
+  drawDoc(d, true); ctx.restore();
+}
+
+function drawDesk() {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const sb = parseFloat(getComputedStyle(document.documentElement).paddingBottom) || 0;
+  // スチール机
+  const dg = ctx.createLinearGradient(0, 0, W, 0);
+  dg.addColorStop(0, '#b7b9b0'); dg.addColorStop(0.5, '#c9cbc2'); dg.addColorStop(1, '#b3b5ac');
+  ctx.fillStyle = dg; ctx.fillRect(0, 0, W, H);
+  const front = H - 30 - sb;
+  // デスクマット
+  const m = 10, mb = front - 12;
+  const mg = ctx.createLinearGradient(0, 0, W * 0.4, H);
+  mg.addColorStop(0, '#34624b'); mg.addColorStop(1, '#2a5240');
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; rr(m + 1, -10, W - m * 2, mb + 13, 6); ctx.fill();
+  ctx.fillStyle = mg; rr(m, -10, W - m * 2, mb + 10, 6); ctx.fill();
+  // マットの下のカレンダー
+  ctx.save();
+  ctx.translate(m + 18 * scale, mb - 92 * scale); ctx.rotate(-0.05); ctx.scale(scale, scale);
+  ctx.fillStyle = 'rgba(240,236,220,.32)'; ctx.fillRect(0, 0, 74, 62);
+  ctx.fillStyle = 'rgba(180,50,40,.35)'; ctx.fillRect(0, 0, 74, 12);
+  ctx.fillStyle = 'rgba(40,50,45,.35)';
+  for (let r = 0; r < 4; r++) for (let c = 0; c < 7; c++) ctx.fillRect(5 + c * 9.6, 18 + r * 10.5, 5, 4);
+  ctx.restore();
+  // 透明シートの照り返し
+  ctx.save(); rr(m, -10, W - m * 2, mb + 10, 6); ctx.clip();
+  ctx.fillStyle = 'rgba(255,255,255,.045)';
+  ctx.beginPath(); ctx.moveTo(W * 0.15, 0); ctx.lineTo(W * 0.42, 0); ctx.lineTo(W * 0.12, H); ctx.lineTo(-W * 0.15, H); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.03)';
+  ctx.beginPath(); ctx.moveTo(W * 0.6, 0); ctx.lineTo(W * 0.68, 0); ctx.lineTo(W * 0.38, H); ctx.lineTo(W * 0.3, H); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 1; rr(m + 0.5, -10, W - m * 2 - 1, mb + 9.5, 6); ctx.stroke();
+  // 机の手前のふち（ゴムの縁）
+  const fg = ctx.createLinearGradient(0, front, 0, H);
+  fg.addColorStop(0, '#d6d8cf'); fg.addColorStop(0.3, '#b9bbb2'); fg.addColorStop(1, '#8f9289');
+  ctx.fillStyle = fg; ctx.fillRect(0, front, W, H - front);
+  ctx.fillStyle = '#55584f'; ctx.fillRect(0, front, W, 3);
+  ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(0, front + 3, W, 1);
+}
+
+function drawProps() {
+  // 朱肉とボールペン（書類の下にスペースがあるときだけ）
+  const bottom = (H - 42 - (parseFloat(getComputedStyle(document.documentElement).paddingBottom) || 0)) / scale - Y0;
+  const y = bottom - 46;
+  if (y < DOC_TOP + DOC_H + 34) return;
+  const x = -VW / 2 + 58;
+  ctx.fillStyle = 'rgba(8,24,16,.35)'; ctx.beginPath(); ctx.ellipse(x + 4, y + 6, 34, 34, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#1e2023'; ctx.beginPath(); ctx.arc(x, y, 34, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#4a4e53'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(x, y, 31, 0, Math.PI * 2); ctx.stroke();
+  const ig = ctx.createRadialGradient(x - 6, y - 8, 2, x, y, 26);
+  ig.addColorStop(0, '#d8483a'); ig.addColorStop(1, '#9e2219');
+  ctx.fillStyle = ig; ctx.beginPath(); ctx.arc(x, y, 25, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.14)'; ctx.beginPath(); ctx.ellipse(x - 8, y - 9, 9, 5, -0.6, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#d9d4c4'; ctx.font = `700 8px ${FB}`; ctx.textAlign = 'center'; ctx.fillText('朱肉', x, y + 44 > bottom + 4 ? y - 38 : y + 46); ctx.textAlign = 'start';
+  // ペン
+  ctx.save(); ctx.translate(VW / 2 - 90, y + 4); ctx.rotate(-0.42);
+  ctx.fillStyle = 'rgba(8,24,16,.3)'; rr(-60, 4, 124, 9, 4); ctx.fill();
+  ctx.fillStyle = '#f2f1ec'; rr(-62, -4, 112, 9, 4); ctx.fill();
+  ctx.fillStyle = '#2c4f9a'; rr(-62, -4, 22, 9, 4); ctx.fill(); ctx.fillRect(-30, -6, 30, 3);
+  ctx.fillStyle = '#c7c9c4'; ctx.beginPath(); ctx.moveTo(50, -4); ctx.lineTo(64, 0.5); ctx.lineTo(50, 5); ctx.fill();
+  ctx.restore();
+}
+
+function drawStamp() {
+  // ハンコの影（狙いの目安）と本体
+  const st = stamp.t;
+  let h = 1, squash = 0;      // h: 1=待機の高さ 0=紙の上
+  if (st >= 0) {
+    if (st < 0.05) h = 1 - (st / 0.05) ** 2;
+    else if (st < 0.13) { h = 0; squash = Math.sin(((st - 0.05) / 0.08) * Math.PI) * 1; }
+    else h = 1 - Math.pow(1 - clamp((st - 0.13) / 0.19, 0, 1), 2);
+  } else h = 1 + Math.sin(t * 2.4) * 0.025;
+  const by = STAMP_REST * h;
+  // 影
+  const sr = STAMP_R * (1 + h * 0.3);
+  ctx.fillStyle = `rgba(10,20,15,${0.12 + (1 - h) * 0.22})`;
+  ctx.beginPath(); ctx.ellipse(h * 6, 2, sr, sr * 0.96, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = `rgba(160,30,20,${0.32 * h})`; ctx.lineWidth = 1.2; ctx.setLineDash([3, 3]);
+  ctx.beginPath(); ctx.arc(0, 0, STAMP_R, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  // 本体（柘植の丸印）
+  ctx.save();
+  ctx.translate(0, by);
+  ctx.scale(1 + squash * 0.07, 1 - squash * 0.1);
+  const bw = 21, bh = 94;
+  const wg = ctx.createLinearGradient(-bw, 0, bw, 0);
+  wg.addColorStop(0, '#9c7440'); wg.addColorStop(0.28, '#e6c88f'); wg.addColorStop(0.55, '#d3b075'); wg.addColorStop(1, '#8a6434');
+  ctx.fillStyle = wg;
+  ctx.beginPath();
+  ctx.moveTo(-bw, -4); ctx.lineTo(-bw + 3, -bh * 0.55); ctx.quadraticCurveTo(-bw + 9, -bh * 0.62, -bw + 7, -bh * 0.72);
+  ctx.quadraticCurveTo(-bw - 2, -bh, 0, -bh - 6); ctx.quadraticCurveTo(bw + 2, -bh, bw - 7, -bh * 0.72);
+  ctx.quadraticCurveTo(bw - 9, -bh * 0.62, bw - 3, -bh * 0.55); ctx.lineTo(bw, -4); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = 'rgba(80,52,20,.5)'; ctx.lineWidth = 1; ctx.stroke();
+  // 木目
+  ctx.strokeStyle = 'rgba(120,80,35,.22)';
+  for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(-12 + i * 7, -8); ctx.quadraticCurveTo(-10 + i * 7, -bh * 0.4, -13 + i * 7, -bh * 0.55); ctx.stroke(); }
+  // アタリ（上下の目印）
+  ctx.fillStyle = '#7a1d14'; ctx.beginPath(); ctx.arc(0, -bh * 0.48, 2.2, 0, Math.PI * 2); ctx.fill();
+  // 印面（朱肉で赤い）
+  ctx.fillStyle = '#b4271d'; ctx.beginPath(); ctx.ellipse(0, -4, bw, 6, 0, 0, Math.PI); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.fillRect(-bw + 6, -bh * 0.5, 3, bh * 0.4);
+  ctx.restore();
+}
+
+function drawHud() {
+  // コンボ
+  if (state === 'play' && combo >= 2) {
+    const k = stamp.t >= 0.05 && stamp.t < 0.2 ? 1 + (0.2 - stamp.t) * 0.8 : 1;
+    ctx.save(); ctx.translate(-44, -150); ctx.scale(k, k);
+    ctx.textAlign = 'right';
+    ctx.font = `${Math.min(40, 26 + combo)}px ${FD}`; ctx.lineWidth = 5; ctx.strokeStyle = 'rgba(16,36,26,.9)';
+    ctx.fillStyle = combo >= 10 ? '#f2c14e' : '#f8efe2';
+    ctx.strokeText(combo, 0, 0); ctx.fillText(combo, 0, 0);
+    ctx.font = `700 12px ${FB}`; ctx.fillStyle = '#f8efe2';
+    ctx.strokeText('コンボ', 0, 16); ctx.fillText('コンボ', 0, 16);
+    ctx.restore();
+  }
+  // 判定の文字
+  ctx.textAlign = 'center';
+  for (const f of floats) {
+    if (t < f.at) continue;
+    const a = Math.min(1, f.life * 2.5), rise = (1 - f.life) * 16, pop = f.life > 0.85 ? 1 + (f.life - 0.85) * 2 : 1;
+    ctx.save(); ctx.globalAlpha = a; ctx.translate(f.x, f.y - rise); ctx.scale(pop, pop);
+    const big = f.kind === 'perfect' || f.kind === 'miss';
+    ctx.font = `${big ? 30 : 24}px ${FD}`;
+    ctx.lineWidth = 6; ctx.strokeStyle = f.kind === 'pen' ? 'rgba(16,36,26,.9)' : 'rgba(251,250,243,.95)';
+    ctx.fillStyle = { perfect: '#c8281e', good: '#2a2c31', miss: '#3d5466', pass: '#2f5a45', pen: '#ff8a7a' }[f.kind];
+    ctx.strokeText(f.text, 0, 0); ctx.fillText(f.text, 0, 0);
+    ctx.restore();
+  }
+  // 最初だけの案内
+  if (state === 'play' && rec.plays < 3 && elapsed < 7 && docCount <= 3) {
+    ctx.globalAlpha = 0.65 + 0.35 * Math.sin(t * 5);
+    ctx.font = `700 14px ${FB}`; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(16,36,26,.9)'; ctx.fillStyle = '#f8efe2';
+    const s = '点線の丸に空欄が来たらタップ';
+    ctx.strokeText(s, -45, -232); ctx.fillText(s, -45, -232);
+    ctx.globalAlpha = 1;
+  }
+  if (state === 'ending' || state === 'over') {
+    const k = state === 'over' ? 1 : Math.min(1, endT / 0.2);
+    ctx.globalAlpha = k;
+    ctx.font = `44px ${FD}`; ctx.lineWidth = 8; ctx.strokeStyle = 'rgba(251,250,243,.95)'; ctx.fillStyle = '#c8281e';
+    ctx.strokeText('定時です', 0, -160 + (1 - k) * 10); ctx.fillText('定時です', 0, -160 + (1 - k) * 10);
+    ctx.globalAlpha = 1;
+  }
+  ctx.textAlign = 'start';
+}
+
+function render() {
+  drawDesk();
+  const sink = stamp.t >= 0.05 && stamp.t < 0.13 && stamp.hit === 'paper' ? 2 * Math.sin(((stamp.t - 0.05) / 0.08) * Math.PI) : 0;
+  const sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake;
+  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * (W / 2 + sx), dpr * (Y0 * scale + sy));
+  drawProps();
+  drawPile();
+  ctx.save(); ctx.translate(0, sink);
+  // 片付く書類
+  for (const d of leaving) {
+    if (d.mode === 'pile') {
+      const k = clamp(d.a / 0.36, 0, 1), e = 1 - Math.pow(1 - k, 3);
+      const to = pileSpot(pile.length);
+      const x = d.from + (to.x + d.jx - d.from) * e;
+      const y0 = DOC_TOP + DOC_H / 2;
+      const y = y0 + (to.y - y0) * e - Math.sin(k * Math.PI) * 40;
+      drawSheet(d, x, y, d.rot * e, 1 + (PILE_S - 1) * e);
+    } else {
+      ctx.save(); ctx.translate(d.x, 0); ctx.rotate(d.rot); drawDoc(d); ctx.restore();
+    }
+  }
+  if (doc) { ctx.save(); ctx.translate(doc.x, 0); drawDoc(doc); ctx.restore(); }
+  // 押した瞬間の輪
+  for (const r of rings) {
+    ctx.globalAlpha = r.life * 0.6; ctx.strokeStyle = r.gold ? '#f2c14e' : '#fbfaf3'; ctx.lineWidth = 3 * r.life;
+    ctx.beginPath(); ctx.arc(0, 0, r.r, 0, Math.PI * 2); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  ctx.restore();
+  drawStamp();
+  drawHud();
+}
+
+/* ---------- 結果 ---------- */
+let overShownAt = 0;
+function showOver() {
+  state = 'over';
+  rec.plays++;
+  const isNew = score > rec.best;
+  if (isNew) rec.best = score;
+  rec.bestDocs = Math.max(rec.bestDocs, docsDone);
+  rec.bestStamps = Math.max(rec.bestStamps, stampsOk);
+  rec.bestCombo = Math.max(rec.bestCombo, maxCombo);
+  rec.bestPerfect = Math.max(rec.bestPerfect, perfects);
+  save();
+  $('oScore').textContent = score; $('oDocs').textContent = docsDone; $('oPerfect').textContent = perfects; $('oCombo').textContent = maxCombo;
+  $('oDetail').textContent = `自己ベスト ${rec.best}点\n押印 ${stampsOk}回・見送り ${passes}回・やり直し ${misses}回`;
+  $('newRec').hidden = !(isNew && score > 0);
+  $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({
+    text: `${shareText()}${isNew && score > 0 ? ' 自己ベスト更新！' : ''}\n`,
+    url: gameUrl(), hashtags: 'ハンコ押し'
+  });
+  $('copyMsg').textContent = '画面タップ・スペースでもう一日';
+  $('over').hidden = false; $('hud').hidden = true;
+  overShownAt = performance.now();
+  $('retryBtn').focus({ preventScroll: true });
+}
+const shareText = () => `🔴ハンコ押し ${docsDone}枚処理（美しい${perfects}回・最高${maxCombo}コンボ）${score}点`;
+
+/* ---------- シェア ---------- */
+// 公開先のURL。ローカルで開いたときもこれをシェアする
+const PUBLIC_URL = 'https://asobi.enludus.com/games/hanko/';
+function gameUrl() {
+  try {
+    if (/^https?:$/.test(location.protocol) && location.hostname !== 'localhost') return location.origin + location.pathname;
+  } catch {}
+  return PUBLIC_URL;
+}
+
+/* ---------- HUD ---------- */
+let lastTimeTxt = '';
+function updateTime() {
+  const s = timeLeft <= 10 ? timeLeft.toFixed(1) : String(Math.ceil(timeLeft));
+  if (s !== lastTimeTxt) { $('hTime').textContent = s; lastTimeTxt = s; }
+}
+function updateHud() {
+  $('hScore').textContent = score + '点';
+  $('hBest').textContent = `最高 ${rec.best}点`;
+  updateTime();
+}
+function fillTitle() { $('tBest').textContent = rec.best; $('tDocs').textContent = rec.bestDocs; $('tCombo').textContent = rec.bestCombo; }
+
+/* ---------- 音 ---------- */
+let ac = null, noiseBuf = null;
+function wakeAudio() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const len = Math.floor(ac.sampleRate * 0.4); noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0); for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    }
+    if (ac.state === 'suspended') ac.resume();
+  } catch {}
+}
+function osc(type, f0, f1, at, dur, vol) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, at); if (f1) o.frequency.exponentialRampToValueAtTime(f1, at + dur * 0.8);
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.004); g.gain.exponentialRampToValueAtTime(0.0008, at + dur);
+  o.connect(g).connect(ac.destination); o.start(at); o.stop(at + dur + 0.02);
+}
+function noise(at, dur, vol, type, f0, f1) {
+  const s = ac.createBufferSource(); s.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.setValueAtTime(f0, at); if (f1) f.frequency.exponentialRampToValueAtTime(f1, at + dur); f.Q.value = 0.9;
+  const g = ac.createGain(); g.gain.setValueAtTime(vol, at); g.gain.exponentialRampToValueAtTime(0.0008, at + dur);
+  s.connect(f).connect(g).connect(ac.destination); s.start(at); s.stop(at + dur + 0.02);
+}
+function sfx(kind, cmb = 0) {
+  try {
+    if (!ac || state === 'title') return;
+    const n = ac.currentTime, at = n + 0.045;   // ハンコが紙に届く瞬間
+    if (kind === 'perfect' || kind === 'good' || kind === 'miss') {
+      // ポン: 低い胴鳴り + 紙の「パ」
+      osc('sine', 230, 62, at, 0.13, 0.55);
+      noise(at, 0.035, 0.32, 'highpass', 1600);
+      noise(at, 0.07, 0.18, 'lowpass', 700);
+    }
+    if (kind === 'perfect') {
+      const p = Math.pow(2, Math.min(cmb, 24) / 24);
+      osc('triangle', 660 * p, 0, at, 0.16, 0.11);
+      osc('sine', 1320 * p, 0, at + 0.005, 0.1, 0.04);
+    } else if (kind === 'good') osc('triangle', 470, 0, at, 0.1, 0.05);
+    else if (kind === 'miss') { osc('square', 150, 92, at + 0.03, 0.24, 0.05); }
+    else if (kind === 'mat') osc('sine', 150, 70, at, 0.1, 0.22);
+    else if (kind === 'swish') noise(n + 0.05, 0.2, 0.08, 'bandpass', 900, 3200);
+    else if (kind === 'pass') noise(n, 0.16, 0.07, 'bandpass', 2400, 900);
+    else if (kind === 'tick') osc('square', 1500, 0, n, 0.03, 0.025);
+    else if (kind === 'bell') { osc('sine', 880, 0, n, 0.7, 0.16); osc('sine', 698, 0, n + 0.32, 0.9, 0.16); osc('sine', 1760, 0, n, 0.3, 0.03); }
+  } catch {}
+}
+
+/* ---------- ループ ---------- */
+let acc = 0, lastTs = performance.now();
+function frame(ts) {
+  acc += Math.min(100, ts - lastTs); lastTs = ts;
+  while (acc >= 1000 / 60) { step(); acc -= 1000 / 60; }
+  render();
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 入力 ---------- */
+function start() {
+  wakeAudio(); state = 'play'; resetWorld(); updateHud();
+  $('title').hidden = true; $('over').hidden = true; $('hud').hidden = false;
+}
+cvs.addEventListener('pointerdown', e => { e.preventDefault(); wakeAudio(); if (state === 'play') press(); });
+cvs.addEventListener('contextmenu', e => e.preventDefault());
+// タイトル・結果: ボタンやリンク以外ならどこを押しても開始
+for (const id of ['title', 'over']) {
+  $(id).addEventListener('pointerdown', e => {
+    if (e.target.closest('button, a, #copyMsg')) return;
+    if (id === 'over' && performance.now() - overShownAt < 400) return;
+    e.preventDefault(); start();
+  });
+}
+window.addEventListener('keydown', e => {
+  if (e.code !== 'Space' && e.code !== 'Enter') return;
+  if (state === 'play') {
+    e.preventDefault();
+    if (!e.repeat) { wakeAudio(); press(); }
+    return;
+  }
+  if (state === 'ending') { e.preventDefault(); return; }
+  const el = document.activeElement;
+  if (el && el !== $('retryBtn') && el !== $('startBtn') && el.matches('button, a')) return;   // 他のボタンはそのまま
+  if (state === 'over' && performance.now() - overShownAt < 400) { e.preventDefault(); return; }
+  e.preventDefault(); start();
+});
+$('startBtn').addEventListener('click', start);
+$('retryBtn').addEventListener('click', start);
+$('copyBtn').addEventListener('click', () => {
+  const text = `${shareText()} 最高${rec.best}点 ${gameUrl()}`;
+  const msg = $('copyMsg');
+  const fallback = () => { msg.textContent = text; const r = document.createRange(); r.selectNodeContents(msg); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.style.userSelect = 'text'; };
+  try {
+    navigator.clipboard.writeText(text).then(() => { msg.textContent = 'コピーしました'; }, fallback);
+  } catch { fallback(); }
+});
+
+// タイトル背景: 自動で押し続けるデモ
+resetWorld();
+fillTitle();
+$('startBtn').focus({ preventScroll: true });
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
