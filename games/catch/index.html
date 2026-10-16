@@ -232,7 +232,7 @@ const qmul = (a, b) => ({ w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z, x: a
 /* ---------- 部屋とクローゼットのラック（m。y=上、+z=手前のカメラ側） ---------- */
 const ROOM = { x0: -3, x1: 3, z0: -5, z1: 1.9, h: 2.5 };
 const BAR = { x: 0, y: 1.52, z: 0, len: 1.7, r: 0.0125 };
-const GAP = { x: 0, w: 0.17 };                 // 服のすき間（ここだけ空いている）
+const GAP = { x: 0, w: 0.14 };                 // 服のすき間（ここだけ空いている）
 const CLOTHES = (() => {
   const out = []; let s = 11; const rnd = () => (s = (s * 9301 + 49297) % 233280) / 233280;
   const cols = ['#d9d2c3', '#5d7a9a', '#b5523b', '#e6c36a', '#3e4a3f', '#c98d9a', '#8aa6a0', '#f1ece2', '#6b4f3a', '#2f3d55', '#9a7bb0', '#c7b28a'];
@@ -255,7 +255,7 @@ const V0 = 6.4;                                   // 初速 m/s（固定）
 const PITCH_MIN = 0, PITCH_MAX = 36;              // 下へ引いた量で決まる角度（度）
 const YAW_MAX = 0.25;                             // 左右いっぱいに引いたときの向き（rad）
 // 人間らしいブレ（標準偏差）: 持ち手の傾き・回転の位相・わずかな速さと向き
-const JIT = { yaw: 0.008, v: 0.1, pitch: 0.008, tilt: 0.12, roll: 0.05, spin: 1.6 };
+const JIT = { yaw: 0.016, v: 0.2, pitch: 0.016, tilt: 0.24, roll: 0.1, spin: 3.2 };
 function jitterOf(r) { return { yaw: gauss(r) * JIT.yaw, v: gauss(r) * JIT.v, pitch: gauss(r) * JIT.pitch, tilt: gauss(r) * JIT.tilt, roll: gauss(r) * JIT.roll, spin: gauss(r) * JIT.spin }; }
 const NOJIT = { yaw: 0, v: 0, pitch: 0, tilt: 0, roll: 0, spin: 0 };
 
@@ -684,7 +684,14 @@ function physStep() {
       h.cool -= PDT;
       if (dv > 0.5 && h.cool <= 0) {
         h.cool = 0.07;
-        if (b.translation().y < 0.35) { h.floored = true; sKashan(Math.min(1, dv / 3)); } else { if (!h.floored) h.touched = true; sClank(Math.min(1, dv / 4)); }
+        const onFloor = b.translation().y < 0.35;
+        if (onFloor) h.floored = true; else if (!h.floored) h.touched = true;
+        // 音は揺れや小さな接触で鳴り続けないよう、強い衝突だけ・間隔を空けて・1本あたり最大4回
+        h.sndCool = (h.sndCool || 0);
+        if (dv > 1.2 && h.t >= h.sndCool && (h.sounds || 0) < 4) {
+          h.sndCool = h.t + 0.25; h.sounds = (h.sounds || 0) + 1;
+          if (onFloor) sKashan(Math.min(1, dv / 3)); else sClank(Math.min(1, dv / 4));
+        }
       }
     }
     h.lastV = { x: v.x, y: v.y, z: v.z };
@@ -807,7 +814,7 @@ function drawFx() {
     g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(10,8,12,${(1 - ts) * 0.6})`);
     fx.fillStyle = g; fx.fillRect(0, 0, W, H);
   }
-  if (state === 'play') { drawCounter(); drawGhost(); drawAim(); }
+  if (state === 'play') { drawCounter(); drawAim(); }
   // 飛んでいるハンガーの軌跡（真正面からだと細く見えるので）
   if (trail.length > 1) {
     fx.lineCap = 'round';
@@ -893,7 +900,7 @@ function drawAim() {
   const tv = throwVectors(a);
   const c0 = qrot(tv.rot, HP.curlC);
   const st = { x: tv.from.x + c0.x, y: tv.from.y + c0.y, z: tv.from.z + c0.z };
-  for (let i = 1; i <= 5; i++) {
+  for (let i = 1; i <= 2; i++) {
     const t = i * 0.022;
     const s = project({ x: st.x + tv.lin.x * t, y: st.y + tv.lin.y * t - 4.905 * t * t, z: st.z + tv.lin.z * t });
     fx.globalAlpha = 0.9 - i * 0.12; fx.fillStyle = '#f5efe2';
@@ -906,12 +913,6 @@ function drawAim() {
     fx.beginPath(); fx.moveTo(drag.x0, drag.y0); fx.lineTo(drag.x0 + dx * kk, drag.y0 + dy * kk); fx.stroke(); fx.setLineDash([]);
     drawPitchGuide(drag.x0, drag.y0, a.pitch);
   }
-  // 数値（角度・向き）
-  const mx = 16, my = H - safeB - 26;
-  fx.font = `700 13px ${FB}`; fx.fillStyle = '#f5efe2'; fx.lineWidth = 3; fx.strokeStyle = 'rgba(20,18,24,.85)';
-  const deg = Math.round(a.pitch * 180 / Math.PI), yd = a.yaw * 180 / Math.PI;
-  const lab = `角度 ${deg}°　向き ${Math.abs(yd) < 0.3 ? 'まっすぐ' : (yd > 0 ? '右 ' : '左 ') + Math.abs(yd).toFixed(1) + '°'}`;
-  fx.strokeText(lab, mx, my - 8); fx.fillText(lab, mx, my - 8);
 }
 function drawPitchGuide(x, y, pitch) {
   // 押した所に、角度の目安（小さな扇形）
@@ -922,8 +923,6 @@ function drawPitchGuide(x, y, pitch) {
   fx.strokeStyle = '#e9a253'; fx.lineWidth = 3;
   fx.beginPath(); fx.moveTo(0, 0); fx.lineTo(-Math.cos(pitch) * r, -Math.sin(pitch) * r); fx.stroke();
   fx.fillStyle = 'rgba(245,239,226,.6)'; fx.beginPath(); fx.arc(0, 0, 5, 0, Math.PI * 2); fx.fill();
-  fx.font = `700 12px ${FB}`; fx.textAlign = 'center'; fx.lineWidth = 3; fx.strokeStyle = 'rgba(20,18,24,.85)'; fx.fillStyle = '#f5efe2';
-  fx.strokeText(`${Math.round(deg)}°`, 0, -r - 8); fx.fillText(`${Math.round(deg)}°`, 0, -r - 8);
   fx.restore();
 }
 
@@ -995,26 +994,26 @@ function sWhoosh(pan, p) {
     f.frequency.exponentialRampToValueAtTime(1600 + p * 1200, n0 + 0.25);
   } catch {}
 }
-function sClank(k) {
+function sClank(k) {   // 竿や服に当たった音: 低めの「コトッ」
   try {
     if (!live()) return;
-    const n0 = ac.currentTime, v = 0.03 + k * 0.08;
-    tone(1850 * rand(0.95, 1.05), n0, 0.09, v, 'triangle'); tone(2960 * rand(0.95, 1.05), n0, 0.14, v * 0.6); tone(4100, n0, 0.08, v * 0.3);
-    noise(n0, 0.03, v * 0.8, 'highpass', 3000);
+    const n0 = ac.currentTime, v = 0.03 + k * 0.06;
+    tone(620 * rand(0.95, 1.05), n0, 0.07, v, 'triangle'); tone(310, n0, 0.09, v * 0.5);
+    noise(n0, 0.04, v * 0.5, 'lowpass', 900);
   } catch {}
 }
-function sKashan(k) {
+function sKashan(k) {  // 床に落ちた音: やわらかい「カタン」
   try {
     if (!live()) return;
-    const n0 = ac.currentTime, v = 0.05 + k * 0.12;
-    for (const [dt, a] of [[0, 1], [0.07, 0.55], [0.13, 0.35]]) {
-      noise(n0 + dt, 0.12, v * a, 'highpass', 2200);
-      for (const fr of [2350, 3720, 5180]) tone(fr * rand(0.96, 1.04), n0 + dt, 0.22, v * a * 0.25, 'sine');
+    const n0 = ac.currentTime, v = 0.04 + k * 0.08;
+    for (const [dt, a] of [[0, 1], [0.09, 0.4]]) {
+      noise(n0 + dt, 0.08, v * a, 'lowpass', 1000);
+      tone(480 * rand(0.96, 1.04), n0 + dt, 0.1, v * a * 0.5, 'triangle');
     }
   } catch {}
 }
 function sHook() {
-  try { if (!live()) return; const n0 = ac.currentTime; tone(2400, n0, 0.04, 0.12, 'square'); tone(1200, n0, 0.12, 0.1, 'triangle'); tone(420, n0, 0.16, 0.12); } catch {}
+  try { if (!live()) return; const n0 = ac.currentTime; tone(880, n0, 0.06, 0.1, 'triangle'); tone(440, n0, 0.16, 0.12); } catch {}
 }
 // 歓声: のこぎり波の「声」をたくさん重ねて、母音「あ」のフォルマントに通す
 function sCheer(level) {
@@ -1043,7 +1042,7 @@ function sCheer(level) {
     const ng = ac.createGain(); ng.gain.setValueAtTime(0.0001, n0); ng.gain.exponentialRampToValueAtTime(0.06 + level * 0.08, n0 + 0.1); ng.gain.exponentialRampToValueAtTime(0.0001, n0 + dur + 0.5);
     s.connect(nb).connect(ng).connect(out); s.start(n0); s.stop(n0 + dur + 0.6);
     const claps = Math.round(4 + level * 14);
-    for (let i = 0; i < claps; i++) noise(n0 + 0.25 + rand(0, dur), 0.035, 0.12, 'highpass', 1100);
+    for (let i = 0; i < Math.min(claps, 8); i++) noise(n0 + 0.25 + rand(0, dur), 0.05, 0.07, 'bandpass', 800, 0.8);
   } catch {}
 }
 function sGroan() {
