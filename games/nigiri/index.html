@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>にぎり積み</title>
+<meta name="description" content="揺れる箸からお寿司を一貫ずつ落として積み上げる、ログイン不要のワンタップ物理ゲーム。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="にぎり積み">
+<meta property="og:description" content="揺れる箸からお寿司を落として、どこまで高く積めるか。">
+<meta property="og:url" content="https://naki0227.github.io/mini-game/games/nigiri/">
+<meta property="og:image" content="https://naki0227.github.io/mini-game/games/nigiri/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8D%A3%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+:root { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+/* Layout: one full-screen canvas (the sushi counter), HUD pills on top, a single centered card for title / result */
+:root {
+  --wood: #ecdcbc;      /* hinoki counter */
+  --wood-deep: #b98e5a;
+  --ink: #2a1c12;       /* soy-sauce ink */
+  --rice: #fbf8f0;
+  --noren: #24375a;     /* indigo shop curtain */
+  --noren-ink: #f3ead8;
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--wood); color: var(--ink);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+}
+#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: pointer; }
+
+.hud {
+  position: fixed; left: 0; right: 0; top: 0; pointer-events: none;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.pill {
+  background: var(--noren); color: var(--noren-ink);
+  border-radius: 6px; padding: 6px 12px 7px;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+  box-shadow: 0 2px 0 rgba(0,0,0,.25);
+}
+.pill .lab { font-size: 11px; letter-spacing: .12em; opacity: .75; display: block; }
+.pill .val { font-family: var(--font-display); font-size: 26px; }
+.pill .unit { font-size: 13px; margin-left: 2px; }
+.pill.right { text-align: right; background: var(--rice); color: var(--ink); }
+.pill.right .val { font-size: 18px; }
+
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: center;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px;
+  background: rgba(42, 28, 18, .35);
+}
+.card {
+  width: min(360px, 100%); background: var(--rice); color: var(--ink);
+  border-radius: 10px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.3);
+  text-align: center;
+}
+.noren {
+  background: var(--noren); color: var(--noren-ink);
+  display: flex; gap: 3px;
+  padding-top: 18px;
+}
+.noren span {
+  flex: 1; background: var(--noren); border-bottom: 3px solid rgba(255,255,255,.08);
+  font-family: var(--font-display); font-size: 34px; line-height: 1; padding-block: 6px 16px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.2);
+}
+.noren.result span { font-size: 30px; }
+.body { padding: 20px 22px 22px; display: grid; gap: 14px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.7; text-wrap: balance; }
+.score { font-family: var(--font-display); font-size: 64px; line-height: 1; font-variant-numeric: tabular-nums; }
+.score small { font-size: 22px; margin-left: 4px; }
+.meta { display: flex; justify-content: center; gap: 18px; font-size: 13px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.meta b { font-size: 16px; }
+.badge {
+  justify-self: center; background: #c4452f; color: #fff; font-weight: 700;
+  font-size: 12px; letter-spacing: .14em; padding: 3px 10px; border-radius: 99px;
+}
+.btns { display: grid; gap: 8px; }
+button {
+  font: inherit; font-weight: 700; font-size: 16px; border: 0; border-radius: 8px;
+  padding: 13px 16px; cursor: pointer;
+  background: var(--noren); color: var(--noren-ink); box-shadow: 0 3px 0 #101c30;
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 #101c30; }
+a.xbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font-weight: 700; font-size: 16px; border-radius: 8px; padding: 13px 16px;
+  background: #0f1419; color: #fff; box-shadow: 0 3px 0 #000;
+}
+a.xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+a.xbtn:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+a.xbtn svg { width: 16px; height: 16px; fill: currentColor; }
+button.sub { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); }
+button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.how { font-size: 12px; opacity: .7; margin: 0; }
+.back { font-size: 13px; color: var(--ink); opacity: .75; }
+.back:hover { opacity: 1; }
+</style>
+</head>
+<body>
+
+<canvas id="c" aria-label="にぎり積みのゲーム画面"></canvas>
+
+<div class="hud" id="hud" hidden>
+  <div class="pill"><span class="lab">積んだ数</span><span class="val" id="hScore">0</span><span class="unit">貫</span></div>
+  <div class="pill right"><span class="lab">高さ / 最高</span><span class="val" id="hHeight">0.0cm</span><br><span class="unit" id="hBest">最高 0貫</span></div>
+</div>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="noren" aria-hidden="true"><span>に</span><span>ぎ</span><span>り</span><span>積</span><span>み</span></div>
+    <div class="body">
+      <p class="lead">揺れる箸から、お寿司を一貫ずつ落として積む。<br>一貫でも皿から落ちたらおしまい。</p>
+      <div class="meta"><span>最高 <b id="tBest">0</b> 貫</span><span>最高 <b id="tBestCm">0.0</b> cm</span><span>挑戦 <b id="tPlays">0</b> 回</span></div>
+      <div class="btns"><button id="startBtn">積みはじめる</button></div>
+      <p class="how">画面タップ・クリック・スペースキーで落とす</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <div class="noren result" aria-hidden="true"><span>お</span><span>あ</span><span>い</span><span>そ</span></div>
+    <div class="body">
+      <div class="badge" id="newRec" hidden>新記録</div>
+      <div class="score"><span id="oScore">0</span><small>貫</small></div>
+      <div class="meta"><span>高さ <b id="oCm">0.0</b> cm</span><span>最高 <b id="oBest">0</b> 貫</span></div>
+      <div class="btns">
+        <button id="retryBtn">もう一回</button>
+        <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Xでシェア</a>
+        <button class="sub" id="copyBtn">結果をコピー</button>
+      </div>
+      <p class="how" id="copyMsg">記録はこのブラウザだけに保存されます</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+<script>
+(() => {
+const { Engine, Bodies, Body, Composite } = Matter;
+const $ = id => document.getElementById(id);
+const cvs = $('c'), ctx = cvs.getContext('2d');
+
+/* ---------- save data (this browser only) ---------- */
+const KEY = 'nigiri-tsumi:v1';
+function load() { try { return Object.assign({ best: 0, bestCm: 0, plays: 0 }, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch { return { best: 0, bestCm: 0, plays: 0 }; } }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch {} }
+let rec = load();
+
+/* ---------- neta catalogue ---------- */
+const NETA = [
+  { name: 'まぐろ',   w: 84, h: 30, neta: '#b3243a', line: '#d8586b' },
+  { name: 'サーモン', w: 86, h: 30, neta: '#f0874a', line: '#fde2cc' },
+  { name: 'たまご',   w: 78, h: 34, neta: '#f2c444', band: true },
+  { name: 'えび',     w: 92, h: 28, neta: '#f6b391', line: '#e0532f' },
+  { name: 'いか',     w: 76, h: 28, neta: '#f3efe6', line: '#d9d0bf' },
+  { name: 'はまち',   w: 82, h: 30, neta: '#eec3b0', line: '#c9705f' },
+  { name: 'いくら',   w: 56, h: 42, gunkan: true, neta: '#e2541f' },
+  { name: 'うに',     w: 56, h: 40, gunkan: true, neta: '#e8a33a' },
+];
+function makeSpec() {
+  const t = NETA[Math.floor(Math.random() * NETA.length)];
+  const grains = Array.from({ length: 9 }, () => [Math.random(), Math.random()]);
+  return { ...t, grains };
+}
+
+/* ---------- sizing ---------- */
+let W, H, dpr, scale, VW, VH;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cvs.width = Math.round(W * dpr); cvs.height = Math.round(H * dpr);
+  scale = Math.min(W / 380, H / 680);
+  VW = W / scale; VH = H / scale;
+}
+window.addEventListener('resize', resize); resize();
+
+/* ---------- world ---------- */
+const PX_PER_CM = 10, PLATE_W = 210, L = 120;
+let engine, pieces, state = 'title', score, held, active, activeAge, still, camY, t, lastTop, floats, overTimer, shake, sticksOpen, nextAt;
+
+function reset() {
+  engine = Engine.create({ positionIterations: 10, velocityIterations: 8 });
+  engine.gravity.y = 1;
+  const plate = Bodies.rectangle(0, 10, PLATE_W, 20, { isStatic: true, friction: 1, frictionStatic: 1, chamfer: { radius: 4 } });
+  Composite.add(engine.world, plate);
+  pieces = []; score = 0; active = null; still = 0; t = 0; lastTop = null; floats = []; overTimer = 0; shake = 0;
+  camY = -VH * 0.64; held = makeSpec(); sticksOpen = 0; nextAt = 0;
+  updateHud(0);
+}
+
+function towerTop() {
+  let top = 0;
+  for (const p of pieces) if (p.settled) top = Math.min(top, p.body.bounds.min.y);
+  return top;
+}
+const omega = () => Math.min(1.7 + score * 0.06, 3.8);
+const AMP = 0.6;
+function pivot() { return { x: 0, y: camY + 96 }; }
+function heldPos() {
+  const th = AMP * Math.sin(omega() * t), pv = pivot();
+  return { x: pv.x + L * Math.sin(th), y: pv.y + L * Math.cos(th), th };
+}
+
+function drop() {
+  if (state !== 'play' || !held || active) return;
+  const hp = heldPos(), w = omega();
+  const dth = AMP * w * Math.cos(w * t);           // rad/s
+  const vx = L * dth * Math.cos(hp.th) / 60 * 0.5;  // px per step
+  const vy = -L * dth * Math.sin(hp.th) / 60 * 0.5;
+  const b = held.gunkan
+    ? Bodies.rectangle(hp.x, hp.y, held.w, held.h, { chamfer: { radius: 6 } })
+    : Bodies.rectangle(hp.x, hp.y, held.w, held.h, { chamfer: { radius: [12, 12, 9, 9] } });
+  Body.set(b, { friction: 0.9, frictionStatic: 1.2, restitution: 0, density: 0.0018, frictionAir: 0.01 });
+  Body.setVelocity(b, { x: vx, y: Math.max(vy, 0) });
+  Composite.add(engine.world, b);
+  active = { body: b, spec: held, settled: false };
+  pieces.push(active);
+  held = null; activeAge = 0; still = 0; sticksOpen = 1;
+  plop(320);
+}
+
+function step() {
+  Engine.update(engine, 1000 / 60);
+  t += 1 / 60;
+  if (state === 'play' && active) {
+    activeAge++;
+    const b = active.body;
+    if (b.speed < 0.18 && Math.abs(b.angularVelocity) < 0.01) still++; else still = 0;
+    if ((still > 14 || activeAge > 200) && b.position.y < 0) {
+      active.settled = true; score++;
+      const dx = lastTop ? Math.abs(b.position.x - lastTop.position.x) : Math.abs(b.position.x);
+      if (dx < 3.5) floats.push({ text: 'ぴったり！', x: b.position.x, y: b.bounds.min.y - 10, life: 1 });
+      if (score % 10 === 0) floats.push({ text: `${score}貫 達成`, x: 0, y: b.bounds.min.y - 40, life: 1.4 });
+      lastTop = b; active = null; nextAt = t + 0.25;
+      plop(180 + Math.min(score, 40) * 6);
+      updateHud();
+    }
+  }
+  if (state === 'play' && !active && !held && t >= nextAt) { held = makeSpec(); sticksOpen = 0; }
+  // anything below the plate = fallen
+  if (state === 'play') {
+    for (const p of pieces) if (p.body.position.y > 70) { endGame(); break; }
+  }
+  if (state === 'falling') { overTimer += 1 / 60; if (overTimer > 1.1) showOver(); }
+  for (const f of floats) f.life -= 1 / 60 / 1.2;
+  floats = floats.filter(f => f.life > 0);
+  shake *= 0.9;
+  sticksOpen = Math.max(0, sticksOpen - 1 / 60 * 2.5) * (held ? 0 : 1);
+}
+
+function endGame() {
+  state = 'falling'; overTimer = 0; shake = 8; held = null;
+  plop(110, 0.35);
+}
+
+function showOver() {
+  state = 'over';
+  const cm = (-towerTop() / PX_PER_CM);
+  rec.plays++;
+  const isNew = score > rec.best;
+  if (isNew) rec.best = score;
+  if (cm > rec.bestCm) rec.bestCm = +cm.toFixed(1);
+  save();
+  $('oScore').textContent = score; $('oCm').textContent = cm.toFixed(1); $('oBest').textContent = rec.best;
+  $('newRec').hidden = !(isNew && score > 0);
+  $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({
+    text: `🍣にぎり積み ${score}貫（高さ${cm.toFixed(1)}cm）${isNew && score > 0 ? '自己ベスト更新！' : ''}\n`,
+    url: gameUrl(), hashtags: 'にぎり積み'
+  });
+  $('copyMsg').textContent = '記録はこのブラウザだけに保存されます';
+  $('over').hidden = false; $('hud').hidden = true;
+  $('retryBtn').focus({ preventScroll: true });
+}
+
+/* ---------- share ---------- */
+// 公開先のURL。ローカルで開いたときもこれをシェアする
+const PUBLIC_URL = 'https://naki0227.github.io/mini-game/games/nigiri/';
+function gameUrl() {
+  try {
+    if (/^https?:$/.test(location.protocol) && location.hostname !== 'localhost') return location.origin + location.pathname;
+  } catch {}
+  return PUBLIC_URL;
+}
+
+/* ---------- HUD ---------- */
+let lastHudCm = -1;
+function updateHud(cmOverride) {
+  const cm = cmOverride ?? (-towerTop() / PX_PER_CM);
+  $('hScore').textContent = score;
+  if (cm !== lastHudCm) { $('hHeight').textContent = cm.toFixed(1) + 'cm'; lastHudCm = cm; }
+  $('hBest').textContent = `最高 ${rec.best}貫`;
+}
+function fillTitle() { $('tBest').textContent = rec.best; $('tBestCm').textContent = (+rec.bestCm).toFixed(1); $('tPlays').textContent = rec.plays; }
+
+/* ---------- sound ---------- */
+let ac = null;
+function plop(freq, vol = 0.18) {
+  try {
+    if (!ac) return;
+    const o = ac.createOscillator(), g = ac.createGain(), now = ac.currentTime;
+    o.type = 'sine'; o.frequency.setValueAtTime(freq, now); o.frequency.exponentialRampToValueAtTime(freq * 0.55, now + 0.12);
+    g.gain.setValueAtTime(vol, now); g.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+    o.connect(g).connect(ac.destination); o.start(now); o.stop(now + 0.18);
+  } catch {}
+}
+function wakeAudio() { try { if (!ac) ac = new (window.AudioContext || window.webkitAudioContext)(); if (ac.state === 'suspended') ac.resume(); } catch {} }
+
+/* ---------- drawing ---------- */
+function rr(x, y, w, h, r) {
+  const rs = Array.isArray(r) ? r : [r, r, r, r];
+  ctx.beginPath();
+  ctx.moveTo(x + rs[0], y);
+  ctx.arcTo(x + w, y, x + w, y + h, rs[1]); ctx.arcTo(x + w, y + h, x, y + h, rs[2]);
+  ctx.arcTo(x, y + h, x, y, rs[3]); ctx.arcTo(x, y, x + w, y, rs[0]); ctx.closePath();
+}
+function drawPiece(s, x, y, ang) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+  const w = s.w, h = s.h, x0 = -w / 2, y0 = -h / 2;
+  if (s.gunkan) {
+    rr(x0, y0 + 6, w, h - 6, 6); ctx.fillStyle = '#1d2a22'; ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(x0 + 6, y0 + 10, 4, h - 14);
+    ctx.fillStyle = s.neta;
+    if (s.name === 'いくら') {
+      for (let i = 0; i < 7; i++) { ctx.beginPath(); ctx.arc(x0 + 8 + i * 6.8, y0 + 6 + (i % 2) * 3, 5.2, 0, Math.PI * 2); ctx.fill(); }
+      ctx.fillStyle = 'rgba(255,255,255,.55)';
+      for (let i = 0; i < 7; i++) { ctx.beginPath(); ctx.arc(x0 + 7 + i * 6.8, y0 + 4 + (i % 2) * 3, 1.4, 0, Math.PI * 2); ctx.fill(); }
+    } else {
+      rr(x0 + 3, y0, w - 6, 13, 6); ctx.fill();
+      ctx.strokeStyle = '#c9822a'; ctx.lineWidth = 1.2;
+      for (let i = 0; i < 4; i++) { ctx.beginPath(); ctx.moveTo(x0 + 10 + i * 11, y0 + 3); ctx.lineTo(x0 + 6 + i * 11, y0 + 11); ctx.stroke(); }
+    }
+  } else {
+    // rice
+    rr(x0 + 4, y0 + h * 0.32, w - 8, h * 0.68, [6, 6, 11, 11]); ctx.fillStyle = '#fbf8f0'; ctx.fill();
+    ctx.strokeStyle = 'rgba(120,95,60,.25)'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = 'rgba(160,140,100,.35)';
+    for (const [gx, gy] of s.grains) ctx.fillRect(x0 + 8 + gx * (w - 16), y0 + h * 0.5 + gy * h * 0.42, 3, 1.6);
+    // neta
+    rr(x0, y0, w, h * 0.5, [12, 12, 5, 5]); ctx.fillStyle = s.neta; ctx.fill();
+    if (s.band) {
+      ctx.fillStyle = '#1d2a22'; ctx.fillRect(-7, y0 - 1, 14, h + 1);
+    } else {
+      ctx.save(); rr(x0, y0, w, h * 0.5, [12, 12, 5, 5]); ctx.clip();
+      ctx.strokeStyle = s.line; ctx.lineWidth = s.name === 'えび' ? 4 : 2.2;
+      for (let i = -1; i < 5; i++) { ctx.beginPath(); ctx.moveTo(x0 + i * (w / 4) + 10, y0 - 2); ctx.lineTo(x0 + i * (w / 4) - 4, y0 + h * 0.5 + 2); ctx.stroke(); }
+      ctx.restore();
+      ctx.fillStyle = 'rgba(255,255,255,.22)'; rr(x0 + 10, y0 + 3, w * 0.4, 3, 2); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
+
+function lerpColor(a, b, k) {
+  const pa = a.match(/\w\w/g).map(v => parseInt(v, 16)), pb = b.match(/\w\w/g).map(v => parseInt(v, 16));
+  return `rgb(${pa.map((v, i) => Math.round(v + (pb[i] - v) * k)).join(',')})`;
+}
+
+function render() {
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // wall: hinoki near the counter, indigo night sky as the tower climbs (~3m)
+  const k = Math.min(1, Math.max(0, (-camY - VH * 0.64) / 3000));
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, lerpColor('#e6d2ac', '#141e33', k));
+  g.addColorStop(1, lerpColor('#f2e5cb', '#2c3d5e', k));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+  const sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake;
+  ctx.setTransform(dpr * scale, 0, 0, dpr * scale, dpr * (W / 2 + sx), dpr * (-camY * scale + sy));
+
+  // height ruler in cm on the left
+  const left = -VW / 2 + 14;
+  ctx.font = `500 11px ${getComputedStyle(document.body).fontFamily}`;
+  const rulerInk = k > 0.5 ? 'rgba(243,234,216,.55)' : 'rgba(42,28,18,.4)';
+  ctx.fillStyle = rulerInk; ctx.strokeStyle = rulerInk; ctx.lineWidth = 1;
+  const top = camY, bot = camY + VH;
+  for (let cm = Math.max(0, Math.floor(-bot / PX_PER_CM / 5) * 5); cm * -PX_PER_CM > top - 20; cm += 5) {
+    const y = -cm * PX_PER_CM;
+    const major = cm % 10 === 0;
+    ctx.beginPath(); ctx.moveTo(left, y); ctx.lineTo(left + (major ? 14 : 7), y); ctx.stroke();
+    if (major && cm > 0) ctx.fillText(`${cm}cm`, left + 18, y + 4);
+  }
+  // best line
+  if (rec.bestCm > 0) {
+    const y = -rec.bestCm * PX_PER_CM;
+    ctx.setLineDash([6, 6]); ctx.strokeStyle = '#c4452f'; ctx.beginPath(); ctx.moveTo(-VW / 2, y); ctx.lineTo(VW / 2, y); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = '#c4452f'; ctx.fillText('最高記録', VW / 2 - 62, y - 5);
+  }
+
+  // counter
+  ctx.fillStyle = '#c99c64'; ctx.fillRect(-VW / 2 - 20, 40, VW + 40, 400);
+  ctx.fillStyle = '#a77a45'; ctx.fillRect(-VW / 2 - 20, 40, VW + 40, 6);
+  ctx.strokeStyle = 'rgba(90,60,30,.18)'; ctx.lineWidth = 1.2;
+  for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(-VW / 2 - 20, 60 + i * 18); ctx.bezierCurveTo(-60, 54 + i * 18, 60, 68 + i * 18, VW / 2 + 20, 58 + i * 18); ctx.stroke(); }
+  // geta plate
+  ctx.fillStyle = '#8a5a2e'; ctx.fillRect(-PLATE_W / 2 + 18, 18, 18, 22); ctx.fillRect(PLATE_W / 2 - 36, 18, 18, 22);
+  rr(-PLATE_W / 2, 0, PLATE_W, 20, 4); ctx.fillStyle = '#b07a43'; ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.18)'; ctx.fillRect(-PLATE_W / 2 + 6, 3, PLATE_W - 12, 3);
+
+  for (const p of pieces) drawPiece(p.spec, p.body.position.x, p.body.position.y, p.body.angle);
+
+  // chopsticks + held piece
+  if (state === 'play' || state === 'title') {
+    const hp = heldPos(), pv = pivot();
+    const nx = Math.cos(hp.th), ny = -Math.sin(hp.th);
+    const spread = (held ? (held.w / 2 - 14) : 20) + sticksOpen * 14;
+    const tipY = held ? held.h / 2 + 2 : 18;
+    if (held) drawPiece(held, hp.x, hp.y, 0);
+    ctx.lineCap = 'round';
+    for (const s of [-1, 1]) {
+      const tx = hp.x + nx * s * spread * 0.55, ty = hp.y - tipY * 0.2 + ny * s * spread * 0.55;
+      const bx = pv.x - Math.sin(hp.th) * 110 + nx * s * 10, by = pv.y - Math.cos(hp.th) * 110 + ny * s * 10;
+      ctx.strokeStyle = '#6b3d1f'; ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(tx, ty); ctx.stroke();
+      ctx.strokeStyle = '#d9a36a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(bx, by); ctx.lineTo(tx, ty); ctx.stroke();
+    }
+  }
+
+  // floating text
+  ctx.textAlign = 'center';
+  for (const f of floats) {
+    ctx.globalAlpha = Math.min(1, f.life * 2);
+    ctx.font = `20px ${getComputedStyle(document.documentElement).getPropertyValue('--font-display')}`;
+    ctx.lineWidth = 5; ctx.strokeStyle = '#fbf8f0'; ctx.fillStyle = '#c4452f';
+    const y = f.y - (1 - f.life) * 30;
+    ctx.strokeText(f.text, f.x, y); ctx.fillText(f.text, f.x, y);
+  }
+  ctx.globalAlpha = 1; ctx.textAlign = 'start';
+}
+
+/* ---------- loop ---------- */
+let acc = 0, lastTs = performance.now();
+function frame(ts) {
+  acc += Math.min(100, ts - lastTs); lastTs = ts;
+  while (acc >= 1000 / 60) {
+    if (state === 'title') t += 1 / 60; else step();
+    acc -= 1000 / 60;
+  }
+  if (state !== 'title') {
+    const target = Math.min(-VH * 0.64, towerTop() - VH * 0.5);
+    camY += (target - camY) * 0.06;
+    if (state === 'play') updateHud();
+  }
+  render();
+  requestAnimationFrame(frame);
+}
+
+/* ---------- input ---------- */
+function start() {
+  wakeAudio(); reset(); state = 'play';
+  $('title').hidden = true; $('over').hidden = true; $('hud').hidden = false;
+}
+cvs.addEventListener('pointerdown', e => { e.preventDefault(); wakeAudio(); if (state === 'play') drop(); });
+window.addEventListener('keydown', e => {
+  if (e.code !== 'Space' && e.code !== 'Enter') return;
+  if (state === 'play') { e.preventDefault(); drop(); }
+});
+$('startBtn').addEventListener('click', start);
+$('retryBtn').addEventListener('click', start);
+$('copyBtn').addEventListener('click', () => {
+  const cm = $('oCm').textContent;
+  const text = `にぎり積み ${score}貫（高さ${cm}cm）🍣 最高 ${rec.best}貫`;
+  const msg = $('copyMsg');
+  const fallback = () => { msg.textContent = text; const r = document.createRange(); r.selectNodeContents(msg); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.style.userSelect = 'text'; };
+  try {
+    navigator.clipboard.writeText(text).then(() => { msg.textContent = 'コピーしました'; }, fallback);
+  } catch { fallback(); }
+});
+
+reset(); fillTitle(); updateHud(0);
+$('startBtn').focus({ preventScroll: true });
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
