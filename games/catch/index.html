@@ -252,10 +252,16 @@ const DIST = Math.hypot(BAR.z - RELEASE.z, 0);
 // 投げ方: 強さと回転は毎回同じ。上下の角度と左右の向きはプレイヤーが引いて決める
 const SPIN = 0;                                   // rad/s（前回り）
 const V0 = 6.4;                                   // 初速 m/s（固定）
-const PITCH_MIN = 0, PITCH_MAX = 36;              // 下へ引いた量で決まる角度（度）
-const YAW_MAX = 0.25;                             // 左右いっぱいに引いたときの向き（rad）
+const PITCH_MIN = 0, PITCH_MAX = 48;              // 下へ引いた量で決まる角度（度）
+const YAW_MAX = 0.35;                             // 左右いっぱいに引いたときの向き（rad）
 // 人間らしいブレ（標準偏差）: 持ち手の傾き・回転の位相・わずかな速さと向き
 const JIT = { yaw: 0.016, v: 0.2, pitch: 0.016, tilt: 0.24, roll: 0.1, spin: 3.2 };
+// ブレは「押し始めた画面上の位置」だけで決まる（同じ所を押せば毎回同じブレ）。
+// 画面の縦横を0〜1にした座標の、なめらかな固定パターン。近い所は近いブレになる。
+function jitterAt(u, v) {
+  const f = (k) => Math.sin(6.1 * u + 2.3 * v + k * 1.7) * 0.6 + Math.sin(-3.7 * u + 7.9 * v + k * 2.9) * 0.5 + Math.sin(9.3 * u - 4.1 * v + k * 0.7) * 0.4;
+  return { yaw: f(1) * JIT.yaw, v: f(2) * JIT.v, pitch: f(3) * JIT.pitch, tilt: f(4) * JIT.tilt, roll: f(5) * JIT.roll, spin: f(6) * JIT.spin };
+}
 function jitterOf(r) { return { yaw: gauss(r) * JIT.yaw, v: gauss(r) * JIT.v, pitch: gauss(r) * JIT.pitch, tilt: gauss(r) * JIT.tilt, roll: gauss(r) * JIT.roll, spin: gauss(r) * JIT.spin }; }
 const NOJIT = { yaw: 0, v: 0, pitch: 0, tilt: 0, roll: 0, spin: 0 };
 
@@ -642,7 +648,7 @@ const DEG = Math.PI / 180;
 function aimNow() {
   if (drag) {
     const L = dragLen(), dx = drag.x - drag.x0, dy = drag.y - drag.y0;
-    return { pitch: lerp(PITCH_MIN, PITCH_MAX, clamp(dy / L, 0, 1)) * DEG, yaw: clamp(-dx / L, -1, 1) * YAW_MAX, weak: Math.hypot(dx, dy) < 10 };
+    return { pitch: lerp(PITCH_MIN, PITCH_MAX, clamp(dy / L, 0, 1)) * DEG, yaw: clamp(-dx / L, -1, 1) * YAW_MAX, weak: Math.hypot(dx, dy) < 10, u: clamp(drag.x0 / W, 0, 1), v: clamp(drag.y0 / H, 0, 1) };
   }
   if (kb) return { pitch: kb.pitch, yaw: kb.yaw };
   return null;
@@ -651,7 +657,7 @@ function newHangerRec(body, mesh) { return { body, mesh, blob: makeBlob(0.42, 0.
 function throwNow(a) {
   if (state !== 'play' || phase !== 'ready' || !a || a.weak) return false;
   n++; rec.throws++; save();
-  const j = jitterOf(rng);
+  const j = jitterAt(a.u ?? 0.5, a.v ?? 0.5);   // キーボードで投げたときは画面中央を押した扱い
   const body = spawnHanger(world, a, j);
   const mesh = new THREE.Mesh(hangerGeo, hangerMat(n)); scene.add(mesh);
   flying = newHangerRec(body, mesh); flying.n = n; flying.aim = a;
@@ -1159,6 +1165,7 @@ if (HASH.has('debug')) {
     rate(a, N = 100) { let h = 0; for (let i = 0; i < N; i++) if (simulate(a, jitterOf(Math.random)) === 'hang') h++; return h / N; },
     rateRandom(N = 300) { let h = 0; for (let i = 0; i < N; i++) { const a = { pitch: deg(rand(PITCH_MIN, PITCH_MAX)), yaw: rand(-YAW_MAX, YAW_MAX) }; if (simulate(a, jitterOf(Math.random)) === 'hang') h++; } return h / N; },
     throwWith: a => throwNow(a),
+    simAt: (a, u, v) => simulate(a, jitterAt(u, v)),
     setSeed: s => { seed = s >>> 0; },
     firstThrowWithSeed(s, a) { const keep = seed; seed = s >>> 0; const j = jitterOf(rng); seed = keep; return simulate(a, j); },
   };
