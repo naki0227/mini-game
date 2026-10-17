@@ -125,7 +125,7 @@ button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
 <canvas id="fx" aria-label="ハンガーキャッチのゲーム画面"></canvas>
 
 <div class="hud" id="hud" hidden>
-  <div class="pill right"><span class="lab">最少記録</span><span class="val" id="hBest">—</span></div>
+  <div class="pill right"><span class="lab">最高連続</span><span class="val" id="hBest">—</span></div>
 </div>
 
 <div class="overlay" id="title">
@@ -133,7 +133,7 @@ button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
     <div class="noren" aria-hidden="true"><span>ハ</span><span>ン</span><span>ガ</span><span>ー</span><span class="w">キャッチ</span></div>
     <div class="body">
       <p class="lead">部屋の奥からハンガーを投げて、<br>手前のラックの<b>服のすき間</b>に引っ掛けろ。<br>何回目で掛かるか、の勝負。</p>
-      <div class="meta"><span>最少 <b id="tBest">—</b> 回目</span><span>成功 <b id="tWins">0</b> 回</span><span>平均 <b id="tAvg">—</b> 回</span></div>
+      <div class="meta"><span>最高 <b id="tBest">—</b> 本連続</span><span>初ヒット最少 <b id="tWins">—</b> 回目</span><span>遊んだ <b id="tAvg">0</b> 回</span></div>
       <div class="btns"><button id="startBtn" disabled>よみこみ中…</button></div>
       <p class="err" id="loadErr" hidden></p>
       <p class="how">押して下へ引っ張り、離して投げる。強さはいつも同じ。<br>下へ引くほど高く／左へ引くと右へ（キーボード: ←→ 向き・↑↓ 角度・スペース）</p>
@@ -147,9 +147,9 @@ button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
     <div class="noren result" aria-hidden="true"><span>か</span><span>か</span><span>っ</span><span>た</span></div>
     <div class="body">
       <div class="badge" id="newRec" hidden>新記録</div>
-      <div class="score"><span id="oScore">0</span><small>回目</small></div>
-      <p class="lead" id="oMsg">でかかった！</p>
-      <div class="meta"><span>最少 <b id="oBest">0</b> 回</span><span>成功 <b id="oWins">0</b> 回</span><span>平均 <b id="oAvg">0</b> 回</span></div>
+      <div class="score"><span id="oScore">0</span><small>本連続</small></div>
+      <p class="lead" id="oMsg">初ヒットから連続でかけた本数</p>
+      <div class="meta"><span>最高 <b id="oBest">0</b> 本連続</span><span>初ヒット最少 <b id="oWins">0</b> 回目</span><span>初ヒット平均 <b id="oAvg">0</b> 回目</span></div>
       <div class="btns">
         <button id="retryBtn">もう一回</button>
         <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Xでシェア</a>
@@ -183,7 +183,7 @@ const FB = getComputedStyle(document.documentElement).getPropertyValue('--font-b
 
 /* ---------- 記録（このブラウザだけ）: 少ないほど良い ---------- */
 const KEY = 'catch:v1';
-const DEF = { ver: 2, best: 0, wins: 0, throws: 0, winThrows: 0, plays: 0 };
+const DEF = { ver: 2, best: 0, wins: 0, throws: 0, winThrows: 0, plays: 0, bestChain: 0 };   // best=初ヒットまでの最少回数、bestChain=最高連続
 function load() {
   try { const d = JSON.parse(localStorage.getItem(KEY) || '{}'); if (d && d.ver === 2) return Object.assign({ ...DEF }, d); } catch {}
   return { ...DEF };   // 古い形式（10本勝負のころ）は使わない
@@ -336,22 +336,32 @@ function hookState(b) {
 }
 function curlWorld(b) { const t = b.translation(), cw = qrot(b.rotation(), HP.curlC); return { x: t.x + cw.x, y: t.y + cw.y, z: t.z + cw.z }; }
 
-const HOLD = 0.7;
-// 外れはすぐ決める（竿より下に落ちたら終わり）。掛かりかけているときは結果を待つ
+const HOLD = 0.7;     // カギの内側に竿が入り続ける時間
+const SETTLE = 0.4;   // そのうえで「ぶら下がって落ち着いた」状態が続く時間
+// 掛かった判定: 竿の周りをくるくる回っている間や、すべって落ちる途中では成功にしない。
+// カギが竿に入ったまま、本体が竿より下にぶら下がり、動きが落ち着いたら成功。
 function judgeStep(h, dt) {
   const hs = hookState(h.body);
-  if (hs.inside) { h.inT += dt; h.wasIn = true; } else h.inT = 0;
-  if (h.inT >= HOLD) return 'hang';
+  if (hs.inside) { h.inT += dt; h.wasIn = true; } else { h.inT = 0; h.calmT = 0; }
+  if (hs.inside) {
+    const b = h.body, v = b.linvel(), w = b.angvel(), t = b.translation();
+    const below = t.y < BAR.y - 0.04;                         // 本体（重心）が竿より下＝ぶら下がっている
+    const calm = Math.hypot(v.x, v.y, v.z) < 0.35 && Math.hypot(w.x, w.y, w.z) < 2.2;
+    h.calmT = below && calm ? (h.calmT || 0) + dt : 0;
+    if (h.inT >= HOLD && h.calmT >= SETTLE) return 'hang';
+    if (h.inT >= 6 && below) return 'hang';                    // 揺れが長く続いても、6秒ぶら下がっていれば成功
+  }
   if (h.inT === 0) {
     if (h.t > 0.12 && hs.c.y < BAR.y - 0.32) return 'miss';
     if (hs.c.z > BAR.z + 0.25 && hs.c.y < BAR.y + 0.05) return 'miss';
-    if (h.t > 3) return 'miss';
+    if (h.t > 3 && !h.wasIn) return 'miss';
   }
+  if (h.t > 8) return 'miss';   // 竿に絡んだまま決まらないときも、8秒で必ず決着をつける
   return null;
 }
 function simulate(a, j = NOJIT) {
   const w = makeWorld();
-  const h = { body: spawnHanger(w, a, j), t: 0, inT: 0, wasIn: false };
+  const h = { body: spawnHanger(w, a, j), t: 0, inT: 0, wasIn: false, calmT: 0 };
   let res = null;
   while (!res) { w.step(); h.t += PDT; res = judgeStep(h, PDT); }
   w.free();
@@ -617,6 +627,7 @@ let world = null, hangers = [], heldMesh = null;
 let state = 'loading';      // loading | title | play | over
 let phase = 'ready';        // ready | fly | won
 let n = 0, phaseT = 0, tt = 0, ts = 1, slowT = 0;
+let first = 0, chain = 0;   // first=初めて掛かった回目（0=まだ）、chain=そこからの連続本数
 let flying = null, pending = null, pops = [], confetti = [], drag = null, kb = null, overShownAt = 0, ghost = null;
 camera.position.set(0, BAR.y + 0.4, BAR.z + 1.32);
 camera.lookAt(0, 1.13, THR.z);
@@ -629,13 +640,19 @@ function resetWorld() {
 }
 function newGame() {
   resetWorld();
-  n = 0; pops = []; confetti = []; ghost = null; slowT = 0; ts = 1; drag = null;
+  n = 0; first = 0; chain = 0; pops = []; confetti = []; ghost = null; slowT = 0; ts = 1; drag = null;
   for (const f of friends) f.setMood('idle', 0);
   thrower.setMood('idle', 0);
   toReady();
   updateHud();
 }
-function toReady() { phase = 'ready'; phaseT = 0; showHeld(true); }
+// 連続で掛けるたびに投げる人が一歩さがる（6本目まで25cmずつ）。それ以降は左右に一歩ずつずれる
+function placeThrower() {
+  const k = Math.min(chain, 6), side = chain > 6 ? ((chain - 6) % 2 ? 1 : -1) * 0.22 : 0;
+  RELEASE.x = side; RELEASE.z = -2.3 - k * 0.25;
+  thrower.x = THR.x + side; thrower.z = THR.z - k * 0.25;
+}
+function toReady() { placeThrower(); phase = 'ready'; phaseT = 0; showHeld(true); }
 function showHeld(on) {
   if (!heldMesh) { heldMesh = new THREE.Mesh(hangerGeo, hangerMat(0)); scene.add(heldMesh); }
   heldMesh.visible = on;
@@ -671,7 +688,7 @@ function throwNow(a) {
 }
 function trimHangers() {
   // 床に落ちたハンガーは古いものから消して軽くする
-  const fallen = hangers.filter(h => h !== flying);
+  const fallen = hangers.filter(h => h !== flying && !h.hung);
   while (fallen.length > 14) {
     const h = fallen.shift(); world.removeRigidBody(h.body); scene.remove(h.mesh); scene.remove(h.blob);
     hangers.splice(hangers.indexOf(h), 1);
@@ -718,22 +735,28 @@ function resolve(res) {
   if (state !== 'play') { demoAfter(res); return; }
   ghost = h.path;
   if (res === 'hang') {
+    h.hung = true;
+    if (!first) first = h.n;
+    chain++;
     phase = 'won'; phaseT = 0; pending = null; drag = null;
     celebrate(h.n);
+    updateHud();
     return;
   }
   const why = h.wasIn ? 'すべり落ちた…！' : h.touched ? '弾かれた' : h.over ? '飛びすぎ' : h.maxZ < BAR.z - 0.05 ? '届かない' : '外れた';
   pops = pops.filter(p => !p.miss);
   pops.push({ text: why, life: 0, dur: 0.8, size: h.wasIn ? 30 : 24, color: '#f5efe2', miss: true });
-  if (h.wasIn) { sGroan(); for (const fr of friends) fr.setMood('groan', 0.8); thrower.setMood('groan', 0.8); }
+  if (h.wasIn || first) { sGroan(); for (const fr of friends) fr.setMood('groan', 0.8); thrower.setMood('groan', 0.8); }
+  if (first) { phase = 'lost'; phaseT = 0; pending = null; drag = null; return; }   // 連続が途切れたら終わり
   toReady();
   if (pending) { const a = pending; pending = null; throwNow(a); }
 }
 function celebrate(cnt) {
-  const one = cnt === 1;
-  const lvl = one ? 1 : clamp(0.5 + Math.log2(cnt) * 0.09, 0.5, 1);
+  const one = cnt === 1 && chain === 1, more = chain > 1;
+  const lvl = one ? 1 : more ? clamp(0.55 + chain * 0.08, 0.55, 1) : clamp(0.5 + Math.log2(cnt) * 0.09, 0.5, 1);
   pops = [];
-  pops.push({ text: one ? '一発！！' : 'かかった！', sub: `${cnt}回目`, life: 0, dur: 2.4, size: one ? 58 : 50, color: one ? '#ffd36a' : '#ffe7b8' });
+  if (more) pops.push({ text: `${chain}本連続！`, sub: chain < 6 ? '一歩さがって次！' : '横にずれて次！', life: 0, dur: 1.5, size: 50, color: chain >= 5 ? '#ffd36a' : '#ffe7b8' });
+  else pops.push({ text: one ? '一発！！' : 'かかった！', sub: `${cnt}回目・一歩さがって次！`, life: 0, dur: 1.8, size: one ? 58 : 50, color: one ? '#ffd36a' : '#ffe7b8' });
   sCheer(lvl); if (one) setTimeout(() => sCheer(1), 650);
   for (const fr of friends) fr.setMood('cheer', 1.6 + lvl, lvl);
   thrower.setMood('cheer', 1.6 + lvl, lvl);
@@ -754,7 +777,8 @@ function step(dt) {
     while (physAcc >= PDT && k < 8) { physStep(); physAcc -= PDT; k++; }
     if (k >= 8) physAcc = 0;
   }
-  if (state === 'play' && phase === 'won' && phaseT > 2.8) showOver();
+  if (state === 'play' && phase === 'won' && phaseT > (chain > 1 ? 1.3 : 1.7)) toReady();
+  if (state === 'play' && phase === 'lost' && phaseT > 1.1) showOver();
   if (state === 'title') demoStep(dt);
   thrower.arm = Math.max(0, thrower.arm - dt * 2.4);
   const a = state === 'play' && (phase === 'ready' || phase === 'fly') ? aimNow() : null;
@@ -861,17 +885,18 @@ function drawFx() {
   fx.globalAlpha = 1; fx.textAlign = 'start';
 }
 function drawCounter() {
-  const cur = phase === 'ready' ? n + 1 : n;
+  const cur = first ? chain : (phase === 'ready' ? n + 1 : n);
+  const unit = first ? '本連続' : '回目';
   const y = safeT + 50;
   fx.textAlign = 'center'; fx.lineJoin = 'round';
   fx.font = `46px ${FD}`;
   const num = String(cur), wNum = fx.measureText(num).width;
-  fx.font = `18px ${FD}`; const wU = fx.measureText('回目').width;
+  fx.font = `18px ${FD}`; const wU = fx.measureText(unit).width;
   const x0 = W / 2 - (wNum + wU + 4) / 2;
   fx.textAlign = 'left';
   fx.font = `46px ${FD}`; fx.lineWidth = 7; fx.strokeStyle = 'rgba(20,18,24,.9)'; fx.fillStyle = '#f5efe2';
   fx.strokeText(num, x0, y); fx.fillText(num, x0, y);
-  fx.font = `18px ${FD}`; fx.lineWidth = 5; fx.strokeText('回目', x0 + wNum + 4, y); fx.fillText('回目', x0 + wNum + 4, y);
+  fx.font = `18px ${FD}`; fx.lineWidth = 5; fx.strokeText(unit, x0 + wNum + 4, y); fx.fillText(unit, x0 + wNum + 4, y);
   fx.textAlign = 'start';
 }
 function drawGhost() {
@@ -935,13 +960,14 @@ function drawPitchGuide(x, y, pitch) {
 /* ---------- 結果 ---------- */
 function showOver() {
   state = 'over'; phase = 'over';
-  rec.plays++; rec.wins++; rec.winThrows += n;
-  const isNew = !rec.best || n < rec.best;
-  if (isNew) rec.best = n;
+  rec.plays++; rec.wins++; rec.winThrows += first;
+  const isNew = chain > rec.bestChain;
+  if (isNew) rec.bestChain = chain;
+  if (!rec.best || first < rec.best) rec.best = first;
   save();
-  $('oScore').textContent = n;
-  $('oMsg').textContent = n === 1 ? '一発でかかった！' : n >= 30 ? 'でついにかかった！' : 'でかかった！';
-  $('oBest').textContent = rec.best; $('oWins').textContent = rec.wins; $('oAvg').textContent = avgOf(rec).toFixed(1);
+  $('oScore').textContent = chain;
+  $('oMsg').textContent = `${first === 1 ? '一発目' : first + '回目'}で初ヒット、そこから${chain}本かけた！`;
+  $('oBest').textContent = rec.bestChain; $('oWins').textContent = rec.best; $('oAvg').textContent = avgOf(rec).toFixed(1);
   $('newRec').hidden = !isNew;
   $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({ text: `${shareText()}${isNew && rec.wins > 1 ? ' 自己ベスト！' : ''}\n`, url: gameUrl(), hashtags: 'ハンガーキャッチ' });
   $('copyMsg').textContent = '画面タップ・スペースでもう一回';
@@ -950,7 +976,7 @@ function showOver() {
   showHeld(false);
   $('retryBtn').focus({ preventScroll: true });
 }
-const shareText = () => `🙌ハンガーキャッチ ${n}回目でかかった！${n === 1 ? '一発！' : ''}（最少 ${rec.best}回）`;
+const shareText = () => `🙌ハンガーキャッチ ${chain}本連続でかけた！（${first}回目で初ヒット・最高 ${rec.bestChain}本）`;
 
 /* ---------- シェア ---------- */
 // 公開先のURL。ローカルで開いたときもこれをシェアする
@@ -963,8 +989,8 @@ function gameUrl() {
 }
 
 /* ---------- HUD ---------- */
-function updateHud() { $('hBest').textContent = rec.best ? `${rec.best}回` : '—'; }
-function fillTitle() { $('tBest').textContent = rec.best || '—'; $('tWins').textContent = rec.wins; $('tAvg').textContent = rec.wins ? avgOf(rec).toFixed(1) : '—'; }
+function updateHud() { $('hBest').textContent = rec.bestChain ? `${rec.bestChain}本` : '—'; }
+function fillTitle() { $('tBest').textContent = rec.bestChain || '—'; $('tWins').textContent = rec.best || '—'; $('tAvg').textContent = rec.plays; }
 
 /* ---------- 音 ---------- */
 let ac = null, master = null, noiseBuf = null;
@@ -1086,7 +1112,8 @@ function start() {
 fxc.addEventListener('pointerdown', e => {
   e.preventDefault(); wakeAudio();
   if (state !== 'play') return;
-  if (phase === 'won') { if (phaseT > 1.0) showOver(); return; }
+  if (phase === 'lost') { if (phaseT > 0.5) showOver(); return; }
+  if (phase === 'won') { if (phaseT < 0.5) return; toReady(); }   // 掛かった演出中でも、少し待てば次を引き始められる
   try { fxc.setPointerCapture(e.pointerId); } catch {}
   drag = { x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, id: e.pointerId }; kb = null;
 });
@@ -1120,7 +1147,8 @@ addEventListener('keydown', e => {
     if (e.code === 'Space' || e.code === 'Enter') {
       e.preventDefault(); wakeAudio();
       if (e.repeat) return;
-      if (phase === 'won') { if (phaseT > 1.0) showOver(); return; }
+      if (phase === 'lost') { if (phaseT > 0.5) showOver(); return; }
+      if (phase === 'won') { if (phaseT < 0.5) return; toReady(); }
       if (!kb) { kb = { pitch: 15 * DEG, yaw: 0 }; return; }
       const a = { ...kb };
       if (phase === 'ready') throwNow(a); else if (phase === 'fly') pending = a;
@@ -1165,6 +1193,7 @@ if (HASH.has('debug')) {
     rate(a, N = 100) { let h = 0; for (let i = 0; i < N; i++) if (simulate(a, jitterOf(Math.random)) === 'hang') h++; return h / N; },
     rateRandom(N = 300) { let h = 0; for (let i = 0; i < N; i++) { const a = { pitch: deg(rand(PITCH_MIN, PITCH_MAX)), yaw: rand(-YAW_MAX, YAW_MAX) }; if (simulate(a, jitterOf(Math.random)) === 'hang') h++; } return h / N; },
     throwWith: a => throwNow(a),
+    place: c => { chain = c; placeThrower(); },
     simAt: (a, u, v) => simulate(a, jitterAt(u, v)),
     setSeed: s => { seed = s >>> 0; },
     firstThrowWithSeed(s, a) { const keep = seed; seed = s >>> 0; const j = jitterOf(rng); seed = keep; return simulate(a, j); },
