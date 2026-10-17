@@ -1,0 +1,803 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ぴったり10秒</title>
+<meta name="description" content="ストップウォッチを見ないで、10.00秒ぴったりで止められるか。数字が見えるのは最初の3秒だけ。タップでスタート・ストップの、ログイン不要のワンタッチゲーム。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ぴったり10秒">
+<meta property="og:description" content="数字が消えたストップウォッチを、10.00秒ぴったりで止められるか。">
+<meta property="og:url" content="https://asobi.enludus.com/games/ten/">
+<meta property="og:image" content="https://asobi.enludus.com/games/ten/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%8F%B1%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+:root { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+/* 全画面 canvas（体育館の床とストップウォッチ）+ 上に HUD、下に結果シート、タイトルは中央のカード1枚 */
+:root {
+  --floor: #d6b27c;      /* 体育館の床 */
+  --ink: #22262a;
+  --paper: #f7f4ec;      /* 記録用紙 */
+  --noren: #263847;      /* 学校のジャージ紺 */
+  --noren-ink: #f2efe6;
+  --accent: #c43d2a;     /* コートの赤線 */
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--floor); color: var(--ink);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none; touch-action: none;
+}
+#c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; cursor: pointer; }
+
+.hud {
+  position: fixed; left: 0; right: 0; top: 0; pointer-events: none;
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 8px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 12px);
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.pill {
+  background: var(--noren); color: var(--noren-ink);
+  border-radius: 6px; padding: 6px 12px 7px;
+  font-variant-numeric: tabular-nums; line-height: 1.1;
+  box-shadow: 0 2px 0 rgba(0,0,0,.25);
+}
+.pill .lab { font-size: 11px; letter-spacing: .12em; opacity: .75; display: block; }
+.pill .val { font-family: var(--font-display); font-size: 26px; }
+.pill .unit { font-size: 13px; margin-left: 2px; }
+.pill .tag { display: inline-block; font-size: 10px; letter-spacing: .1em; background: var(--accent); color: #fff; border-radius: 3px; padding: 1px 5px; margin-left: 6px; vertical-align: 1px; opacity: 1; }
+.pill.right { text-align: right; background: var(--paper); color: var(--ink); }
+.pill.right .val { font-size: 20px; }
+
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: center;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px;
+  background: rgba(34, 38, 42, .35);
+  touch-action: none; cursor: pointer;
+}
+.card {
+  width: min(360px, 100%); background: var(--paper); color: var(--ink);
+  border-radius: 10px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.3);
+  text-align: center; cursor: default;
+}
+.noren {
+  background: var(--noren); color: var(--noren-ink);
+  display: flex; gap: 3px;
+  padding-top: 18px;
+}
+.noren span {
+  flex: 1; background: var(--noren); border-bottom: 3px solid rgba(255,255,255,.08);
+  font-family: var(--font-display); font-size: 32px; line-height: 1; padding-block: 6px 16px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.2);
+}
+.body { padding: 20px 22px 22px; display: grid; gap: 14px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.7; text-wrap: balance; }
+.meta { display: flex; justify-content: center; gap: 4px 16px; font-size: 13px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.meta b { font-size: 16px; }
+.badge {
+  background: var(--accent); color: #fff; font-weight: 700;
+  font-size: 12px; letter-spacing: .14em; padding: 3px 10px; border-radius: 99px; white-space: nowrap;
+}
+.btns { display: grid; gap: 8px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+button {
+  font: inherit; font-weight: 700; font-size: 16px; border: 0; border-radius: 8px;
+  padding: 13px 16px; cursor: pointer;
+  background: var(--noren); color: var(--noren-ink); box-shadow: 0 3px 0 #131d26;
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 #131d26; }
+a.xbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font-weight: 700; font-size: 16px; border-radius: 8px; padding: 13px 12px;
+  background: #0f1419; color: #fff; box-shadow: 0 3px 0 #000;
+}
+a.xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+a.xbtn:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+a.xbtn svg { width: 16px; height: 16px; fill: currentColor; }
+button.sub { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); padding-inline: 10px; }
+button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.how { font-size: 12px; opacity: .7; margin: 0; }
+.back { font-size: 13px; color: var(--ink); opacity: .75; }
+.back:hover { opacity: 1; }
+
+/* モード切り替え（ふつう / 本気） */
+.seg { display: inline-flex; justify-self: center; background: rgba(34,38,42,.1); border-radius: 99px; padding: 3px; gap: 2px; }
+.seg button {
+  font-size: 13px; padding: 6px 14px; border-radius: 99px; box-shadow: none;
+  background: transparent; color: var(--ink);
+}
+.seg button:active { transform: none; }
+.seg button[aria-pressed="true"] { background: var(--noren); color: var(--noren-ink); }
+.seg button[data-mode="honki"][aria-pressed="true"] { background: var(--accent); color: #fff; }
+
+/* 結果シート（記録用紙）。プレイ中は見えないまま場所だけとっておく */
+.sheet {
+  position: fixed; left: 50%; transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 46px);
+  width: min(400px, calc(100% - 2 * max(16px, env(safe-area-inset-left, 0px))));
+  background: var(--paper); color: var(--ink); border-radius: 12px;
+  box-shadow: 0 8px 30px rgba(40,25,5,.3);
+  padding: 12px 16px 12px; display: grid; gap: 9px; text-align: center;
+  visibility: hidden; pointer-events: none; cursor: pointer;
+}
+.sheet.show { visibility: visible; pointer-events: auto; }
+.jrow { display: flex; align-items: center; justify-content: space-between; gap: 10px; text-align: left; }
+.judge { font-family: var(--font-display); font-size: 40px; line-height: 1; white-space: nowrap; }
+.judge.t0 { color: var(--accent); }
+.judge.long { font-size: 30px; }
+.sheet .badge { position: absolute; top: -10px; right: 14px; box-shadow: 0 2px 0 rgba(0,0,0,.2); }
+.judge.t1 { color: #b5532a; }
+.jinfo { flex: 1; min-width: 0; font-variant-numeric: tabular-nums; line-height: 1.25; }
+.jinfo .tm { font-family: var(--font-display); font-size: 22px; }
+.jinfo .tm small { font-size: 13px; margin-left: 2px; }
+.jinfo .er { font-size: 13px; white-space: nowrap; }
+.jinfo .tg { font-size: 12px; opacity: .75; margin-left: 6px; font-family: var(--font-body); font-weight: 700; }
+.jinfo .er b { font-size: 15px; }
+.dist { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 6px; align-items: stretch; text-align: left; }
+.dist figcaption { grid-column: 1 / -1; font-size: 11px; opacity: .7; display: flex; justify-content: space-between; }
+.dist .ax { display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; opacity: .6; line-height: 1; padding-block: 2px; }
+.dist svg { width: 100%; height: 52px; display: block; }
+.foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.sheet .meta { font-size: 12px; }
+.sheet .meta b { font-size: 14px; }
+
+.hub-back {
+  position: fixed; z-index: 60;
+  left: calc(env(safe-area-inset-left, 0px) + 10px); bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  font: 700 12px/1 "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif; letter-spacing: .04em;
+  padding: 7px 11px; border-radius: 99px; text-decoration: none;
+  background: rgba(20, 18, 24, .55); color: #fff; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.hub-back:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+</style>
+</head>
+<body>
+
+<canvas id="c" aria-label="ぴったり10秒のゲーム画面（ストップウォッチ）"></canvas>
+
+<div class="hud" id="hud" hidden>
+  <div class="pill"><span class="lab">目標<span class="tag" id="hTag" hidden>本気</span></span><span class="val" id="hTarget">10.00</span><span class="unit">秒</span></div>
+  <div class="pill right"><span class="lab" id="hBestLab">最小誤差</span><span class="val" id="hBest">—</span><br><span class="unit" id="hSub">ぴったり 0回</span></div>
+</div>
+
+<div class="sheet" id="sheet" aria-live="polite">
+  <div class="jrow">
+    <div class="judge" id="sJudge">神</div>
+    <div class="jinfo">
+      <div class="tm"><span id="sTime">10.00</span><small>秒</small><span class="tg" id="sTarget"></span></div>
+      <div class="er" id="sErr">誤差 <b>0.00</b> 秒</div>
+    </div>
+    <div class="badge" id="newRec" hidden>新記録</div>
+  </div>
+  <div class="meta"><span>最小誤差 <b id="sBest">—</b><span id="sBestUnit">秒</span></span><span>ぴったり <b id="sPerf">0</b> 回</span><span>挑戦 <b id="sPlays">0</b> 回</span></div>
+  <figure class="dist">
+    <figcaption><span id="dCap">直近20回の誤差（ふつう）</span><span>線＝ぴったり・端＝±0.5秒</span></figcaption>
+    <div class="ax" aria-hidden="true"><span>おそい</span><span>はやい</span></div>
+    <svg id="dist" role="img" aria-label="直近20回の誤差"></svg>
+  </figure>
+  <div class="btns">
+    <button id="retryBtn">もう一回</button>
+    <div class="row2">
+      <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Xでシェア</a>
+      <button class="sub" id="copyBtn">結果をコピー</button>
+    </div>
+  </div>
+  <div class="foot">
+    <div class="seg" role="group" aria-label="モード"><button data-mode="normal" aria-pressed="true">ふつう</button><button data-mode="honki" aria-pressed="false">本気</button></div>
+    <a class="back" href="../../">← ほかのゲームを見る</a>
+  </div>
+  <p class="how" id="copyMsg">画面タップ・スペースでもう一回</p>
+</div>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="noren" aria-hidden="true"><span>ぴっ</span><span>た</span><span>り</span><span>10</span><span>秒</span></div>
+    <div class="body">
+      <p class="lead">タップでスタート、もう一度タップでストップ。<br>数字が見えるのは<b>最初の3秒だけ</b>。<br>体内時計で <b>10.00秒</b> ぴったりを狙え。</p>
+      <div class="meta"><span>最小誤差 <b id="tBest">—</b></span><span>本気 <b id="tBestH">—</b></span><span>ぴったり <b id="tPerf">0</b> 回</span><span>挑戦 <b id="tPlays">0</b> 回</span></div>
+      <div class="seg" role="group" aria-label="モード"><button data-mode="normal" aria-pressed="true">ふつう</button><button data-mode="honki" aria-pressed="false">本気</button></div>
+      <p class="how" id="tModeHow">ふつう：目標10.00秒。数字は3秒で消える</p>
+      <div class="btns"><button id="startBtn">ストップウォッチを持つ</button></div>
+      <p class="how">画面タップ・クリック・スペースキーでスタート／ストップ</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const cvs = $('c'), ctx = cvs.getContext('2d');
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const pick = a => a[Math.floor(Math.random() * a.length)];
+
+/* ---------- 記録（このブラウザだけ）。誤差は秒（小数2桁） ---------- */
+const KEY = 'ten:v1';
+const MODES = ['normal', 'honki'];
+const MODE_NAME = { normal: 'ふつう', honki: '本気' };
+function fresh() {
+  return { plays: 0, perfects: 0, mode: 'normal', best: { normal: null, honki: null },
+    playsBy: { normal: 0, honki: 0 }, perfectsBy: { normal: 0, honki: 0 }, recent: { normal: [], honki: [] }, perfectDay: '' };
+}
+function load() {
+  const r = fresh();
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || '{}') || {};
+    const num = v => Number.isFinite(v) && v >= 0;
+    if (num(d.plays)) r.plays = d.plays;
+    if (num(d.perfects)) r.perfects = d.perfects;
+    if (d.mode === 'honki') r.mode = 'honki';
+    if (typeof d.perfectDay === 'string') r.perfectDay = d.perfectDay;
+    for (const m of MODES) {
+      if (d.best && num(d.best[m])) r.best[m] = d.best[m];
+      if (d.playsBy && num(d.playsBy[m])) r.playsBy[m] = d.playsBy[m];
+      if (d.perfectsBy && num(d.perfectsBy[m])) r.perfectsBy[m] = d.perfectsBy[m];
+      if (d.recent && Array.isArray(d.recent[m])) r.recent[m] = d.recent[m].filter(Number.isFinite).slice(-20);
+    }
+  } catch {}
+  return r;
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch {} }
+let rec = load();
+let mode = rec.mode;
+
+/* ---------- 時間は 1/100 秒の整数で持つ ---------- */
+const fmt = h => { h = Math.max(0, Math.round(h)); return `${String(Math.floor(h / 100)).padStart(2, '0')}.${String(h % 100).padStart(2, '0')}`; };
+const fmtS = h => (Math.round(h) / 100).toFixed(2);              // 先頭ゼロなし（7.77）
+const bestText = m => rec.best[m] == null ? '—' : rec.best[m].toFixed(2);
+// 本気モードの目標（覚えやすい数字が多め）
+const FAMOUS = [777, 314, 500, 888, 666, 1234, 999, 1111, 555, 1500, 222, 1200, 456, 808];
+let target = 1000, lastTarget = 0;
+function nextTarget() {
+  if (mode === 'normal') return 1000;
+  let t;
+  do { t = Math.random() < 0.6 ? pick(FAMOUS) : 300 + Math.floor(Math.random() * 1200); } while (t === lastTarget);
+  return t;
+}
+// 数字が見えている秒数。はじめの2回は長めに見せる
+const visibleSec = () => mode === 'honki' ? 0 : rec.playsBy.normal < 1 ? 5 : rec.playsBy.normal < 2 ? 4 : 3;
+
+function judgeOf(err) {
+  if (err === 0) return { label: '神', tier: 0, tone: 'god' };
+  if (err <= 5) return { label: '達人', tier: 1, tone: 'master' };
+  if (err <= 20) return { label: 'うまい', tier: 2, tone: 'good' };
+  if (err <= 50) return { label: 'ふつう', tier: 3, tone: 'ok' };
+  return { label: 'まだまだ', tier: 4, tone: 'miss' };
+}
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`; };
+
+/* ---------- 画面サイズ ---------- */
+let W, H, dpr, areaTop, areaBot, bg = null, noise = null;
+function resize() {
+  dpr = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cvs.width = Math.round(W * dpr); cvs.height = Math.round(H * dpr);
+  measure();
+  bg = null;
+}
+function measure() {
+  const safeTop = parseFloat(getComputedStyle(document.documentElement).paddingTop) || 0;
+  areaTop = safeTop + 66;
+  areaBot = $('sheet').getBoundingClientRect().top - 10;
+  if (areaBot - areaTop < 200) areaBot = Math.min(H - 10, areaTop + 200);
+}
+window.addEventListener('resize', resize);
+
+/* ---------- ゲーム状態 ---------- */
+let state = 'title';     // title | ready | run | result
+let startTs = 0, shown = 0, result = null, resultAt = 0, pressAt = -1e9, flashAt = -1e9;
+
+function toReady() {
+  state = 'ready';
+  target = nextTarget(); lastTarget = target;
+  shown = 0; result = null;
+  $('title').hidden = true; $('hud').hidden = false;
+  $('sheet').classList.remove('show');
+  if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+  updateHud();
+}
+function startRun(ts) {
+  state = 'run'; startTs = ts; pressAt = performance.now();
+  pi(640);
+}
+function stopRun(ts) {
+  const h = Math.min(9999, Math.max(0, Math.floor((ts - startTs) / 10)));
+  pressAt = performance.now();
+  const err = Math.abs(h - target), signed = h - target;
+  const j = judgeOf(err);
+  const prevBest = rec.best[mode];
+  const isNew = prevBest == null || err / 100 < prevBest - 1e-9;
+  rec.plays++; rec.playsBy[mode]++;
+  if (isNew) rec.best[mode] = err / 100;
+  if (err === 0) { rec.perfects++; rec.perfectsBy[mode]++; rec.perfectDay = today(); }
+  rec.recent[mode].push(signed / 100); rec.recent[mode] = rec.recent[mode].slice(-20);
+  rec.mode = mode;
+  save();
+  result = { h, err, signed, j, isNew, target, mode, n: rec.plays };
+  shown = h; state = 'result'; resultAt = performance.now(); flashAt = resultAt;
+  pi(560);
+  chime(j.tone);
+  showSheet();
+  measure();
+  updateHud();
+}
+
+/* ---------- 結果シート ---------- */
+function showSheet() {
+  const r = result;
+  const jEl = $('sJudge');
+  jEl.textContent = r.j.label; jEl.className = 'judge t' + r.j.tier + (r.j.label.length >= 4 ? ' long' : '');
+  $('sTarget').textContent = r.mode === 'honki' ? `目標 ${fmtS(r.target)}秒` : '';
+  $('sTime').textContent = fmtS(r.h);
+  const dir = r.signed > 0 ? 'おそい' : r.signed < 0 ? 'はやい' : 'ジャスト';
+  $('sErr').innerHTML = `誤差 <b>${fmtS(r.err)}</b> 秒・${dir}`;
+  $('newRec').hidden = !r.isNew;
+  $('sBest').textContent = bestText(r.mode);
+  $('sBestUnit').textContent = `秒（${MODE_NAME[r.mode]}）`;
+  $('sPerf').textContent = rec.perfects; $('sPlays').textContent = rec.plays;
+  $('dCap').textContent = `直近${rec.recent[r.mode].length}回の誤差（${MODE_NAME[r.mode]}）`;
+  $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({
+    text: shareText() + '\n', url: gameUrl(), hashtags: 'ぴったり10秒'
+  });
+  $('copyMsg').textContent = '画面タップ・スペースでもう一回';
+  $('sheet').classList.add('show');
+  drawDist();
+  $('retryBtn').focus({ preventScroll: true });
+}
+function shareText() {
+  const r = result;
+  let s;
+  if (r.err === 0) {
+    s = r.mode === 'honki'
+      ? `⏱️ぴったり10秒【本気】目標${fmtS(r.target)}秒をジャストで止めた！誤差0.00の神（${r.n}回目）`
+      : `⏱️ぴったり10秒 10.00秒ジャスト！誤差0.00の神ストップ（${r.n}回目の挑戦）`;
+  } else {
+    s = r.mode === 'honki'
+      ? `⏱️ぴったり10秒【本気】目標${fmtS(r.target)}秒→${fmtS(r.h)}秒（誤差${fmtS(r.err)}）${r.j.label}`
+      : `⏱️ぴったり10秒 ${fmtS(r.h)}秒（誤差${fmtS(r.err)}）${r.j.label}`;
+    if (r.isNew && rec.playsBy[r.mode] > 1) s += ' 自己ベスト！';
+    if (rec.perfectDay === today()) s += ' ※今日は神が出た日';
+  }
+  return s;
+}
+// 直近20回の誤差: 中央の線がぴったり、上がおそい・下がはやい（±0.5秒で端）
+function drawDist() {
+  const svg = $('dist');
+  const w = Math.max(120, Math.round(svg.getBoundingClientRect().width || 300)), h = 52, mid = h / 2;
+  const list = rec.recent[result.mode];
+  const N = 20, slot = w / N, bw = Math.max(3, slot - 2), half = mid - 3;
+  let out = `<line x1="0" x2="${w}" y1="${mid}" y2="${mid}" stroke="rgba(34,38,42,.45)" stroke-width="1"/>`;
+  list.forEach((v, i) => {
+    const x = (N - list.length + i) * slot + (slot - bw) / 2;
+    const last = i === list.length - 1;
+    const col = last ? '#c43d2a' : 'rgba(34,38,42,.38)';
+    const tip = `${v > 0 ? '+' : v < 0 ? '−' : '±'}${Math.abs(v).toFixed(2)}秒`;
+    if (Math.abs(v) < 0.005) {
+      out += `<circle cx="${x + bw / 2}" cy="${mid}" r="${Math.min(4, bw / 2 + 1)}" fill="${last ? '#c43d2a' : '#22262a'}"><title>ぴったり</title></circle>`;
+      return;
+    }
+    const len = Math.max(2, Math.min(1, Math.abs(v) / 0.5) * half);
+    const r = Math.min(2, bw / 2, len / 2);
+    // 先端だけ丸い棒
+    const d = v > 0
+      ? `M${x},${mid} V${mid - len + r} Q${x},${mid - len} ${x + r},${mid - len} H${x + bw - r} Q${x + bw},${mid - len} ${x + bw},${mid - len + r} V${mid} Z`
+      : `M${x},${mid} V${mid + len - r} Q${x},${mid + len} ${x + r},${mid + len} H${x + bw - r} Q${x + bw},${mid + len} ${x + bw},${mid + len - r} V${mid} Z`;
+    out += `<path d="${d}" fill="${col}"><title>${tip}</title></path>`;
+  });
+  svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
+  svg.innerHTML = out;
+}
+
+/* ---------- シェア ---------- */
+// 公開先のURL。ローカルで開いたときもこれをシェアする
+const PUBLIC_URL = 'https://asobi.enludus.com/games/ten/';
+function gameUrl() {
+  try {
+    if (/^https?:$/.test(location.protocol) && location.hostname !== 'localhost') return location.origin + location.pathname;
+  } catch {}
+  return PUBLIC_URL;
+}
+
+/* ---------- HUD・タイトル ---------- */
+function updateHud() {
+  $('hTarget').textContent = fmtS(target);
+  $('hTag').hidden = mode !== 'honki';
+  $('hBestLab').textContent = `最小誤差（${MODE_NAME[mode]}）`;
+  $('hBest').textContent = rec.best[mode] == null ? '—' : rec.best[mode].toFixed(2) + '秒';
+  $('hSub').textContent = `ぴったり ${rec.perfects}回・挑戦 ${rec.plays}回`;
+}
+function fillTitle() {
+  $('tBest').textContent = bestText('normal'); $('tBestH').textContent = bestText('honki');
+  $('tPerf').textContent = rec.perfects; $('tPlays').textContent = rec.plays;
+}
+function setMode(m) {
+  if (!MODES.includes(m)) return;
+  mode = m; rec.mode = m; save();
+  document.querySelectorAll('.seg button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === m)));
+  $('tModeHow').textContent = m === 'honki' ? '本気：数字は最初から見えない。目標も毎回かわる' : 'ふつう：目標10.00秒。数字は3秒で消える';
+  if (state === 'result' || state === 'ready') toReady();
+  else if (state === 'title') { target = m === 'honki' ? 777 : 1000; }
+}
+
+/* ---------- 音（低めでやわらかい「ピッ」） ---------- */
+let ac = null, master = null;
+function wakeAudio() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      master = ac.createBiquadFilter(); master.type = 'lowpass'; master.frequency.value = 1400; master.Q.value = 0.4;
+      master.connect(ac.destination);
+    }
+    if (ac.state === 'suspended') ac.resume();
+  } catch {}
+}
+function tone(freq, at, dur, vol, type = 'sine') {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at);
+  g.gain.setValueAtTime(0.0001, at); g.gain.linearRampToValueAtTime(vol, at + 0.006);
+  g.gain.exponentialRampToValueAtTime(0.0008, at + dur);
+  o.connect(g).connect(master); o.start(at); o.stop(at + dur + 0.03);
+}
+function pi(freq) { try { if (ac) tone(freq, ac.currentTime, 0.11, 0.13); } catch {} }
+function chime(kind) {
+  try {
+    if (!ac) return;
+    const n = ac.currentTime + 0.09;
+    if (kind === 'god') { tone(392, n, 0.7, 0.09, 'triangle'); tone(494, n + 0.07, 0.7, 0.08, 'triangle'); tone(587, n + 0.14, 0.9, 0.08, 'triangle'); }
+    else if (kind === 'master') { tone(440, n, 0.35, 0.09, 'triangle'); tone(554, n + 0.08, 0.45, 0.08, 'triangle'); }
+    else if (kind === 'good') tone(494, n, 0.3, 0.08, 'triangle');
+    else if (kind === 'miss') tone(165, n, 0.3, 0.12, 'triangle');
+  } catch {}
+}
+
+/* ---------- 背景（体育館の床） ---------- */
+function makeBg() {
+  const c = document.createElement('canvas'); c.width = cvs.width; c.height = cvs.height;
+  const g = c.getContext('2d'); g.scale(dpr, dpr);
+  g.fillStyle = '#d6b27c'; g.fillRect(0, 0, W, H);
+  // 板張り（横長の板を互い違いに）
+  const ph = 26; let seed = 7;
+  const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+  for (let y = 0, row = 0; y < H; y += ph, row++) {
+    let x = -(row % 3) * 70;
+    while (x < W) {
+      const len = 150 + rnd() * 120, k = rnd();
+      g.fillStyle = `rgba(${k < 0.5 ? '120,80,30' : '255,240,210'},${0.04 + rnd() * 0.07})`;
+      g.fillRect(x, y, len, ph);
+      g.strokeStyle = 'rgba(120,80,35,.07)'; g.lineWidth = 1;
+      for (let i = 0; i < 2; i++) { const yy = y + 6 + rnd() * (ph - 12); g.beginPath(); g.moveTo(x + 6, yy); g.bezierCurveTo(x + len * 0.3, yy - 2, x + len * 0.6, yy + 2, x + len - 6, yy); g.stroke(); }
+      g.fillStyle = 'rgba(95,60,25,.28)'; g.fillRect(x, y, 1, ph);
+      x += len;
+    }
+    g.fillStyle = 'rgba(95,60,25,.22)'; g.fillRect(0, y, W, 1);
+  }
+  // コートのライン（白・赤）
+  g.lineWidth = 7; g.strokeStyle = 'rgba(250,248,240,.78)';
+  g.beginPath(); g.moveTo(0, H * 0.83); g.lineTo(W, H * 0.83); g.stroke();
+  g.beginPath(); g.arc(W * 0.5, H * 0.83, Math.min(W, H) * 0.42, Math.PI, 0); g.stroke();
+  g.strokeStyle = 'rgba(196,61,42,.7)'; g.lineWidth = 6;
+  g.beginPath(); g.moveTo(W * 0.1, 0); g.lineTo(W * 0.1, H); g.stroke();
+  g.strokeStyle = 'rgba(40,90,150,.45)'; g.lineWidth = 5;
+  g.beginPath(); g.moveTo(W * 0.93, 0); g.lineTo(W * 0.93, H); g.stroke();
+  // 床のつや
+  const sh = g.createLinearGradient(0, 0, W, H);
+  sh.addColorStop(0, 'rgba(255,255,255,.12)'); sh.addColorStop(0.5, 'rgba(255,255,255,0)'); sh.addColorStop(1, 'rgba(80,50,20,.12)');
+  g.fillStyle = sh; g.fillRect(0, 0, W, H);
+  bg = c;
+}
+function makeNoise() {
+  const c = document.createElement('canvas'); c.width = 96; c.height = 96;
+  const g = c.getContext('2d'), im = g.createImageData(96, 96);
+  for (let i = 0; i < im.data.length; i += 4) {
+    const v = 200 + Math.random() * 55;
+    im.data[i] = v; im.data[i + 1] = v; im.data[i + 2] = v - 6; im.data[i + 3] = Math.random() * 120;
+  }
+  g.putImageData(im, 0, 0);
+  noise = ctx.createPattern(c, 'repeat');
+}
+
+/* ---------- 7セグ液晶 ---------- */
+const SEG = { '0': 'abcdef', '1': 'bc', '2': 'abged', '3': 'abgcd', '4': 'fgbc', '5': 'afgcd', '6': 'afgedc', '7': 'abc', '8': 'abcdefg', '9': 'abcdfg', '-': 'g', ' ': '' };
+function hseg(x1, x2, y, t) { ctx.moveTo(x1, y); ctx.lineTo(x1 + t / 2, y - t / 2); ctx.lineTo(x2 - t / 2, y - t / 2); ctx.lineTo(x2, y); ctx.lineTo(x2 - t / 2, y + t / 2); ctx.lineTo(x1 + t / 2, y + t / 2); ctx.closePath(); }
+function vseg(x, y1, y2, t) { ctx.moveTo(x, y1); ctx.lineTo(x + t / 2, y1 + t / 2); ctx.lineTo(x + t / 2, y2 - t / 2); ctx.lineTo(x, y2); ctx.lineTo(x - t / 2, y2 - t / 2); ctx.lineTo(x - t / 2, y1 + t / 2); ctx.closePath(); }
+function segPath(s, w, h, t) {
+  const g = t * 0.14, x0 = t / 2, x1 = w - t / 2, y0 = -h + t / 2, ym = -h / 2, y1 = -t / 2;
+  ctx.beginPath();
+  if (s.includes('a')) hseg(x0 + g, x1 - g, y0, t);
+  if (s.includes('g')) hseg(x0 + g, x1 - g, ym, t);
+  if (s.includes('d')) hseg(x0 + g, x1 - g, y1, t);
+  if (s.includes('f')) vseg(x0, y0 + g, ym - g, t);
+  if (s.includes('b')) vseg(x1, y0 + g, ym - g, t);
+  if (s.includes('e')) vseg(x0, ym + g, y1 - g, t);
+  if (s.includes('c')) vseg(x1, ym + g, y1 - g, t);
+}
+function digit(ch, x, base, h, on, ghost) {
+  const w = h * 0.54, t = h * 0.13;
+  ctx.save(); ctx.translate(x, base); ctx.transform(1, 0, -0.09, 1, 0, 0);
+  segPath('abcdefg', w, h, t); ctx.fillStyle = ghost; ctx.fill();
+  if (on && SEG[ch]) { segPath(SEG[ch], w, h, t); ctx.fillStyle = on; ctx.fill(); }
+  ctx.restore();
+  return w;
+}
+
+/* ---------- ストップウォッチ ---------- */
+function rr(x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+}
+const FD = getComputedStyle(document.documentElement).getPropertyValue('--font-display');
+const FB = getComputedStyle(document.documentElement).getPropertyValue('--font-body');
+
+function watchGeom() {
+  const avail = areaBot - areaTop;
+  const R = Math.max(70, Math.min((W - 40) / 2, avail / 2.55, 190));
+  const cy = areaTop + R * 1.5 + Math.max(0, (avail - R * 2.55) / 2);
+  return { cx: W / 2, cy, R };
+}
+function drawWatch(now) {
+  const { cx, cy, R } = watchGeom();
+  const press = clamp(1 - (now - pressAt) / 140, 0, 1);
+  const pd = press * R * 0.05;
+
+  // 首ひも（赤白のより紐）
+  ctx.lineCap = 'round';
+  const ringY = cy - R * 1.3 + pd;
+  for (const [col, w, dash] of [['#a8321f', R * 0.07, []], ['rgba(255,245,235,.85)', R * 0.035, [R * 0.06, R * 0.07]]]) {
+    ctx.strokeStyle = col; ctx.lineWidth = w; ctx.setLineDash(dash);
+    ctx.beginPath(); ctx.moveTo(cx - R * 0.08, ringY - R * 0.08); ctx.bezierCurveTo(cx - R * 0.3, ringY - R * 0.6, cx - R * 0.9, ringY - R * 0.4, cx - R * 1.1, -20); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx + R * 0.08, ringY - R * 0.08); ctx.bezierCurveTo(cx + R * 0.2, ringY - R * 0.7, cx - R * 0.5, ringY - R * 0.7, cx - R * 0.75, -20); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // 影
+  ctx.fillStyle = 'rgba(60,35,10,.25)';
+  ctx.beginPath(); ctx.ellipse(cx + R * 0.06, cy + R * 0.08, R * 1.02, R * 1.02, 0, 0, Math.PI * 2); ctx.fill();
+
+  const metal = (x0, y0, x1, y1) => {
+    const g = ctx.createLinearGradient(x0, y0, x1, y1);
+    g.addColorStop(0, '#f5f7f8'); g.addColorStop(0.3, '#b7bec4'); g.addColorStop(0.55, '#8c959c'); g.addColorStop(0.75, '#e2e6e9'); g.addColorStop(1, '#7b848b');
+    return g;
+  };
+  // 横のボタン（左右）
+  for (const s of [-1, 1]) {
+    ctx.save(); ctx.translate(cx, cy); ctx.rotate(s * 0.72);
+    ctx.fillStyle = metal(-R * 0.08, 0, R * 0.08, 0);
+    rr(-R * 0.075, -R * 1.12, R * 0.15, R * 0.2, R * 0.03); ctx.fill();
+    ctx.strokeStyle = '#5b636a'; ctx.lineWidth = 1; ctx.stroke();
+    ctx.restore();
+  }
+  // りゅうず（スタート/ストップ）と輪っか
+  ctx.fillStyle = metal(cx - R * 0.1, 0, cx + R * 0.1, 0);
+  ctx.fillRect(cx - R * 0.07, cy - R * 1.1, R * 0.14, R * 0.16);
+  ctx.strokeStyle = '#5b636a'; ctx.lineWidth = 1; ctx.strokeRect(cx - R * 0.07, cy - R * 1.1, R * 0.14, R * 0.16);
+  const bx = cx - R * 0.17, by = cy - R * 1.24 + pd, bw = R * 0.34, bh = R * 0.15;
+  ctx.fillStyle = metal(bx, 0, bx + bw, 0); rr(bx, by, bw, bh, R * 0.04); ctx.fill(); ctx.stroke();
+  ctx.strokeStyle = 'rgba(60,66,72,.55)';
+  for (let i = 1; i < 9; i++) { ctx.beginPath(); ctx.moveTo(bx + bw * i / 9, by + 2); ctx.lineTo(bx + bw * i / 9, by + bh - 2); ctx.stroke(); }
+  ctx.strokeStyle = metal(cx - R * 0.15, 0, cx + R * 0.15, 0); ctx.lineWidth = R * 0.05;
+  ctx.beginPath(); ctx.arc(cx, ringY - R * 0.02, R * 0.13, Math.PI * 0.9, Math.PI * 2.1); ctx.stroke();
+  ctx.strokeStyle = 'rgba(70,76,82,.6)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(cx, ringY - R * 0.02, R * 0.155, Math.PI * 0.95, Math.PI * 2.05); ctx.stroke();
+
+  // ケース
+  ctx.fillStyle = metal(cx - R, cy - R, cx + R, cy + R);
+  ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#59616a'; ctx.lineWidth = 1.5; ctx.stroke();
+  // ギザギザのふち
+  ctx.strokeStyle = 'rgba(70,76,82,.35)'; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let i = 0; i < 90; i++) { const a = i / 90 * Math.PI * 2; ctx.moveTo(cx + Math.cos(a) * R * 0.94, cy + Math.sin(a) * R * 0.94); ctx.lineTo(cx + Math.cos(a) * R * 0.995, cy + Math.sin(a) * R * 0.995); }
+  ctx.stroke();
+  // ベゼル内側の段
+  ctx.fillStyle = metal(cx + R, cy - R, cx - R, cy + R);
+  ctx.beginPath(); ctx.arc(cx, cy, R * 0.9, 0, Math.PI * 2); ctx.fill();
+  // 文字盤（紺）
+  const fg = ctx.createRadialGradient(cx - R * 0.3, cy - R * 0.4, R * 0.1, cx, cy, R * 0.86);
+  fg.addColorStop(0, '#34495a'); fg.addColorStop(1, '#1a2631');
+  ctx.fillStyle = fg; ctx.beginPath(); ctx.arc(cx, cy, R * 0.84, 0, Math.PI * 2); ctx.fill();
+  // 目盛り
+  ctx.strokeStyle = 'rgba(240,236,225,.55)';
+  for (let i = 0; i < 60; i++) {
+    const a = i / 60 * Math.PI * 2, l = i % 5 === 0 ? 0.07 : 0.035;
+    ctx.lineWidth = i % 5 === 0 ? 2 : 1;
+    ctx.beginPath(); ctx.moveTo(cx + Math.sin(a) * R * 0.8, cy - Math.cos(a) * R * 0.8); ctx.lineTo(cx + Math.sin(a) * R * (0.8 - l), cy - Math.cos(a) * R * (0.8 - l)); ctx.stroke();
+  }
+  // 印刷
+  ctx.textAlign = 'center'; ctx.fillStyle = '#f0ece1';
+  ctx.font = `${Math.round(R * 0.11)}px ${FD}`;
+  ctx.fillText('SPORTS TIMER', cx, cy - R * 0.44);
+  ctx.font = `700 ${Math.round(R * 0.075)}px ${FB}`; ctx.fillStyle = '#e6a33c';
+  ctx.fillText('1/100 SECOND', cx, cy + R * 0.48);
+  ctx.fillStyle = 'rgba(240,236,225,.6)';
+  ctx.fillText('TEN-100　体育用', cx, cy + R * 0.6);
+  // 赤い帯
+  ctx.fillStyle = '#c43d2a'; ctx.fillRect(cx - R * 0.3, cy - R * 0.38, R * 0.6, R * 0.025);
+
+  // 液晶
+  const lw = R * 1.36, lh = R * 0.6, lx = cx - lw / 2, ly = cy - lh / 2 + R * 0.04;
+  ctx.fillStyle = metal(lx, ly, lx + lw, ly + lh); rr(lx - R * 0.05, ly - R * 0.05, lw + R * 0.1, lh + R * 0.1, R * 0.08); ctx.fill();
+  const lg = ctx.createLinearGradient(0, ly, 0, ly + lh);
+  lg.addColorStop(0, '#aab48f'); lg.addColorStop(0.2, '#c2caa6'); lg.addColorStop(1, '#b3bc98');
+  ctx.fillStyle = lg; rr(lx, ly, lw, lh, R * 0.04); ctx.fill();
+  ctx.save(); rr(lx, ly, lw, lh, R * 0.04); ctx.clip();
+  ctx.fillStyle = 'rgba(40,50,30,.18)'; ctx.fillRect(lx, ly, lw, R * 0.03);
+
+  const ON = '#1d2419', GHOST = 'rgba(40,52,32,.08)';
+  let h = 0, frost = 0, running = state === 'run';
+  if (state === 'run') {
+    h = Math.min(9999, Math.floor((now - startTs) / 10));
+    const vis = visibleSec();
+    frost = mode === 'honki' ? 1 : clamp((h / 100 - vis) / 0.25, 0, 1);
+  } else if (state === 'result') h = shown;
+  else if (state === 'title') h = 1000;
+  const str = fmt(h);
+  // レイアウト: 秒は大きく、1/100 は少し小さく
+  const big = lh * 0.64, small = lh * 0.47, gap = big * 0.12;
+  const wBig = big * 0.54, wSm = small * 0.54, dotW = big * 0.22;
+  const total = wBig * 2 + gap + dotW + wSm * 2 + gap * 0.8;
+  let x = cx - total / 2 + big * 0.04;
+  const base = ly + lh * 0.84;
+  const blink = state === 'result' && (now - flashAt) < 900 && result && result.err === 0 && Math.floor((now - flashAt) / 150) % 2 === 1;
+  const on = blink ? null : ON;
+  x += digit(str[0], x, base, big, str[0] === '0' ? null : on, GHOST) + gap;   // 先頭の0は消灯
+  x += digit(str[1], x, base, big, on, GHOST);
+  ctx.fillStyle = on || GHOST; ctx.fillRect(x + dotW * 0.25, base - big * 0.13, big * 0.12, big * 0.12);
+  x += dotW;
+  x += digit(str[3], x, base, small, on, GHOST) + gap * 0.8;
+  digit(str[4], x, base, small, on, GHOST);
+  // 小さな表示
+  ctx.textAlign = 'left'; ctx.font = `700 ${Math.round(lh * 0.12)}px ${FB}`;
+  ctx.fillStyle = running ? ON : GHOST; ctx.fillText('▶RUN', lx + lw * 0.05, ly + lh * 0.2);
+  ctx.fillStyle = mode === 'honki' ? ON : GHOST; ctx.fillText('本気', lx + lw * 0.35, ly + lh * 0.2);
+  ctx.textAlign = 'right'; ctx.fillStyle = ON; ctx.fillText('SEC', lx + lw * 0.95, ly + lh * 0.2);
+
+  // すりガラス
+  if (frost > 0) {
+    ctx.globalAlpha = frost;
+    ctx.fillStyle = 'rgba(214,220,206,.94)'; ctx.fillRect(lx, ly, lw, lh);
+    if (noise) { ctx.fillStyle = noise; ctx.fillRect(lx, ly, lw, lh); }
+    ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(52,62,48,.62)';
+    ctx.font = `${Math.round(lh * 0.42)}px ${FD}`;
+    ctx.fillText('？？.？？', cx, ly + lh * 0.66);
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+  // ガラスの映り込み
+  ctx.fillStyle = 'rgba(255,255,255,.16)';
+  ctx.beginPath(); ctx.moveTo(lx + lw * 0.06, ly); ctx.lineTo(lx + lw * 0.3, ly); ctx.lineTo(lx + lw * 0.16, ly + lh); ctx.lineTo(lx - lw * 0.08, ly + lh); ctx.closePath();
+  ctx.save(); rr(lx, ly, lw, lh, R * 0.04); ctx.clip(); ctx.fill(); ctx.restore();
+  // ケースのつや
+  ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = R * 0.025;
+  ctx.beginPath(); ctx.arc(cx, cy, R * 0.97, Math.PI * 1.1, Math.PI * 1.4); ctx.stroke();
+
+  // 判定のハンコ
+  if (state === 'result' && result) drawStamp(cx + R * 0.6, cy - R * 0.68, R * 0.36, now);
+  ctx.textAlign = 'start';
+}
+function drawStamp(x, y, r, now) {
+  const j = result.j;
+  const k = clamp((now - resultAt) / 140, 0, 1);
+  const s = reduceMotion ? 1 : 1 + 0.5 * (1 - k) * (1 - k);
+  const col = j.tier <= 1 ? '#c43d2a' : j.tier === 4 ? '#4a5560' : '#263847';
+  ctx.save(); ctx.translate(x, y); ctx.rotate(-0.18); ctx.scale(s, s);
+  ctx.globalAlpha = reduceMotion ? 1 : Math.min(1, k * 1.6);
+  ctx.fillStyle = 'rgba(247,244,236,.94)';
+  ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = col; ctx.lineWidth = r * 0.09;
+  ctx.beginPath(); ctx.arc(0, 0, r * 0.9, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = r * 0.03; ctx.beginPath(); ctx.arc(0, 0, r * 0.74, 0, Math.PI * 2); ctx.stroke();
+  ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const L = j.label.length;
+  ctx.font = `${Math.round(r * (L === 1 ? 0.95 : L === 2 ? 0.62 : L === 3 ? 0.44 : 0.34))}px ${FD}`;
+  ctx.fillText(j.label, 0, r * 0.04);
+  ctx.textBaseline = 'alphabetic';
+  ctx.restore();
+}
+
+/* ---------- 下の案内（プレイ中） ---------- */
+function drawHint() {
+  if (state !== 'ready' && state !== 'run') return;
+  const y = Math.min(H - 70, areaBot + 70);
+  ctx.textAlign = 'center';
+  const txt = state === 'ready' ? 'タップでスタート' : 'タップでストップ';
+  ctx.font = `${Math.min(34, W * 0.085)}px ${FD}`;
+  ctx.lineWidth = 6; ctx.strokeStyle = 'rgba(247,244,236,.85)'; ctx.fillStyle = state === 'run' ? '#c43d2a' : '#263847';
+  ctx.strokeText(txt, W / 2, y); ctx.fillText(txt, W / 2, y);
+  ctx.font = `700 14px ${FB}`; ctx.fillStyle = 'rgba(34,38,42,.85)'; ctx.lineWidth = 4;
+  const sub = state === 'ready'
+    ? (mode === 'honki' ? `目標 ${fmtS(target)}秒・数字は最初から見えない` : `目標 10.00秒・数字は${visibleSec()}秒で消える`)
+    : `目標 ${fmtS(target)}秒だと思ったら止める`;
+  ctx.strokeText(sub, W / 2, y + 30); ctx.fillText(sub, W / 2, y + 30);
+  ctx.textAlign = 'start';
+}
+
+function render() {
+  const now = performance.now();
+  if (!bg) makeBg();
+  if (!noise) makeNoise();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(bg, 0, 0);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawWatch(now);
+  drawHint();
+  // 自動ストップ（99.99秒）
+  if (state === 'run' && now - startTs >= 99990) stopRun(startTs + 99990);
+  requestAnimationFrame(render);
+}
+
+/* ---------- 入力（pointerdown で即時。時刻はイベントの timeStamp） ---------- */
+function evTime(e) {
+  const now = performance.now(), ts = e && e.timeStamp;
+  return ts > 0 && ts <= now + 1 && now - ts < 1000 ? ts : now;
+}
+function act(ts) {
+  wakeAudio();
+  if (state === 'title') toReady();
+  else if (state === 'ready') startRun(ts);
+  else if (state === 'run') stopRun(ts);
+  else if (state === 'result') { if (performance.now() - resultAt < 400) return; toReady(); }
+}
+document.addEventListener('pointerdown', e => {
+  if (e.button > 0) return;
+  if (e.target.closest('button, a, #copyMsg')) return;
+  if (state === 'title' && !e.target.closest('#title')) return;
+  const ts = evTime(e);
+  e.preventDefault();
+  act(ts);
+});
+cvs.addEventListener('contextmenu', e => e.preventDefault());
+window.addEventListener('keydown', e => {
+  if (e.code !== 'Space' && e.code !== 'Enter') return;
+  if (e.repeat) { e.preventDefault(); return; }
+  const ts = evTime(e);
+  if (state === 'title' || state === 'result') {
+    const el = document.activeElement;
+    if (el && el !== $('retryBtn') && el !== $('startBtn') && el.matches('button, a')) return;   // 他のボタンはそのまま
+  }
+  e.preventDefault();
+  act(ts);
+});
+$('startBtn').addEventListener('click', () => { if (state === 'title') { wakeAudio(); toReady(); } });
+$('retryBtn').addEventListener('click', () => { if (state === 'result') toReady(); });
+document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => { wakeAudio(); setMode(b.dataset.mode); }));
+$('copyBtn').addEventListener('click', () => {
+  const text = `${shareText()} ${gameUrl()}`;
+  const msg = $('copyMsg');
+  const fallback = () => { msg.textContent = text; const r = document.createRange(); r.selectNodeContents(msg); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.style.userSelect = 'text'; };
+  try {
+    navigator.clipboard.writeText(text).then(() => { msg.textContent = 'コピーしました'; }, fallback);
+  } catch { fallback(); }
+});
+
+resize();
+try { document.fonts.ready.then(measure); } catch {}
+setMode(mode);
+fillTitle(); updateHud();
+$('startBtn').focus({ preventScroll: true });
+requestAnimationFrame(render);
+})();
+</script>
+<a class="hub-back" id="hubBack" href="/" aria-label="あそび横丁（ゲーム一覧）にもどる">← 横丁</a>
+<script>
+// プレイ中でもゲーム一覧に戻れるボタン。押してもゲームの入力（タップ・ドラッグ）に伝わらないようにする
+for (const ev of ['pointerdown', 'touchstart', 'mousedown']) document.getElementById('hubBack').addEventListener(ev, e => e.stopPropagation(), { passive: true });
+</script>
+</body>
+</html>
