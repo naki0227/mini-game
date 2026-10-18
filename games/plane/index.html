@@ -1,0 +1,1365 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>紙飛行機</title>
+<meta name="description" content="夕方の学校の屋上から、校庭へ紙飛行機を一発勝負で飛ばす3Dゲーム。折り方と翼の端の折り上げを選び、スワイプで投げる。風と上昇気流を読んで、どこまで飛ぶか。ログイン不要のブラウザゲーム。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="紙飛行機">
+<meta property="og:description" content="屋上から夕焼けの校庭へ。紙飛行機をシュッと投げて、何メートル飛ばせる？">
+<meta property="og:url" content="https://asobi.enludus.com/games/plane/">
+<meta property="og:image" content="https://asobi.enludus.com/games/plane/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9C%88%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+:root { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+/* 全画面 WebGL（夕方の屋上と校庭）+ 2D の演出レイヤー + HUD + 下の「折り方」パネル。タイトル/結果は中央のカード1枚 */
+:root {
+  --dusk: #2b3448;       /* 夕暮れの空の上のほう */
+  --sun: #e8743c;        /* 夕日 */
+  --ink: #23262b;
+  --paper: #fbf7ec;      /* ノートの紙 */
+  --noren: #2f5446;      /* 黒板の緑 */
+  --noren-ink: #f3f0e4;  /* チョーク */
+  --sand: #d9b689;       /* 校庭の砂 */
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--dusk); color: var(--ink);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+#gl, #fx { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#fx { touch-action: none; cursor: grab; }
+#fx:active { cursor: grabbing; }
+
+.hud {
+  position: fixed; right: 0; top: 0; pointer-events: none;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+}
+.pill {
+  background: var(--noren); color: var(--noren-ink);
+  border-radius: 6px; padding: 5px 10px 6px;
+  font-variant-numeric: tabular-nums; line-height: 1.1; text-align: right;
+  box-shadow: 0 2px 0 rgba(0,0,0,.3);
+}
+.pill .lab { font-size: 10px; letter-spacing: .12em; opacity: .75; display: block; }
+.pill .val { font-family: var(--font-display); font-size: 18px; }
+.pill .unit { font-size: 12px; margin-left: 2px; }
+.pill.wind { background: var(--paper); color: var(--ink); display: flex; align-items: center; gap: 8px; text-align: left; }
+.pill.wind svg { width: 26px; height: 26px; flex: none; transition: transform .3s; }
+.pill.wind .val { font-size: 15px; }
+
+/* 下の準備パネル: 折り方と、翼の端の折り上げ */
+.prep {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  padding: 10px max(12px, env(safe-area-inset-right, 0px)) calc(env(safe-area-inset-bottom, 0px) + 10px) max(12px, env(safe-area-inset-left, 0px));
+  background: linear-gradient(to top, rgba(28, 30, 40, .82), rgba(28, 30, 40, .62) 75%, rgba(28, 30, 40, 0));
+  color: var(--noren-ink); display: grid; gap: 8px; justify-items: center;
+}
+.prep .row { width: min(420px, 100%); display: grid; gap: 8px; }
+.folds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.fold {
+  font: inherit; border: 0; border-radius: 8px; cursor: pointer; padding: 6px 4px 7px;
+  background: rgba(251, 247, 236, .14); color: var(--noren-ink); box-shadow: none;
+  display: grid; justify-items: center; gap: 1px; line-height: 1.15;
+}
+.fold svg { width: 44px; height: 26px; }
+.fold b { font-size: 13px; }
+.fold small { font-size: 10px; opacity: .8; font-variant-numeric: tabular-nums; }
+.fold[aria-checked="true"] { background: var(--paper); color: var(--ink); box-shadow: 0 2px 0 rgba(0,0,0,.4); }
+.fold:active { transform: translateY(1px); }
+.fold:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.desc { font-size: 12px; text-align: center; opacity: .9; margin: 0; min-height: 1.3em; }
+.elev { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; font-size: 12px; }
+.elev output { font-family: var(--font-display); font-size: 14px; min-width: 3.2em; text-align: right; }
+.elev input { width: 100%; accent-color: var(--sun); height: 28px; margin: 0; }
+.prep.pulse .folds { animation: pulse 1s ease 2; }
+@keyframes pulse { 50% { transform: scale(1.04); } }
+
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: center; z-index: 40;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px;
+  background: rgba(30, 26, 34, .28);
+  touch-action: none; cursor: pointer; overflow: hidden;
+}
+.card {
+  width: min(360px, 100%); background: var(--paper); color: var(--ink);
+  border-radius: 10px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.45);
+  text-align: center; cursor: default;
+}
+.noren {
+  background: var(--noren); color: var(--noren-ink);
+  display: flex; gap: 3px;
+  padding-top: 16px;
+}
+.noren span {
+  flex: 1; background: var(--noren); border-bottom: 3px solid rgba(255,255,255,.08);
+  font-family: var(--font-display); font-size: 32px; line-height: 1; padding-block: 6px 14px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.2);
+}
+.noren.result span { font-size: 28px; }
+.body { padding: 18px 20px 20px; display: grid; gap: 12px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.7; text-wrap: balance; }
+.score { font-family: var(--font-display); font-size: 60px; line-height: 1; font-variant-numeric: tabular-nums; }
+.score small { font-size: 24px; margin-left: 4px; }
+#oProf { width: 100%; height: 84px; display: block; background: #f1eadb; border-radius: 6px; }
+@media (max-height: 640px) { #oProf { display: none; } }
+.meta { display: flex; justify-content: center; gap: 6px 16px; font-size: 13px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.meta b { font-size: 16px; }
+.badge {
+  justify-self: center; background: var(--sun); color: #fff; font-weight: 700;
+  font-size: 12px; letter-spacing: .14em; padding: 3px 10px; border-radius: 99px;
+}
+.btns { display: grid; gap: 8px; }
+.btns .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+button {
+  font: inherit; font-weight: 700; font-size: 16px; border: 0; border-radius: 8px;
+  padding: 13px 16px; cursor: pointer;
+  background: var(--noren); color: var(--noren-ink); box-shadow: 0 3px 0 #1c3329;
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 #1c3329; }
+button:disabled { opacity: .6; cursor: progress; }
+a.xbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font-weight: 700; font-size: 16px; border-radius: 8px; padding: 13px 16px;
+  background: #0f1419; color: #fff; box-shadow: 0 3px 0 #000;
+}
+a.xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+a.xbtn:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+a.xbtn svg { width: 16px; height: 16px; fill: currentColor; }
+button.sub { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); padding-inline: 8px; font-size: 15px; }
+button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.how { font-size: 12px; opacity: .7; margin: 0; }
+.err { font-size: 13px; color: #b3361b; margin: 0; font-weight: 700; }
+.back { font-size: 13px; color: var(--ink); opacity: .75; }
+.back:hover { opacity: 1; }
+@media (max-height: 700px) {
+  .score { font-size: 48px; }
+  .body { gap: 9px; padding-block: 14px 16px; }
+  button, a.xbtn { padding-block: 11px; }
+}
+.hub-back {
+  position: fixed; z-index: 60;
+  left: calc(env(safe-area-inset-left, 0px) + 10px); bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  font: 700 12px/1 "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif; letter-spacing: .04em;
+  padding: 7px 11px; border-radius: 99px; text-decoration: none;
+  background: rgba(20, 18, 24, .55); color: #fff; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.hub-back:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<canvas id="gl" aria-hidden="true"></canvas>
+<canvas id="fx" aria-label="紙飛行機のゲーム画面。上へスワイプして投げる"></canvas>
+
+<div class="hud" id="hud" hidden>
+  <div class="pill"><span class="lab">自己ベスト</span><span class="val" id="hBest">—</span></div>
+  <div class="pill wind" id="hWindBox"><svg viewBox="0 0 32 32" id="hArrow" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="#2f5446"/><path d="M16 5 L23 15 H18.5 V26 H13.5 V15 H9 Z" fill="#f3f0e4"/></svg><span><span class="lab">風</span><span class="val" id="hWind">—</span></span></div>
+</div>
+
+<div class="prep" id="prep" hidden>
+  <div class="row">
+    <div class="folds" role="radiogroup" aria-label="折り方">
+      <button class="fold" data-fold="heso" role="radio" aria-checked="true"><svg viewBox="0 0 44 26" aria-hidden="true"><path d="M20 2 H24 L41 23 L22 19 L3 23 Z" fill="currentColor" opacity=".9"/><path d="M22 3 V19" stroke="#888" stroke-width="1"/></svg><b>へそ</b><small id="fb-heso">—</small></button>
+      <button class="fold" data-fold="yari" role="radio" aria-checked="false"><svg viewBox="0 0 44 26" aria-hidden="true"><path d="M22 0 L31 24 L22 21 L13 24 Z" fill="currentColor" opacity=".9"/><path d="M22 1 V21" stroke="#888" stroke-width="1"/></svg><b>やり</b><small id="fb-yari">—</small></button>
+      <button class="fold" data-fold="ika" role="radio" aria-checked="false"><svg viewBox="0 0 44 26" aria-hidden="true"><path d="M22 1 L27 8 L42 11 L42 21 L27 22 L22 24 L17 22 L2 21 L2 11 L17 8 Z" fill="currentColor" opacity=".9"/><path d="M22 2 V23" stroke="#888" stroke-width="1"/></svg><b>イカ</b><small id="fb-ika">—</small></button>
+    </div>
+    <p class="desc" id="foldDesc"></p>
+    <label class="elev"><span>翼の端を<br>折り上げる</span><input type="range" id="elev" min="-0.5" max="1" step="0.05" value="0" aria-label="翼の端の折り上げ（エレベーター）"><output id="elevOut">0</output></label>
+  </div>
+</div>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="noren" aria-hidden="true"><span>紙</span><span>飛</span><span>行</span><span>機</span></div>
+    <div class="body">
+      <p class="lead">夕方の屋上から、校庭へ。<br>紙飛行機を<b>一発勝負</b>で投げて、<br>何メートル飛ぶか。</p>
+      <div class="meta"><span>最長 <b id="tBest">—</b> m</span><span>投げた <b id="tThrows">0</b> 回</span></div>
+      <div class="btns"><button id="startBtn" disabled>よみこみ中…</button></div>
+      <p class="err" id="loadErr" hidden></p>
+      <p class="how">下から上へシュッとはじいて投げる。<br>はじく速さ＝強さ／指を離した高さ＝角度／斜め＝向き<br>飛んでいる間は左右ドラッグで少し傾けられる（キーボード: ↑↓角度 ←→向き・スペース長押し）</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <div class="noren result" aria-hidden="true"><span>着</span><span>地</span></div>
+    <div class="body">
+      <div class="badge" id="newRec" hidden>新記録</div>
+      <div class="score"><span id="oScore">0</span><small>m</small></div>
+      <canvas id="oProf" aria-hidden="true"></canvas>
+      <p class="lead" id="oMsg"></p>
+      <div class="meta"><span>自己ベスト <b id="oBest">0</b> m</span><span id="oFoldBestWrap"><span id="oFoldName">へそ</span>の最長 <b id="oFoldBest">0</b> m</span><span>投げた <b id="oThrows">0</b> 回</span></div>
+      <div class="btns">
+        <div class="two"><button id="retryBtn">もう一回</button><button class="sub" id="foldBtn">折り方を変える</button></div>
+        <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Xでシェア</a>
+        <button class="sub" id="copyBtn">結果をコピー</button>
+      </div>
+      <p class="how" id="copyMsg">画面タップ・スペースでもう一回（同じ折り方）</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+let THREE;
+try {
+  THREE = await import(THREE_URL);
+} catch (e) {
+  $('startBtn').textContent = '読み込めませんでした';
+  $('loadErr').hidden = false;
+  $('loadErr').textContent = '3Dの読み込みに失敗しました。通信状況を確かめて、ページを再読み込みしてください。';
+  throw e;
+}
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FD = getComputedStyle(document.documentElement).getPropertyValue('--font-display');
+const FB = getComputedStyle(document.documentElement).getPropertyValue('--font-body');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const rand = (a, b) => a + Math.random() * (b - a);
+const DEG = Math.PI / 180;
+const HASH = new URLSearchParams(location.hash.slice(1));
+
+/*PHYS-BEGIN*/
+/* ---------- 空力の簡易シミュレーション（three には頼らない。m・kg・s。y=上、-z=校庭の奥） ---------- */
+const RHO = 1.2, G = 9.81, PDT = 1 / 240;
+const ROOF = 5.8;                 // 屋上の床の高さ（2階建ての校舎）
+const HAND = 1.45;                // 手の高さ
+const LAUNCH = { x: 0, y: ROOF + HAND, z: -0.15 };
+// 折り方: m=重さ S=翼面積 c=翼弦 CLa=揚力傾斜 as=失速角 CD0=形の抗力 k=誘導抗力 Cma=ピッチの安定 Cmq=ピッチの減衰 cm0=つり合い（ふつうの折り）
+// el=翼端を1目盛り折り上げたときのつり合いの変化、I=ピッチの慣性、roll=風で揺さぶられる量、spiral=放っておくと傾いていく癖
+const FOLDS = {
+  heso: { name: 'へそ飛行機', short: 'へそ', m: 0.0056, S: 0.0135, c: 0.085, CLa: 3.6, as: 0.22, CD0: 0.045, k: 0.14, Cma: -0.62, Cmq: 7, cm0: 0.020, el: 0.0975, I: 3.4e-5, roll: 0.05, spiral: 0.0, flut: 0.004, vf: 8 },
+  yari: { name: 'やり飛行機', short: 'やり', m: 0.0062, S: 0.0085, c: 0.11, CLa: 3.0, as: 0.19, CD0: 0.032, k: 0.25, Cma: -0.35, Cmq: 4, cm0: 0.0092, el: 0.049, I: 4.4e-5, roll: 0.08, spiral: 0.25, flut: 0.003, vf: 10 },
+  ika:  { name: 'イカ飛行機', short: 'イカ', m: 0.0060, S: 0.0210, c: 0.10, CLa: 4.0, as: 0.28, CD0: 0.078, k: 0.11, Cma: -0.55, Cmq: 9, cm0: 0.0576, el: 0.067, I: 4.0e-5, roll: 0.10, spiral: 0.0, flut: 0.010, vf: 5.5 },
+};
+const FOLD_IDS = ['heso', 'yari', 'ika'];
+function mulberry(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+// 毎回の空模様: 風（向き・強さ・息）と、校庭の上昇気流
+function makeEnv(seed) {
+  const r = mulberry(seed);
+  const spd = 0.15 + Math.pow(r(), 1.3) * 1.75;            // 0.15〜1.9 m/s
+  const dir = r() * Math.PI * 2;                         // 風が吹いていく向き（0=奥へ＝追い風）
+  const th = [];
+  const nT = r() < 0.75 ? (r() < 0.45 ? 2 : 1) : 0;
+  for (let i = 0; i < nT; i++) th.push({ x: (r() * 2 - 1) * 14, z: -(22 + r() * 48), R: 5 + r() * 3, w: 1.0 + r() * 1.2, top: 22 + r() * 12 });
+  return { seed, wind: { x: Math.sin(dir) * spd, z: -Math.cos(dir) * spd, spd, dir }, gust: [r() * 6.28, r() * 6.28, r() * 6.28, 0.6 + r() * 0.5], thermals: th };
+}
+// その場所・時刻の空気の動き
+function airAt(env, x, y, z, t) {
+  const g = env.gust, gf = 1 + 0.22 * Math.sin(t * 0.9 + g[0]) + 0.12 * Math.sin(t * 2.3 + g[1]);
+  const low = y < 0 ? 0.55 : Math.min(1, 0.55 + 0.45 * y / 10);    // 地面ちかくは弱い
+  let up = 0;
+  for (const T of env.thermals) {
+    if (y > T.top) continue;
+    const d2 = ((x - T.x) ** 2 + (z - T.z) ** 2) / (T.R * T.R);
+    const fade = y > T.top - 6 ? (T.top - y) / 6 : 1;
+    up += T.w * fade * (Math.exp(-d2) - 0.22 * Math.exp(-((Math.sqrt(d2) - 1.9) ** 2) * 1.5));
+  }
+  return { x: env.wind.x * gf * low, y: up, z: env.wind.z * gf * low };
+}
+// 投げる: aim = { v: 初速 m/s, pitch: 投げ角 rad, yaw: 向き rad（+は右） }、elev = 翼端の折り上げ -1〜1
+function launch(foldId, elev, aim, env) {
+  const P = FOLDS[foldId];
+  const cp = Math.cos(aim.pitch);
+  return {
+    P, fold: foldId, elev, env, t: 0,
+    x: LAUNCH.x, y: LAUNCH.y, z: LAUNCH.z,
+    vx: Math.sin(aim.yaw) * cp * aim.v, vy: Math.sin(aim.pitch) * aim.v, vz: -Math.cos(aim.yaw) * cp * aim.v,
+    th: aim.pitch + 0.03, q: 0, psi: aim.yaw, phi: 0, bank: 0,
+    cm0: P.cm0 + P.el * elev,
+    phase: 'fly', alpha: 0, V: aim.v, maxY: LAUNCH.y, stall: 0, inThermal: 0, thermalUsed: false,
+    land: null, where: null,
+  };
+}
+function wrap(a) { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; }
+function smooth(a, b, x) { const k = Math.min(1, Math.max(0, (x - a) / (b - a))); return k * k * (3 - 2 * k); }
+function aeroCoef(P, a) {
+  const aa = Math.abs(a), s = Math.sign(a) || 1;
+  const lin = P.CLa * a;
+  const post = s * Math.max(0.55 * Math.abs(Math.sin(2 * aa)), P.CLa * P.as * Math.exp(-(aa - P.as) / 0.09));
+  const st = smooth(P.as - 0.02, P.as + 0.05, aa);
+  const CL = lin * (1 - st) + post * st;
+  const CD = P.CD0 + P.k * CL * CL + 1.25 * Math.sin(aa) ** 2 * st;   // 速すぎると紙がばたついて抗力が増える分は stepFlight で
+  const Cms = -0.25 * st * Math.sin(a);                   // 失速すると機首が下がる
+  return { CL, CD, Cms, st };
+}
+// 1ステップ。bankTarget = プレイヤーのロール（rad）
+function stepFlight(s, dt, bankTarget = 0) {
+  const P = s.P;
+  if (s.phase === 'skid') {
+    const h = Math.hypot(s.vx, s.vz);
+    const dec = 5.5 * dt;
+    if (h <= dec) { s.vx = s.vz = 0; s.phase = 'done'; } else { s.vx *= (h - dec) / h; s.vz *= (h - dec) / h; }
+    s.x += s.vx * dt; s.z += s.vz * dt; s.t += dt;
+    s.th += (0 - s.th) * Math.min(1, dt * 10); s.phi += (0 - s.phi) * Math.min(1, dt * 8);
+    return;
+  }
+  if (s.phase !== 'fly') return;
+  const air = airAt(s.env, s.x, s.y, s.z, s.t);
+  const ax = s.vx - air.x, ay = s.vy - air.y, az = s.vz - air.z;
+  const V = Math.max(0.05, Math.hypot(ax, ay, az));
+  // 機体の縦の面: 前（水平）= h、右 = r
+  const hx = Math.sin(s.psi), hz = -Math.cos(s.psi), rx = Math.cos(s.psi), rz = Math.sin(s.psi);
+  const uf = ax * hx + az * hz, uu = ay, ur = ax * rx + az * rz;
+  const gam = Math.atan2(uu, uf);
+  const alpha = wrap(s.th - gam);
+  const C = aeroCoef(P, alpha);
+  const qd = 0.5 * RHO * V * V * P.S;
+  // 揚力の向き: 機体の「上」(縦の面内) を相対風に直交させ、ロールで傾ける
+  const bux = -Math.sin(s.th) * hx, buy = Math.cos(s.th), buz = -Math.sin(s.th) * hz;
+  const ex = ax / V, ey = ay / V, ez = az / V;
+  let d = bux * ex + buy * ey + buz * ez;
+  let nx = bux - d * ex, ny = buy - d * ey, nz = buz - d * ez;
+  let nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+  // 右方向 = e × n の逆（右へ傾くと右へ曲がる）
+  let sx = ey * nz - ez * ny, sy = ez * nx - ex * nz, sz = ex * ny - ey * nx;
+  if (sx * rx + sz * rz < 0) { sx = -sx; sy = -sy; sz = -sz; }
+  const cph = Math.cos(s.phi), sph = Math.sin(s.phi);
+  const lx = nx * cph + sx * sph, ly = ny * cph + sy * sph, lz = nz * cph + sz * sph;
+  const flut = P.flut * Math.max(0, V - P.vf) ** 2;   // 速すぎると紙がばたつく
+  const L = qd * C.CL, D = qd * (C.CD + flut);
+  const fx = L * lx - D * ex, fy = L * ly - D * ey - P.m * G, fz = L * lz - D * ez;
+  s.vx += fx / P.m * dt; s.vy += fy / P.m * dt; s.vz += fz / P.m * dt;
+  // ピッチ: つり合い + 安定 + 減衰 + 失速
+  const Cm = s.cm0 + P.Cma * alpha + C.Cms - P.Cmq * s.q * P.c / (2 * V);
+  s.q += qd * P.c * Cm / P.I * dt;
+  s.q *= 1 - 0.6 * dt;
+  s.th = wrap(s.th + s.q * dt);
+  // ヨー: 機首は相対風へ向く（横すべりを消す）
+  const beta = Math.asin(Math.max(-1, Math.min(1, ur / V)));
+  s.psi = wrap(s.psi + 6 * beta * Math.sign(Math.cos(s.th) || 1) * dt);
+  // ロール: プレイヤーの傾け + 風の息 + 折り方の癖
+  const gustRoll = P.roll * (Math.sin(s.t * 1.7 + s.env.gust[2]) + 0.6 * Math.sin(s.t * 3.1 + s.env.gust[0])) * Math.min(1, s.env.wind.spd + 0.3);
+  s.bank = bankTarget;
+  s.phi += ((bankTarget + gustRoll) - s.phi) * Math.min(1, dt * 2.6) + P.spiral * s.phi * dt;
+  s.phi = Math.max(-1.1, Math.min(1.1, s.phi));
+  s.x += s.vx * dt; s.y += s.vy * dt; s.z += s.vz * dt; s.t += dt;
+  s.alpha = alpha; s.V = V; s.stall = C.st;
+  if (s.y > s.maxY) s.maxY = s.y;
+  if (air.y > 0.25) { s.inThermal += dt; if (s.inThermal > 0.6) s.thermalUsed = true; }
+  // 着地: 屋上（z>0）か校庭
+  const onRoof = s.z > 0 && s.z < 14 && Math.abs(s.x) < 22;
+  const floor = onRoof ? ROOF : 0;
+  if (s.z > 0 && s.z < 0.4 && s.y < ROOF && s.vz > 0) { s.z = 0; s.vz = -Math.abs(s.vz) * 0.2; s.vx *= 0.3; }   // 校舎の壁に当たった
+  if (s.y <= floor) {
+    s.y = floor; s.where = onRoof ? 'roof' : 'ground';
+    s.land = { x: s.x, z: s.z, t: s.t, v: V };
+    const h = Math.hypot(s.vx, s.vz), keep = Math.min(1, Math.max(0, 1 - Math.abs(s.vy) / (h + 0.01) * 0.8)) * 0.6;
+    s.vx *= keep; s.vz *= keep; s.vy = 0; s.q = 0;
+    s.phase = 'skid';
+  }
+  if (s.t > 60) { s.phase = 'done'; s.land = s.land || { x: s.x, z: s.z, t: s.t, v: V }; }
+}
+const distOf = s => (s.where === 'roof' ? 0 : Math.max(0, -s.z));
+// policy(s) → bankTarget。ボットの操縦や、ブラウザなしの検証用
+function simulate(foldId, elev, aim, env, policy = null, keepPath = false) {
+  const s = launch(foldId, elev, aim, env), path = [];
+  let k = 0;
+  while (s.phase !== 'done') {
+    const b = policy ? policy(s) : 0;
+    stepFlight(s, PDT, b);
+    if (keepPath && (k++ % 12 === 0)) path.push([s.x, s.y, s.z]);
+  }
+  return { dist: distOf(s), t: s.t, maxY: s.maxY, thermal: s.thermalUsed, where: s.where, path, land: s.land };
+}
+/*PHYS-END*/
+
+const FOLD_DESC = {
+  heso: 'へそ飛行機: 安定して、すーっと長く滑る',
+  yari: 'やり飛行機: 速い。強く投げても平気だが、落ちやすい',
+  ika: 'イカ飛行機: ふわっと浮く。追い風と上昇気流に強い',
+};
+
+/* ---------- 記録（このブラウザだけ） ---------- */
+const KEY = 'plane:v1';
+const DEF = () => ({ ver: 1, best: 0, bestFold: '', folds: { heso: 0, yari: 0, ika: 0 }, throws: 0, fold: 'heso', elev: { heso: 0, yari: 0, ika: 0 } });
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || '{}');
+    if (d && d.ver === 1) {
+      const r = { ...DEF(), ...d, folds: { ...DEF().folds, ...(d.folds || {}) }, elev: { ...DEF().elev, ...(d.elev || {}) } };
+      if (!FOLDS[r.fold]) r.fold = 'heso';
+      return r;
+    }
+  } catch {}
+  return DEF();
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch {} }
+let rec = load();
+const m1 = v => (Math.floor(v * 10 + 1e-6) / 10).toFixed(1);
+
+/* ---------- three.js ---------- */
+const glc = $('gl'), fxc = $('fx'), fx = fxc.getContext('2d');
+const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, powerPreference: 'high-performance' });
+const scene = new THREE.Scene();
+const HAZE = new THREE.Color('#e7a581');
+scene.background = new THREE.Color('#d99a7a');
+scene.fog = new THREE.Fog(HAZE, 90, 620);
+const camera = new THREE.PerspectiveCamera(60, 1, 0.1, 1600);
+let W = 0, H = 0, dpr = 1, safeT = 0, safeB = 0;
+function resize() {
+  W = innerWidth; H = innerHeight; dpr = Math.min(devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(Math.min(dpr, 1.75)); renderer.setSize(W, H, false);
+  fxc.width = Math.round(W * dpr); fxc.height = Math.round(H * dpr);
+  camera.aspect = W / H; camera.fov = W / H < 0.75 ? 64 : 50; camera.updateProjectionMatrix();
+  const cs = getComputedStyle(document.documentElement);
+  safeT = parseFloat(cs.paddingTop) || 0; safeB = parseFloat(cs.paddingBottom) || 0;
+}
+addEventListener('resize', resize); resize();
+
+function canvasTex(w, h, draw, repeat) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
+  t.anisotropy = 4;
+  return t;
+}
+const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
+let srnd = 7; const prand = () => (srnd = (srnd * 9301 + 49297) % 233280) / 233280;
+
+// 光: 夕方。正面やや左の低い夕日と、空の照り返し
+const SUN = new THREE.Vector3(-0.2, 0.07, -1).normalize();
+scene.add(new THREE.HemisphereLight('#ffd7b0', '#6a5856', 2.1));
+const sunLight = new THREE.DirectionalLight('#ffb27a', 1.9); sunLight.position.copy(SUN).multiplyScalar(100); scene.add(sunLight);
+const backLight = new THREE.DirectionalLight('#9fb2d8', 0.55); backLight.position.set(0.4, 0.6, 1); scene.add(backLight);
+
+/* 空: 頂点カラーのグラデーション + 夕日の照り */
+function buildSky() {
+  const geo = new THREE.SphereGeometry(1200, 48, 24);
+  const stops = [[-0.2, '#d49270'], [0, '#fbc27c'], [0.06, '#f6a468'], [0.16, '#ec9070'], [0.3, '#d98c7e'], [0.5, '#a88a90'], [0.75, '#66728f'], [1, '#34445f']].map(([e, c]) => [e, new THREE.Color(c)]);
+  const glow = new THREE.Color('#ffe3a6'), pos = geo.attributes.position, col = [], v = new THREE.Vector3(), c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i).normalize();
+    const e = v.y;
+    let k = 0; while (k < stops.length - 2 && e > stops[k + 1][0]) k++;
+    const [e0, c0] = stops[k], [e1, c1] = stops[k + 1];
+    c.copy(c0).lerp(c1, clamp((e - e0) / (e1 - e0), 0, 1));
+    const g = Math.pow(Math.max(0, v.dot(SUN)), 6) * 0.85 + Math.pow(Math.max(0, v.dot(SUN)), 60) * 0.3;
+    c.lerp(glow, clamp(g, 0, 1));
+    col.push(c.r, c.g, c.b);
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  const sky = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+  sky.renderOrder = -10; scene.add(sky);
+  // 夕日
+  const sunTex = canvasTex(128, 128, (g, w, h) => { const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,248,220,1)'); gr.addColorStop(0.22, 'rgba(255,226,160,1)'); gr.addColorStop(0.3, 'rgba(255,190,120,.55)'); gr.addColorStop(1, 'rgba(255,160,100,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+  const sun = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunTex, fog: false, depthWrite: false, transparent: true }));
+  sun.position.copy(SUN).multiplyScalar(1100); sun.scale.set(150, 150, 1); sun.renderOrder = -9; scene.add(sun);
+  // 雲（横にのびた夕焼け雲）
+  const cloudTex = canvasTex(256, 64, (g, w, h) => {
+    for (let i = 0; i < 14; i++) {
+      const x = 30 + prand() * 196, y = 26 + prand() * 16, r = 14 + prand() * 22;
+      const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(255,214,170,.55)'); gr.addColorStop(1, 'rgba(255,190,160,0)');
+      g.fillStyle = gr; g.beginPath(); g.ellipse(x, y, r * 1.8, r * 0.55, 0, 0, Math.PI * 2); g.fill();
+    }
+  });
+  for (const [az, el, s] of [[-0.55, 0.05, 1.2], [-0.1, 0.11, 1.6], [0.3, 0.07, 1.1], [0.62, 0.15, 1.4], [-0.9, 0.2, 1.3], [0.05, 0.26, 1.8]]) {
+    const cl = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTex, fog: false, depthWrite: false, transparent: true, opacity: 0.85 }));
+    const d = new THREE.Vector3(Math.sin(az), Math.tan(el), -Math.cos(az)).normalize();
+    cl.position.copy(d).multiplyScalar(1000); cl.scale.set(380 * s, 80 * s, 1); cl.renderOrder = -8; scene.add(cl);
+  }
+  // 遠くの山と町並み（円筒の内側に貼る）
+  const hillTex = canvasTex(2048, 256, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = 'rgba(122,104,128,.75)'; g.beginPath(); g.moveTo(0, h);
+    for (let x = 0; x <= w; x += 16) g.lineTo(x, h - 95 - 55 * Math.sin(x / 210) - 30 * Math.sin(x / 67 + 1));
+    g.lineTo(w, h); g.fill();
+    g.fillStyle = '#6b5b6e'; g.beginPath(); g.moveTo(0, h);
+    for (let x = 0; x <= w; x += 12) g.lineTo(x, h - 60 - 26 * Math.sin(x / 140 + 2) - 12 * Math.sin(x / 41));
+    g.lineTo(w, h); g.fill();
+    let x = 0;
+    while (x < w) {
+      const bw = 14 + prand() * 34, bh = 18 + prand() * 46;
+      g.fillStyle = prand() < 0.5 ? '#56495c' : '#5e5063'; g.fillRect(x, h - bh, bw, bh);
+      for (let yy = h - bh + 6; yy < h - 4; yy += 8) for (let xx = x + 3; xx < x + bw - 4; xx += 6) if (prand() < 0.16) { g.fillStyle = '#ffd792'; g.fillRect(xx, yy, 3, 3); }
+      x += bw + 1 + prand() * 6;
+    }
+  });
+  const hills = new THREE.Mesh(new THREE.CylinderGeometry(900, 900, 160, 64, 1, true, Math.PI * 0.5, Math.PI * 1.0), new THREE.MeshBasicMaterial({ map: hillTex, transparent: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+  hills.position.y = 66; hills.renderOrder = -7; scene.add(hills);
+}
+buildSky();
+
+/* 地面: 河川敷まで続く草地 + 校庭の砂 + 10mごとのライン */
+const FIELD = { x: 34, z: 128 };
+function buildGround() {
+  const grass = new THREE.Mesh(new THREE.PlaneGeometry(2400, 2400), lam('#6c6f40'));
+  grass.rotation.x = -Math.PI / 2; grass.position.y = -0.1; scene.add(grass);
+  const sandTex = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#d4ae80'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 2600; i++) { g.fillStyle = prand() < 0.5 ? 'rgba(120,84,50,.14)' : 'rgba(255,235,205,.16)'; g.fillRect(prand() * w, prand() * h, 1 + prand() * 2, 1 + prand() * 2); }
+    for (let i = 0; i < 6; i++) { g.strokeStyle = 'rgba(150,110,70,.08)'; g.lineWidth = 6; g.beginPath(); const y = prand() * h; g.moveTo(0, y); g.bezierCurveTo(w * 0.3, y + 20, w * 0.6, y - 20, w, y); g.stroke(); }
+  }, [FIELD.x * 2 / 8, FIELD.z / 8]);
+  const sand = new THREE.Mesh(new THREE.PlaneGeometry(FIELD.x * 2, FIELD.z), lam('#ffffff', { map: sandTex }));
+  sand.rotation.x = -Math.PI / 2; sand.position.set(0, 0, -FIELD.z / 2); scene.add(sand);
+  const chalk = lam('#f4f0e6');
+  for (let d = 5; d < FIELD.z - 4; d += 5) {
+    const major = d % 10 === 0;
+    if (major) {
+      const ln = new THREE.Mesh(new THREE.PlaneGeometry(FIELD.x * 2 - 4, 0.2), chalk); ln.rotation.x = -Math.PI / 2; ln.position.set(0, 0.03, -d); scene.add(ln);
+    } else {
+      for (const s of [-1, 1]) for (const xx of [FIELD.x - 6, 6]) { const t = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.14), chalk); t.rotation.x = -Math.PI / 2; t.position.set(s * xx, 0.03, -d); scene.add(t); }
+    }
+  }
+  // センターのライン（投げる向きの目安）
+  const cl = new THREE.Mesh(new THREE.PlaneGeometry(0.12, FIELD.z - 6), lam('#f4f0e6', { transparent: true, opacity: 0.55 }));
+  cl.rotation.x = -Math.PI / 2; cl.position.set(0, 0.025, -FIELD.z / 2 - 2); scene.add(cl);
+}
+buildGround();
+function buildLabels() {
+  for (let d = 10; d < FIELD.z - 4; d += 10) {
+    const tex = canvasTex(256, 128, (g, w, h) => {
+      g.clearRect(0, 0, w, h); g.fillStyle = 'rgba(246,242,232,.92)'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = `92px ${FD}`; g.fillText(`${d}m`, w / 2, h / 2 + 4);
+    });
+    const s = 1.4 + d * 0.035;
+    for (const xx of [-7, 7]) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(2 * s, s), new THREE.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false }));
+      m.rotation.x = -Math.PI / 2; m.position.set(xx, 0.04, -d + s * 0.6); scene.add(m);
+    }
+  }
+}
+
+/* 校舎と屋上のフェンス */
+function buildSchool() {
+  const wallTex = canvasTex(1024, 128, (g, w, h) => {
+    g.fillStyle = '#e6d9c4'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#cdbfa8'; g.fillRect(0, h * 0.48, w, 4); g.fillRect(0, h - 6, w, 6);
+    for (let row = 0; row < 2; row++) for (let i = 0; i < 22; i++) {
+      const x = 10 + i * 46, y = 12 + row * 62;
+      g.fillStyle = '#6f7f95'; g.fillRect(x, y, 36, 38);
+      g.fillStyle = 'rgba(255,200,150,.45)'; g.fillRect(x + 2, y + 2, 15, 34); g.fillRect(x + 19, y + 2, 15, 34);
+      g.fillStyle = '#e6d9c4'; g.fillRect(x + 17, y, 2, 38);
+    }
+  });
+  const plain = lam('#dccdb6'), roofTex = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#9d988c'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(60,55,50,.25)'; g.lineWidth = 2;
+    for (let i = 0; i <= w; i += 32) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i, h); g.stroke(); g.beginPath(); g.moveTo(0, i); g.lineTo(w, i); g.stroke(); }
+    for (let i = 0; i < 500; i++) { g.fillStyle = 'rgba(40,36,30,.08)'; g.fillRect(prand() * w, prand() * h, 2, 2); }
+  }, [11, 4]);
+  const bx = new THREE.Mesh(new THREE.BoxGeometry(44, ROOF, 16), [plain, plain, lam('#ffffff', { map: roofTex }), plain, plain, lam('#ffffff', { map: wallTex })]);
+  bx.position.set(0, ROOF / 2, 8); scene.add(bx);
+  // 屋上の縁（パラペット）
+  const par = new THREE.Mesh(new THREE.BoxGeometry(44, 0.35, 0.25), lam('#d6c8b0')); par.position.set(0, ROOF + 0.17, 0.12); scene.add(par);
+  // 金網フェンス
+  const meshTex = canvasTex(64, 64, (g, w, h) => {
+    g.clearRect(0, 0, w, h); g.strokeStyle = 'rgba(70,90,80,.75)'; g.lineWidth = 2;
+    g.beginPath(); g.moveTo(0, 0); g.lineTo(w, h); g.moveTo(w, 0); g.lineTo(0, h); g.stroke();
+  }, [44 / 0.12, 1.0 / 0.12]);
+  const net = new THREE.Mesh(new THREE.PlaneGeometry(44, 1.0), new THREE.MeshBasicMaterial({ map: meshTex, transparent: true, side: THREE.DoubleSide, depthWrite: false, fog: true }));
+  net.position.set(0, ROOF + 0.35 + 0.5, 0.25); scene.add(net);
+  const postMat = lam('#4f6a5c');
+  for (let x = -22; x <= 22; x += 2.5) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1.05, 6), postMat); p.position.set(x, ROOF + 0.35 + 0.52, 0.25); scene.add(p); }
+  const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 44, 6), postMat); rail.rotation.z = Math.PI / 2; rail.position.set(0, ROOF + 1.38, 0.25); scene.add(rail);
+}
+buildSchool();
+
+/* 校庭の小物と木 */
+function buildProps() {
+  const white = lam('#eeeae0');
+  // サッカーゴール
+  for (const gz of [-FIELD.z + 6]) {
+    for (const s of [-1, 1]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.4, 6), white); p.position.set(s * 3.6, 1.2, gz); scene.add(p); }
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 7.2, 6), white); bar.rotation.z = Math.PI / 2; bar.position.set(0, 2.4, gz); scene.add(bar);
+  }
+  // 鉄棒
+  for (let i = 0; i < 3; i++) {
+    const x = -FIELD.x + 4 + i * 1.6, h = 1.0 + i * 0.3;
+    for (const dx of [0, 1.5]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, h, 5), lam('#c0473a')); p.position.set(x + dx - 0.75 + i * 0.1, h / 2, -16); scene.add(p); }
+    const b = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.5, 5), lam('#bbbbbb')); b.rotation.z = Math.PI / 2; b.position.set(x + i * 0.1, h, -16); scene.add(b);
+  }
+  // 木（インスタンス）: 校庭の奥と両わき
+  const pos = [];
+  for (let x = -70; x <= 70; x += 5.5) pos.push([x + rand(-1, 1), -FIELD.z - 6 + rand(-2, 2), rand(0.8, 1.3)]);
+  for (const s of [-1, 1]) for (let z = -8; z > -FIELD.z; z -= 7) pos.push([s * (FIELD.x + 5 + rand(0, 3)), z + rand(-2, 2), rand(0.8, 1.2)]);
+  const cone = new THREE.InstancedMesh(new THREE.ConeGeometry(2.4, 6.5, 7), lam('#4c5f3a'), pos.length);
+  const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.25, 0.3, 2, 5), lam('#5b4636'), pos.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3();
+  pos.forEach(([x, z, s], i) => {
+    sc.set(s, s, s); m4.compose(new THREE.Vector3(x, 2 * s + 3.25 * s - 0.4, z), q, sc); cone.setMatrixAt(i, m4);
+    m4.compose(new THREE.Vector3(x, s, z), q, sc); trunk.setMatrixAt(i, m4);
+  });
+  scene.add(cone, trunk);
+}
+buildProps();
+
+/* 丸い影 */
+const blobTex = canvasTex(64, 64, (c, w, h) => { const gr = c.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(40,20,20,.55)'); gr.addColorStop(1, 'rgba(40,20,20,0)'); c.fillStyle = gr; c.fillRect(0, 0, w, h); });
+function makeBlob(s) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.scale.set(s, s, 1); m.renderOrder = 1; scene.add(m); return m; }
+
+/* 吹き流し（屋上の右） */
+const SOCK = new THREE.Group();
+const sockSegs = [];
+function buildSock() {
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.035, 2.6, 6), lam('#cfcac0')); pole.position.set(2.4, ROOF + 1.3, -0.1); scene.add(pole);
+  SOCK.position.set(2.4, ROOF + 2.55, -0.1); scene.add(SOCK);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.16, 0.012, 5, 14), lam('#555')); SOCK.add(ring);
+  let parent = SOCK;
+  for (let i = 0; i < 5; i++) {
+    const r0 = 0.16 - i * 0.022, r1 = 0.16 - (i + 1) * 0.022, L = 0.22;
+    const g = new THREE.Group(); g.position.z = i === 0 ? 0 : L; parent.add(g);
+    const seg = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, L, 12, 1, true), lam(i % 2 ? '#f4f0e6' : '#d5482f', { side: THREE.DoubleSide }));
+    seg.rotation.x = Math.PI / 2; seg.position.z = L / 2; g.add(seg);
+    sockSegs.push(g); parent = g;
+  }
+}
+buildSock();
+
+/* 上昇気流の見た目: 校庭の熱い所から、ちりがゆっくり昇っていく */
+const dotTex = canvasTex(32, 32, (c, w, h) => { const gr = c.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(255,250,235,1)'); gr.addColorStop(1, 'rgba(255,240,210,0)'); c.fillStyle = gr; c.fillRect(0, 0, w, h); });
+const colTex = canvasTex(8, 128, (c, w, h) => { const gr = c.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, 'rgba(255,240,210,0)'); gr.addColorStop(0.6, 'rgba(255,236,200,.5)'); gr.addColorStop(1, 'rgba(255,230,190,.9)'); c.fillStyle = gr; c.fillRect(0, 0, w, h); });
+const patchTex = canvasTex(64, 64, (c, w, h) => { const gr = c.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,226,170,.75)'); gr.addColorStop(1, 'rgba(255,226,170,0)'); c.fillStyle = gr; c.fillRect(0, 0, w, h); });
+let thermalVis = [];
+function buildThermals(env) {
+  for (const t of thermalVis) scene.remove(t.group);
+  thermalVis = [];
+  for (const T of env.thermals) {
+    const group = new THREE.Group(); group.position.set(T.x, 0, T.z); scene.add(group);
+    const hgt = Math.min(16, T.top * 0.6);
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(T.R * 0.55, T.R * 0.8, hgt, 18, 1, true), new THREE.MeshBasicMaterial({ map: colTex, transparent: true, opacity: 0.035 + T.w * 0.015, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+    col.position.y = hgt / 2; group.add(col);
+    const patch = new THREE.Mesh(new THREE.PlaneGeometry(T.R * 2.4, T.R * 2.4), new THREE.MeshBasicMaterial({ map: patchTex, transparent: true, depthWrite: false, opacity: 0.6 }));
+    patch.rotation.x = -Math.PI / 2; patch.position.y = 0.05; group.add(patch);
+    const N = 46, pts = new Float32Array(N * 3), meta = [];
+    for (let i = 0; i < N; i++) meta.push({ a: rand(0, 6.28), r: Math.sqrt(Math.random()) * T.R * 0.7, h: rand(0, hgt), s: rand(0.5, 1.1) * (0.6 + T.w * 0.5) });
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pts, 3));
+    const pm = new THREE.Points(geo, new THREE.PointsMaterial({ map: dotTex, size: 0.5, transparent: true, opacity: 0.7, depthWrite: false, blending: THREE.AdditiveBlending, color: '#fff0cc' }));
+    group.add(pm);
+    thermalVis.push({ group, geo, meta, hgt, T });
+  }
+}
+function animThermals(dt) {
+  for (const tv of thermalVis) {
+    const p = tv.geo.attributes.position.array;
+    tv.meta.forEach((m, i) => {
+      m.h += m.s * dt; m.a += (0.35 + 0.4 / (1 + m.r)) * dt;
+      if (m.h > tv.hgt) { m.h = 0; m.r = Math.sqrt(Math.random()) * tv.T.R * 0.7; }
+      p[i * 3] = Math.cos(m.a) * m.r * (1 - m.h / tv.hgt * 0.3); p[i * 3 + 1] = m.h; p[i * 3 + 2] = Math.sin(m.a) * m.r * (1 - m.h / tv.hgt * 0.3);
+    });
+    tv.geo.attributes.position.needsUpdate = true;
+  }
+}
+
+/* 自己ベストの旗 */
+const flag = new THREE.Group(); scene.add(flag);
+let flagLabel = null;
+function buildFlag() {
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.6, 6), lam('#e9e4d8')); pole.position.y = 1.3; flag.add(pole);
+  const shape = new THREE.Shape(); shape.moveTo(0, 0); shape.lineTo(1.3, -0.4); shape.lineTo(0, -0.8); shape.closePath();
+  const cloth = new THREE.Mesh(new THREE.ShapeGeometry(shape), lam('#e8743c', { side: THREE.DoubleSide })); cloth.position.set(0.04, 2.6, 0); flag.add(cloth);
+  flag.userData.cloth = cloth;
+}
+buildFlag();
+function updateFlag() {
+  flag.visible = rec.best > 0.5;
+  flag.position.set(-2.2, 0, -rec.best);
+  if (flagLabel) { flag.remove(flagLabel); flagLabel.material.map.dispose(); }
+  const tex = canvasTex(256, 96, (g, w, h) => {
+    g.fillStyle = 'rgba(47,84,70,.92)'; g.beginPath(); g.roundRect(4, 8, w - 8, h - 16, 14); g.fill();
+    g.fillStyle = '#f3f0e4'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `700 26px ${FB}`; g.fillText('ベスト', w / 2, 32);
+    g.font = `34px ${FD}`; g.fillText(`${m1(rec.best)}m`, w / 2, 64);
+  });
+  flagLabel = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true }));
+  flagLabel.scale.set(2.6, 0.98, 1); flagLabel.position.set(0, 3.5, 0); flag.add(flagLabel);
+}
+
+/* 紙飛行機の形（ローカル: 機首 = -z、上 = +y、右 = +x。実物大 ≒ 26cm） */
+const PAPER = { heso: '#fbf8f0', yari: '#e4eef6', ika: '#fbeede' };
+function planeGeo(id) {
+  const P = {
+    heso: { tri: [[[-0.012, 0, -0.125], [0.012, 0, -0.125], [0, 0, 0.13]], [[-0.012, 0, -0.125], [0, 0, 0.13], [-0.105, 0.016, 0.11]], [[0.012, 0, -0.125], [0.105, 0.016, 0.11], [0, 0, 0.13]]],
+            keel: [[0, 0, -0.12], [0, -0.012, -0.08], [0, -0.03, 0.1], [0, 0, 0.13]], flap: [0.055, 0.105, 0.1, 0.125] },
+    yari: { tri: [[[0, 0, -0.16], [0, 0, 0.13], [-0.056, 0.012, 0.12]], [[0, 0, -0.16], [0.056, 0.012, 0.12], [0, 0, 0.13]]],
+            keel: [[0, 0, -0.155], [0, -0.01, -0.1], [0, -0.038, 0.11], [0, 0, 0.13]], flap: [0.025, 0.056, 0.105, 0.125] },
+    ika:  { tri: [[[0, 0, -0.12], [0, 0, 0.1], [-0.03, 0.002, -0.06]], [[0, 0, -0.12], [0.03, 0.002, -0.06], [0, 0, 0.1]],
+                  [[-0.03, 0.002, -0.06], [0, 0, 0.1], [-0.125, 0.018, 0.0]], [[-0.125, 0.018, 0.0], [0, 0, 0.1], [-0.125, 0.018, 0.075]], [[-0.125, 0.018, 0.075], [0, 0, 0.1], [-0.04, 0.004, 0.1]],
+                  [[0.03, 0.002, -0.06], [0.125, 0.018, 0.0], [0, 0, 0.1]], [[0.125, 0.018, 0.0], [0.125, 0.018, 0.075], [0, 0, 0.1]], [[0.125, 0.018, 0.075], [0.04, 0.004, 0.1], [0, 0, 0.1]]],
+            keel: [[0, 0, -0.11], [0, -0.008, -0.07], [0, -0.022, 0.08], [0, 0, 0.1]], flap: [0.07, 0.125, 0.075, 0.1] },
+  }[id];
+  const v = [];
+  for (const t of P.tri) for (const p of t) v.push(...p);
+  const k = P.keel; v.push(...k[0], ...k[1], ...k[2], ...k[0], ...k[2], ...k[3]);
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(v, 3)); g.computeVertexNormals();
+  return { g, flap: P.flap };
+}
+function makePlaneMesh(id) {
+  const { g, flap } = planeGeo(id);
+  const mat = new THREE.MeshLambertMaterial({ color: PAPER[id], emissive: new THREE.Color(PAPER[id]).multiplyScalar(0.38), side: THREE.DoubleSide, flatShading: true });
+  const root = new THREE.Group(), body = new THREE.Mesh(g, mat);
+  root.add(body);
+  const edges = new THREE.LineSegments(new THREE.EdgesGeometry(g, 1), new THREE.LineBasicMaterial({ color: '#8d877c' })); root.add(edges);
+  // 翼の端の折り上げ（エレベーター）: 後ろの縁の外側
+  const flaps = [];
+  for (const s of [-1, 1]) {
+    const [x0, x1, z0, z1] = flap;
+    const fg = new THREE.BufferGeometry();
+    fg.setAttribute('position', new THREE.Float32BufferAttribute([s * x0, 0, 0, s * x1, 0, 0, s * x1, 0, z1 - z0, s * x0, 0, 0, s * x1, 0, z1 - z0, s * x0, 0, z1 - z0], 3)); fg.computeVertexNormals();
+    const piv = new THREE.Group(); piv.position.set(0, (id === 'yari' ? 0.012 : id === 'ika' ? 0.018 : 0.015) * ((x0 + x1) / 2) / (flap[1]), z0);
+    const fm = new THREE.Mesh(fg, new THREE.MeshLambertMaterial({ color: new THREE.Color(PAPER[id]).multiplyScalar(0.93), side: THREE.DoubleSide })); piv.add(fm);
+    root.add(piv); flaps.push(piv);
+  }
+  root.userData.flaps = flaps;
+  root.rotation.order = 'YXZ';
+  return root;
+}
+const planeMeshes = {};
+for (const id of FOLD_IDS) { planeMeshes[id] = makePlaneMesh(id); planeMeshes[id].visible = false; scene.add(planeMeshes[id]); }
+const demoMesh = makePlaneMesh('heso'); demoMesh.visible = false; scene.add(demoMesh);
+function setFlaps(mesh, el) { for (const f of mesh.userData.flaps) f.rotation.x = -el * 0.75; }
+const planeBlob = makeBlob(0.5), demoBlob = makeBlob(0.5);
+
+/* 軌跡（飛行中は後ろに細く、横からの全体図ではくっきり） */
+const TRAIL_MAX = 4000;
+const trailGeo = new THREE.BufferGeometry(); trailGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_MAX * 3), 3)); trailGeo.setDrawRange(0, 0);
+const trailMat = new THREE.LineBasicMaterial({ color: '#fff6e0', transparent: true, opacity: 0.5, fog: false });
+const trailLine = new THREE.Line(trailGeo, trailMat); trailLine.frustumCulled = false; scene.add(trailLine);
+let trailN = 0;
+function trailReset() { trailN = 0; trailGeo.setDrawRange(0, 0); }
+function trailPush(x, y, z) { if (trailN >= TRAIL_MAX) return; const a = trailGeo.attributes.position.array; a[trailN * 3] = x; a[trailN * 3 + 1] = y; a[trailN * 3 + 2] = z; trailN++; trailGeo.attributes.position.needsUpdate = true; trailGeo.setDrawRange(0, trailN); }
+// 横からの全体図で、軌跡の真下に落とす影の線
+const dropGeo = new THREE.BufferGeometry(); dropGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(TRAIL_MAX * 3), 3)); dropGeo.setDrawRange(0, 0);
+const dropLine = new THREE.Line(dropGeo, new THREE.LineBasicMaterial({ color: '#5a3d32', transparent: true, opacity: 0.35 })); dropLine.frustumCulled = false; dropLine.visible = false; scene.add(dropLine);
+
+/* ---------- ゲーム状態 ---------- */
+let state = 'loading';     // loading | title | play | over
+let phase = 'ready';       // ready | fly | landed | side
+let env = null, sim = null, fold = rec.fold, elev = clamp(+rec.elev[rec.fold] || 0, -0.5, 1);
+let phaseT = 0, tt = 0, overShownAt = 0, pops = [], drag = null, steer = null, bankCmd = 0;
+let kb = null, charge = null, keyBank = 0, lastAim = null, lastDist = 0, wasNew = false, flightInfo = null;
+let envSeed = HASH.has('seed') ? (+HASH.get('seed') >>> 0) : (Math.random() * 2 ** 32) >>> 0;
+const nextSeed = () => { const s = envSeed; envSeed = (Math.imul(envSeed, 1664525) + 1013904223) >>> 0; return s; };
+
+const CAM_READY = { pos: new THREE.Vector3(0.25, ROOF + 1.62, 0.5), look: new THREE.Vector3(0, ROOF - 3.2, -30) };
+camera.position.copy(CAM_READY.pos); camera.lookAt(CAM_READY.look);
+const camLook = CAM_READY.look.clone();
+
+function windText(w) {
+  const tail = -w.z, cross = w.x, s = w.spd;
+  if (s < 0.35) return 'ほぼ無風';
+  if (Math.abs(tail) >= Math.abs(cross) * 0.8) return `${tail > 0 ? '追い風' : '向かい風'} ${s.toFixed(1)}m/s`;
+  return `横風${cross > 0 ? '→' : '←'} ${s.toFixed(1)}m/s`;
+}
+function toReady() {
+  env = makeEnv(nextSeed());
+  buildThermals(env);
+  sim = null; phase = 'ready'; phaseT = 0; drag = null; steer = null; charge = null; bankCmd = 0;
+  trailReset(); trailMat.opacity = 0.5; dropLine.visible = false;
+  for (const id of FOLD_IDS) planeMeshes[id].visible = false;
+  planeMeshes[fold].visible = true; setFlaps(planeMeshes[fold], elev);
+  $('hWind').textContent = windText(env.wind);
+  $('hArrow').style.transform = `rotate(${Math.atan2(env.wind.x, -env.wind.z) / DEG}deg)`;
+  $('hArrow').style.opacity = env.wind.spd < 0.35 ? 0.4 : 1;
+  if (state === 'play') $('prep').hidden = false;
+  $('hWindBox').hidden = false;
+  syncPrep();
+}
+function newGame() {
+  pops = [];
+  toReady();
+  updateHud();
+}
+
+/* ---------- 準備パネル ---------- */
+function syncPrep() {
+  for (const b of document.querySelectorAll('.fold')) {
+    const id = b.dataset.fold; b.setAttribute('aria-checked', String(id === fold));
+    $('fb-' + id).textContent = rec.folds[id] ? `${m1(rec.folds[id])}m` : '—';
+  }
+  $('foldDesc').textContent = FOLD_DESC[fold];
+  $('elev').value = elev;
+  $('elevOut').textContent = (elev > 0 ? '+' : '') + elev.toFixed(2);
+}
+function setFold(id) {
+  if (!FOLDS[id] || (state === 'play' && phase !== 'ready')) return;
+  fold = id; rec.fold = id; elev = clamp(+rec.elev[id] || 0, -0.5, 1); save();
+  for (const k of FOLD_IDS) planeMeshes[k].visible = k === id;
+  setFlaps(planeMeshes[fold], elev);
+  syncPrep(); sTick(id === 'yari' ? 300 : id === 'ika' ? 220 : 260);
+}
+for (const b of document.querySelectorAll('.fold')) b.addEventListener('click', () => setFold(b.dataset.fold));
+$('elev').addEventListener('input', () => {
+  elev = clamp(+$('elev').value, -0.5, 1); rec.elev[fold] = elev; save();
+  $('elevOut').textContent = (elev > 0 ? '+' : '') + elev.toFixed(2);
+  setFlaps(planeMeshes[fold], elev);
+});
+$('elev').addEventListener('change', () => $('elev').blur());
+
+/* ---------- 投げる ---------- */
+// スワイプ: はじく速さ → 初速、指を離した高さ → 投げ角、斜め → 向き
+const LEVEL_Y = 0.6;                         // この高さで離すと水平に投げる（画面の高さに対する割合）
+const pitchAtY = y => clamp((LEVEL_Y - y / H) / 0.5 * 42, -22, 45) * DEG;
+function aimFromDrag(d, final) {
+  const pts = d.pts, last = pts[pts.length - 1];
+  let i = pts.length - 1; while (i > 0 && last.t - pts[i - 1].t < 90) i--;
+  const a = pts[Math.max(0, i - 1)], dt = Math.max(16, last.t - a.t) / 1000;
+  const vx = (last.x - a.x) / dt, vy = (last.y - a.y) / dt;
+  const up = -vy, sp = Math.hypot(vx, vy) / H;          // 画面の高さ/秒
+  const tx = last.x - d.x0, ty = last.y - d.y0;
+  const yaw = clamp(Math.atan2(tx, -ty), -0.75, 0.75) * 0.55;
+  const v = clamp(1.6 + 3.3 * sp, 2.5, 14);
+  const ok = up > H * 0.2 && -ty > 30;
+  return { v, pitch: pitchAtY(last.y), yaw, ok: final ? ok : true, sp, x0: d.x0, y0: d.y0 };
+}
+function throwNow(aim) {
+  if (state !== 'play' || phase !== 'ready') return false;
+  lastAim = aim;
+  sim = launch(fold, elev, aim, env);
+  sim.heldFrom = heldPose();
+  rec.throws++; save();
+  phase = 'fly'; phaseT = 0; drag = null; charge = null; flightInfo = { thermalPop: false, stallPop: false, maxY: sim.y };
+  $('prep').hidden = true; $('hWindBox').hidden = true;
+  trailReset(); trailPush(sim.x, sim.y, sim.z);
+  sWhoosh(aim.v);
+  windStart();
+  updateHud();
+  return true;
+}
+function heldPose() {
+  const p = new THREE.Vector3(0.07, W > H ? -0.13 : -0.2, -0.85); camera.localToWorld(p);
+  let pitch = 0.1, yaw = 0;
+  if (drag && drag.pts.length > 1) { const a = aimFromDrag(drag, false); pitch = a.pitch * 0.6 + 0.08; yaw = a.yaw; p.y -= 0.04; p.z += 0.06; }
+  else if (kb) { pitch = kb.pitch * 0.6 + 0.08; yaw = kb.yaw; if (charge) { p.z += 0.08 * charge.k; p.y -= 0.03 * charge.k; } }
+  return { p, pitch, yaw };
+}
+
+/* ---------- 1フレーム ---------- */
+function onLanded() {
+  const d = distOf(sim);
+  lastDist = Math.floor(d * 10 + 1e-6) / 10;
+  const prevBest = rec.best;
+  wasNew = lastDist > rec.best + 1e-9 && lastDist > 0;
+  if (wasNew) { rec.best = lastDist; rec.bestFold = fold; }
+  if (lastDist > (rec.folds[fold] || 0)) rec.folds[fold] = lastDist;
+  save();
+  if (wasNew) updateFlag();
+  phase = 'landed'; phaseT = 0;
+  windStop();
+  pops = pops.filter(p => !p.small);
+  pops.push({ text: `${lastDist.toFixed(1)}m`, sub: sim.where === 'roof' ? '屋上に落ちた…' : wasNew ? (prevBest > 0 ? '自己ベスト！' : FOLDS[fold].name) : FOLDS[fold].name, life: 0, dur: 99, size: 76, big: true, hot: wasNew });
+  if (wasNew && prevBest > 0) sFanfare(); else sChime(lastDist);
+  updateHud();
+}
+function step(dt) {
+  tt += dt; phaseT += dt;
+  animThermals(dt);
+  // 吹き流し
+  if (env) {
+    const w = env.wind, gf = 1 + 0.22 * Math.sin(tt * 0.9 + env.gust[0]) + 0.12 * Math.sin(tt * 2.3 + env.gust[1]);
+    const k = clamp(w.spd * gf / 2.0, 0, 1);
+    SOCK.rotation.order = 'YXZ'; SOCK.rotation.y = Math.atan2(w.x, w.z) + Math.sin(tt * 2.1) * 0.08 * (1 - k * 0.5);
+    sockSegs.forEach((g, i) => { g.rotation.x = (i === 0 ? (1 - k) * 1.25 + 0.05 : (1 - k) * 0.12 + 0.02) + Math.sin(tt * 5 + i) * 0.04 * k; });
+    flag.userData.cloth.rotation.y = Math.sin(tt * 3) * 0.15 + (w.x >= 0 ? 0 : Math.PI);   // 旗は風下へ
+  }
+  if (state === 'title') demoStep(dt);
+  if (state === 'play' && phase === 'fly' && sim) {
+    const want = steer ? steer.bank : keyBank;
+    bankCmd += (want - bankCmd) * Math.min(1, dt * 8);
+    const n = Math.round(dt / PDT);
+    for (let i = 0; i < n && sim.phase !== 'done'; i++) {
+      const was = sim.phase;
+      stepFlight(sim, PDT, bankCmd);
+      if (was === 'fly' && sim.phase !== 'fly') sLand();
+      if (sim.phase === 'fly' && i % 3 === 0) trailPush(sim.x, sim.y, sim.z);
+    }
+    if (sim.y > flightInfo.maxY) flightInfo.maxY = sim.y;
+    if (sim.thermalUsed && !flightInfo.thermalPop) { flightInfo.thermalPop = true; pops.push({ text: '上昇気流！', life: 0, dur: 1.4, size: 30, small: true }); sLift(); }
+    if (sim.stall > 0.6 && sim.t > 0.25 && !flightInfo.stallPop && sim.phase === 'fly') { flightInfo.stallPop = true; pops.push({ text: '失速！', life: 0, dur: 0.9, size: 24, small: true, cool: true }); }
+    windLevel(sim.phase === 'fly' ? sim.V : 0);
+    if (sim.phase === 'done') onLanded();
+  }
+  if (state === 'play' && phase === 'landed' && phaseT > 1.25) { phase = 'side'; phaseT = 0; dropFill(); }
+  if (state === 'play' && phase === 'side' && phaseT > 1.5) showOver();
+  // 投げる構え（スペース長押し）
+  if (charge) { charge.t += dt; charge.k = 1 - Math.abs(((charge.t / 1.4) % 2) - 1); }
+  for (const p of pops) p.life += dt;
+  pops = pops.filter(p => p.life < p.dur);
+}
+function dropFill() {
+  const a = trailGeo.attributes.position.array, b = dropGeo.attributes.position.array;
+  for (let i = 0; i < trailN; i++) { b[i * 3] = a[i * 3]; b[i * 3 + 1] = a[i * 3 + 2] > 0 ? ROOF + 0.03 : 0.03; b[i * 3 + 2] = a[i * 3 + 2]; }
+  dropGeo.attributes.position.needsUpdate = true; dropGeo.setDrawRange(0, trailN); dropLine.visible = true;
+  trailMat.opacity = 0.95;
+}
+
+// タイトル背景のデモ: 屋上からときどき1機（音なし）
+let demo = null, demoT = 0.6;
+const DEMO_AIM = { v: 6.5, pitch: 2 * DEG, yaw: 0.05 };
+function demoStep(dt) {
+  demoT -= dt;
+  if (!demo && demoT <= 0) { demo = launch('heso', 0.6, { ...DEMO_AIM, yaw: rand(-0.12, 0.12) }, env); demoMesh.visible = true; }
+  if (demo) {
+    const n = Math.round(dt / PDT);
+    for (let i = 0; i < n; i++) stepFlight(demo, PDT, 0);
+    if (demo.phase === 'done' && demoT < -2) { demo = null; demoT = 2.5; demoMesh.visible = false; }
+  }
+}
+
+/* ---------- 描画 ---------- */
+const tmpV = new THREE.Vector3();
+function project(x, y, z) { tmpV.set(x, y, z).project(camera); return { x: (tmpV.x + 1) / 2 * W, y: (1 - tmpV.y) / 2 * H, front: tmpV.z < 1 }; }
+function poseMesh(m, s) { m.position.set(s.x, s.y + 0.02, s.z); m.rotation.set(s.th, -s.psi, -s.phi); }
+function placeBlob(b, s, on = true) {
+  b.visible = on;
+  if (!on) return;
+  const fl = (s.z > 0 && s.z < 16 && Math.abs(s.x) < 22) ? ROOF : 0;
+  const h = Math.max(0, s.y - fl);
+  b.position.set(s.x, fl + 0.06, s.z);
+  const k = clamp(1 - h / 12, 0.15, 1); b.material.opacity = k; b.scale.set(0.5 + h * 0.04, 0.5 + h * 0.04, 1);
+}
+const camTarget = new THREE.Vector3(), camLookT = new THREE.Vector3(), camFrom = new THREE.Vector3(), camLookFrom = new THREE.Vector3();
+let camMode = 'ready', camBlend = 1, camPsi = 0, camTh = 0;
+const ease = k => k * k * (3 - 2 * k);
+function updateCamera(dt) {
+  const m = state === 'play' ? phase : state === 'over' ? 'side' : 'ready';
+  if (m !== camMode) { camMode = m; camBlend = 0; camFrom.copy(camera.position); camLookFrom.copy(camLook); if (sim) { camPsi = sim.psi; camTh = sim.th; } }
+  camBlend = Math.min(1, camBlend + dt * (m === 'fly' ? 1.8 : m === 'side' ? 1.4 : m === 'landed' ? 2 : 2.5));
+  if (m === 'ready') { camTarget.copy(CAM_READY.pos); camLookT.copy(CAM_READY.look); }
+  else if (m === 'fly' && sim) {
+    // 機体の斜め後ろ・少し上から。機首が下がったら、そのぶん上から見下ろす（いつも背中側が見える）
+    camPsi += wrap(sim.psi - camPsi) * Math.min(1, dt * 2.5);
+    camTh += (clamp(sim.th, -1.2, 1.2) - camTh) * Math.min(1, dt * 3);
+    const beta = clamp(0.17 - camTh, 0.08, 1.05), D = 1.25;
+    const hx = Math.sin(camPsi), hz = -Math.cos(camPsi), rx = Math.cos(camPsi), rz = Math.sin(camPsi);
+    camTarget.set(sim.x - hx * D * Math.cos(beta) + rx * 0.14, Math.max(0.3, sim.y + D * Math.sin(beta)), sim.z - hz * D * Math.cos(beta) + rz * 0.14);
+    camLookT.set(sim.x + hx * 1.2, sim.y - 0.06 - Math.sin(beta) * 0.7, sim.z + hz * 1.2);
+  } else if (m === 'landed' && sim) {
+    const k = reduceMotion ? 0 : phaseT * 0.25;
+    camTarget.set(sim.x + Math.cos(0.7 + k) * 1.5, 0.75 + phaseT * 0.35, sim.z + Math.sin(0.7 + k) * 1.5);
+    camLookT.set(sim.x, 0.15, sim.z);
+  } else if (sim) {
+    // 全体: 着地点の斜め先から、校舎までの軌跡をふり返る（真横の図は下に2Dで出す）
+    const d = Math.max(12, -sim.z);
+    camTarget.set(sim.x * 0.5 + 9 + d * 0.12, 3.2 + d * 0.07, -d - 7 - d * 0.1);
+    camLookT.set(sim.x * 0.3, ROOF * 0.55, -d * 0.42);
+  }
+  const k = ease(camBlend);
+  camera.position.copy(camFrom).lerp(camTarget, k);
+  camLook.copy(camLookFrom).lerp(camLookT, k);
+  camera.lookAt(camLook);
+}
+function render(dt) {
+  updateCamera(dt);
+  const pm = planeMeshes[fold];
+  if (state === 'play' && sim) {
+    poseMesh(pm, sim);
+    if (sim.t < 0.15 && sim.heldFrom) { const k = sim.t / 0.15; pm.position.lerp(sim.heldFrom.p, 1 - k); }
+    placeBlob(planeBlob, sim);
+  } else if (state === 'play' || state === 'title') {
+    const hp = heldPose();
+    pm.visible = true;
+    pm.position.copy(hp.p); pm.rotation.set(hp.pitch + Math.sin(tt * 1.3) * 0.02, -hp.yaw - 0.05, -0.12 + Math.sin(tt * 1.1) * 0.02);
+    planeBlob.visible = false;
+  }
+  if (demo) { poseMesh(demoMesh, demo); setFlaps(demoMesh, 0.6); placeBlob(demoBlob, demo); } else demoBlob.visible = false;
+  trailLine.visible = state === 'over' || (state === 'play' && (phase === 'landed' || phase === 'side'));
+  if (flagLabel) flagLabel.visible = camMode !== 'side';
+  renderer.render(scene, camera);
+  drawFx();
+}
+function txt(s, x, y, size, fill = '#fbf7ec', stroke = 'rgba(30,26,34,.88)', lw = 6, font = FD) {
+  fx.font = `${size}px ${font}`; fx.lineJoin = 'round'; fx.lineWidth = lw; fx.strokeStyle = stroke; fx.strokeText(s, x, y); fx.fillStyle = fill; fx.fillText(s, x, y);
+}
+function drawFx() {
+  fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fx.clearRect(0, 0, W, H);
+  fx.textAlign = 'center';
+  const sc = Math.min(1, W / 390 + 0.05);
+  if (state === 'play' && phase === 'ready') drawAim();
+  if (state === 'play' && phase === 'fly' && sim) {
+    const d = Math.max(0, sim.where === 'roof' ? 0 : -sim.z);
+    txt(`${d.toFixed(1)}`, W / 2, safeT + 66, 52 * sc);
+    fx.textAlign = 'left'; txt('m', W / 2 + fx.measureText(d.toFixed(1)).width / 2 + 4, safeT + 66, 22 * sc); fx.textAlign = 'center';
+    const alt = Math.max(0, sim.y);
+    txt(`高さ ${alt.toFixed(1)}m・${windText(env.wind)}`, W / 2, safeT + 92, 14 * sc, '#fbf7ec', 'rgba(30,26,34,.8)', 4, `700 ${FB}`);
+    if (rec.throws <= 3 && sim.t < 4) {
+      const a = Math.min(1, sim.t * 2) * Math.min(1, (4 - sim.t));
+      fx.globalAlpha = a;
+      txt('← 左右にドラッグで少し傾けられる →', W / 2, H - safeB - 64, 14 * sc, '#fbf7ec', 'rgba(30,26,34,.8)', 4, `700 ${FB}`);
+      fx.globalAlpha = 1;
+    }
+    if (steer || Math.abs(bankCmd) > 0.02) {
+      // 傾きのメーター
+      const cx = W / 2, cy = H - safeB - 100, r = 46;
+      fx.strokeStyle = 'rgba(251,247,236,.45)'; fx.lineWidth = 3; fx.beginPath(); fx.arc(cx, cy, r, Math.PI * 1.15, Math.PI * 1.85); fx.stroke();
+      const a = -Math.PI / 2 + bankCmd * 1.2;
+      fx.strokeStyle = '#e8743c'; fx.lineWidth = 4; fx.beginPath(); fx.moveTo(cx + Math.cos(a) * r * 0.45, cy + Math.sin(a) * r * 0.45); fx.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); fx.stroke();
+    }
+  }
+  // 横からの全体図: 10m ごとに軌跡の下へ目盛り
+  if ((phase === 'side' || state === 'over') && sim && state !== 'title') {
+    const L = Math.max(0, -sim.z);
+    fx.font = `700 12px ${FB}`;
+    for (let d = 10; d <= L + 0.1; d += 10) { const p = project(0, 0, -d); if (!p.front) continue; txt(`${d}`, p.x, p.y + 14, 12, '#fbf7ec', 'rgba(30,26,34,.7)', 3, `700 ${FB}`); }
+    const lp = project(sim.x, 0.2, sim.z); if (lp.front && state !== 'over') txt('▼', lp.x, lp.y - 8, 16, '#e8743c');
+    if (state !== 'over') {
+      const ph = Math.min(170, H * 0.24), y0 = H - safeB - ph - 52;
+      fx.save(); fx.globalAlpha = clamp(phaseT * 4, 0, 1); fx.translate(12, y0);
+      fx.fillStyle = 'rgba(30,30,42,.62)'; fx.beginPath(); fx.roundRect(0, 0, W - 24, ph, 10); fx.fill();
+      drawProfile(fx, W - 24, ph, clamp(phaseT / 0.9, 0, 1), true);
+      fx.restore();
+    }
+  }
+  for (const p of pops) {
+    const k = clamp(p.life / 0.18, 0, 1), out = clamp((p.dur - p.life) / 0.25, 0, 1);
+    if (p.big) {
+      if (state === 'over') continue;
+      const s = (1 + (1 - k) * 0.5) * sc, y = safeT + H * 0.24;
+      fx.save(); fx.translate(W / 2, y); fx.scale(s, s); fx.globalAlpha = k;
+      fx.fillStyle = 'rgba(232,116,60,.95)'; fx.font = `${p.size}px ${FD}`; fx.fillText(p.text, 4, 5);
+      txt(p.text, 0, 0, p.size, p.hot ? '#ffe2a6' : '#fbf7ec', '#2a2430', 9);
+      if (p.sub) txt(p.sub, 0, 44, 24, '#fbf7ec', '#2a2430', 6);
+      fx.restore();
+    } else {
+      fx.globalAlpha = Math.min(k, out);
+      txt(p.text, W / 2, safeT + H * 0.2 - p.life * 16, p.size * sc, p.cool ? '#d8e6f2' : '#ffe2a6', 'rgba(30,26,34,.9)', 6);
+    }
+    fx.globalAlpha = 1;
+  }
+  fx.textAlign = 'start';
+}
+// 真横から見た軌跡（距離 × 高さ を同じ縮尺で）。k = 描く割合（0〜1）
+function drawProfile(g, w, h, k = 1, dark = true) {
+  const a = trailGeo.attributes.position.array, n = trailN;
+  if (n < 2) return;
+  let maxD = 20, maxY = ROOF + 3;
+  for (let i = 0; i < n; i++) { maxD = Math.max(maxD, -a[i * 3 + 2] + 4); maxY = Math.max(maxY, a[i * 3 + 1] + 1.5); }
+  if (rec.best > 0) maxD = Math.max(maxD, rec.best + 4);
+  const padL = 34, padR = 12, padT = 18, padB = 22;
+  const sc = Math.min((w - padL - padR) / (maxD + 6), (h - padT - padB) / maxY);
+  const X = d => padL + (d + 6) * sc, Y = y => h - padB - y * sc;
+  const ink = dark ? 'rgba(251,247,236,' : 'rgba(35,38,43,';
+  g.save(); g.lineJoin = 'round'; g.lineCap = 'round';
+  // 地面と目盛り
+  g.strokeStyle = ink + '.5)'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(X(-6), Y(0)); g.lineTo(X(maxD), Y(0)); g.stroke();
+  g.font = `700 10px ${FB}`; g.textAlign = 'center'; g.fillStyle = ink + '.75)';
+  const step = maxD > 90 ? 20 : 10;
+  for (let d = step; d < maxD; d += step) { g.fillRect(X(d) - 0.5, Y(0), 1, 4); g.fillText(`${d}m`, X(d), Y(0) + 15); }
+  // 校舎
+  g.fillStyle = dark ? 'rgba(230,217,196,.55)' : 'rgba(47,84,70,.35)'; g.fillRect(X(-6), Y(ROOF), 6 * sc, ROOF * sc);
+  // 上昇気流
+  for (const T of env.thermals) { const x = X(-T.z); if (x > w - padR) continue; g.fillStyle = 'rgba(255,214,150,.22)'; g.fillRect(x - T.R * 0.5 * sc, Y(Math.min(maxY, 12)), T.R * sc, Math.min(maxY, 12) * sc); }
+  // 自己ベスト
+  if (rec.best > 0) { const x = X(rec.best); g.strokeStyle = '#e8743c'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(x, Y(0)); g.lineTo(x, Y(0) - 22); g.stroke(); g.fillStyle = '#e8743c'; g.beginPath(); g.moveTo(x, Y(0) - 22); g.lineTo(x + 10, Y(0) - 18); g.lineTo(x, Y(0) - 14); g.fill(); }
+  // 軌跡
+  const m = Math.max(2, Math.floor(n * k));
+  g.strokeStyle = dark ? '#ffe2a6' : '#e8743c'; g.lineWidth = 2.5; g.beginPath();
+  for (let i = 0; i < m; i++) { const x = X(-a[i * 3 + 2]), y = Y(a[i * 3 + 1]); if (i) g.lineTo(x, y); else g.moveTo(x, y); }
+  g.stroke();
+  if (k >= 1) {
+    const d = lastDist; g.fillStyle = dark ? '#ffe2a6' : '#e8743c'; g.beginPath(); g.arc(X(d), Y(0), 4, 0, Math.PI * 2); g.fill();
+    g.textAlign = 'left'; g.font = `13px ${FD}`; g.fillStyle = dark ? '#fbf7ec' : '#23262b'; g.fillText(`${d.toFixed(1)}m`, Math.min(X(d) + 6, w - 60), Y(0) - 8);
+  }
+  g.textAlign = 'left'; g.font = `700 10px ${FB}`; g.fillStyle = ink + '.7)'; g.fillText('横から見た軌跡', 10, 14);
+  g.restore();
+}
+function drawAim() {
+  const sc = Math.min(1, W / 390 + 0.05);
+  let a = null, px = W / 2, py = H * 0.5;
+  if (drag && drag.pts.length > 1) { a = aimFromDrag(drag, false); const l = drag.pts[drag.pts.length - 1]; px = l.x; py = l.y; }
+  else if (kb) a = { v: charge ? 2.5 + charge.k * 11.5 : null, pitch: kb.pitch, yaw: kb.yaw };
+  if (!drag) {
+    if (rec.throws < 3 && !kb) {
+      // はじき方のお手本
+      const k = (tt * 0.8) % 1, x = W / 2 + 10, y0 = H * 0.72, y1 = H * 0.42;
+      fx.globalAlpha = Math.sin(k * Math.PI);
+      fx.fillStyle = 'rgba(251,247,236,.9)'; fx.beginPath(); fx.arc(x + k * 6, lerp(y0, y1, k * k), 13, 0, Math.PI * 2); fx.fill();
+      fx.globalAlpha = 1;
+    }
+    txt('下から上へシュッとはじいて投げる', W / 2, H * 0.29, 17 * sc);
+    txt('はじく速さ＝強さ　離した高さ＝角度', W / 2, H * 0.29 + 24, 13 * sc, '#fbf7ec', 'rgba(30,26,34,.85)', 4, `700 ${FB}`);
+  }
+  if (!a) return;
+  // 水平の目安線
+  const ly = LEVEL_Y * H;
+  fx.setLineDash([6, 8]); fx.strokeStyle = 'rgba(251,247,236,.55)'; fx.lineWidth = 2;
+  fx.beginPath(); fx.moveTo(16, ly); fx.lineTo(W - 16, ly); fx.stroke(); fx.setLineDash([]);
+  fx.textAlign = 'left'; txt('ここで離すと水平', 16, ly - 8, 12, '#fbf7ec', 'rgba(30,26,34,.7)', 3, `700 ${FB}`); fx.textAlign = 'center';
+  // 3Dでの投げる向き（手元から数メートル先まで）
+  const hp = heldPose();
+  const cp = Math.cos(a.pitch), dir = { x: Math.sin(a.yaw) * cp, y: Math.sin(a.pitch), z: -Math.cos(a.yaw) * cp };
+  fx.fillStyle = '#ffe2a6';
+  for (let i = 1; i <= 6; i++) {
+    const d = 0.6 * i * i * 0.5 + 0.4;
+    const p = project(hp.p.x + dir.x * d, hp.p.y + dir.y * d, hp.p.z + dir.z * d); if (!p.front) continue;
+    fx.globalAlpha = 1 - i * 0.12; fx.beginPath(); fx.arc(p.x, p.y, 4.5 - i * 0.45, 0, Math.PI * 2); fx.fill();
+  }
+  fx.globalAlpha = 1;
+  const label = `角度 ${Math.round(a.pitch / DEG)}°` + (a.v ? `　強さ ${a.v.toFixed(1)}m/s` : '');
+  txt(label, drag ? clamp(px, 90, W - 90) : W / 2, drag ? py - 30 : H * 0.42, 15 * sc, '#fbf7ec', 'rgba(30,26,34,.85)', 4, `700 ${FB}`);
+  if (kb) txt(charge ? 'はなすと投げる' : 'スペース長押しで強さをためる', W / 2, H * 0.42 + 24, 13 * sc, '#fbf7ec', 'rgba(30,26,34,.85)', 4, `700 ${FB}`);
+}
+
+/* ---------- 結果 ---------- */
+const shareText = () => `✈️紙飛行機 ${lastDist.toFixed(1)}m 飛んだ！（${FOLDS[fold].name}）`;
+function showOver() {
+  if (state !== 'play') return;
+  if (phase === 'fly') return;
+  if (phase === 'landed') { phase = 'side'; phaseT = 0; dropFill(); }
+  state = 'over';
+  $('oScore').textContent = lastDist.toFixed(1);
+  const a = lastAim || { v: 0, pitch: 0 };
+  const bits = [`${FOLDS[fold].name}`, `初速 ${a.v.toFixed(1)}m/s・角度 ${Math.round(a.pitch / DEG)}°`, `${windText(env.wind)}`];
+  let msg = bits.join('・');
+  if (sim && sim.where === 'roof') msg = '屋上に落ちた…前へ投げよう。' + msg;
+  else if (sim && sim.thermalUsed) msg += '・上昇気流に乗った！';
+  $('oMsg').textContent = msg;
+  $('oBest').textContent = m1(rec.best); $('oFoldName').textContent = FOLDS[fold].short; $('oFoldBest').textContent = m1(rec.folds[fold] || 0); $('oThrows').textContent = rec.throws;
+  $('newRec').hidden = !wasNew;
+  $('over').hidden = false;
+  try {
+    const cv = $('oProf'), r = cv.getBoundingClientRect(), pr = Math.min(devicePixelRatio || 1, 2);
+    cv.width = Math.round(r.width * pr); cv.height = Math.round(r.height * pr);
+    const g = cv.getContext('2d'); g.setTransform(pr, 0, 0, pr, 0, 0); drawProfile(g, r.width, r.height, 1, false);
+  } catch {}
+  $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({ text: `${shareText()}${wasNew && rec.throws > 1 ? ' 自己ベスト！' : ''}\n`, url: gameUrl(), hashtags: '紙飛行機' });
+  $('copyMsg').textContent = '画面タップ・スペースでもう一回（同じ折り方）';
+  $('over').hidden = false; $('hud').hidden = true; $('prep').hidden = true;
+  overShownAt = performance.now();
+  $('retryBtn').focus({ preventScroll: true });
+}
+
+/* ---------- シェア ---------- */
+// 公開先のURL。ローカルで開いたときもこれをシェアする
+const PUBLIC_URL = 'https://asobi.enludus.com/games/plane/';
+function gameUrl() {
+  try {
+    if (/^https?:$/.test(location.protocol) && location.hostname !== 'localhost') return location.origin + location.pathname;
+  } catch {}
+  return PUBLIC_URL;
+}
+
+/* ---------- HUD ---------- */
+function updateHud() { $('hBest').textContent = rec.best ? `${m1(rec.best)}m` : '—'; }
+function fillTitle() { $('tBest').textContent = rec.best ? m1(rec.best) : '—'; $('tThrows').textContent = rec.throws; }
+
+/* ---------- 音（低めでやわらかく。2kHz以上は使わない） ---------- */
+let ac = null, master = null, noiseBuf = null, windNode = null;
+function wakeAudio() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      master = ac.createDynamicsCompressor(); master.threshold.value = -16; master.ratio.value = 5; master.connect(ac.destination);
+      const len = ac.sampleRate * 2; noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0); let b = 0;
+      for (let i = 0; i < len; i++) { b = b * 0.6 + (Math.random() * 2 - 1) * 0.4; d[i] = b; }   // 少し丸めたノイズ
+    }
+    if (ac.state === 'suspended') ac.resume();
+  } catch {}
+}
+const live = () => ac && state === 'play';
+function tone(freq, at, dur, vol, type = 'sine') {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at);
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  o.connect(g).connect(master); o.start(at); o.stop(at + dur + 0.05);
+  return o;
+}
+function noise(at, dur, vol, type, freq, q = 1) {
+  const s = ac.createBufferSource(); s.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
+  const g = ac.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.03); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  s.connect(f).connect(lp).connect(g).connect(master); s.start(at, Math.random() * 1.0); s.stop(at + dur + 0.05);
+  return { f, g };
+}
+function sWhoosh(v) {   // 投げる「シュッ」
+  try {
+    if (!live()) return;
+    const n0 = ac.currentTime, k = clamp(v / 14, 0, 1), { f } = noise(n0, 0.28, 0.16 + k * 0.14, 'bandpass', 380, 1.4);
+    f.frequency.exponentialRampToValueAtTime(900 + k * 600, n0 + 0.12); f.frequency.exponentialRampToValueAtTime(500, n0 + 0.28);
+  } catch {}
+}
+function windStart() {   // 風を切る音: 低いやわらかなノイズ。速さで少しだけ大きく
+  try {
+    if (!ac) return;
+    windStop();
+    const s = ac.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+    const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 320; f.Q.value = 0.6;
+    const g = ac.createGain(); g.gain.value = 0.0001;
+    s.connect(f).connect(g).connect(master); s.start();
+    windNode = { s, f, g };
+  } catch {}
+}
+function windLevel(V) {
+  try { if (!windNode) return; const n0 = ac.currentTime; windNode.g.gain.setTargetAtTime(clamp(0.03 + V * V * 0.0022, 0.03, 0.16), n0, 0.15); windNode.f.frequency.setTargetAtTime(220 + V * 28, n0, 0.2); } catch {}
+}
+function windStop() {
+  try { if (!windNode) return; const w = windNode; windNode = null; const n0 = ac.currentTime; w.g.gain.setTargetAtTime(0.0001, n0, 0.12); w.s.stop(n0 + 0.6); } catch {}
+}
+function sLand() { try { if (!live()) return; const n0 = ac.currentTime; noise(n0, 0.14, 0.14, 'lowpass', 700); noise(n0 + 0.06, 0.18, 0.06, 'lowpass', 450); } catch {} }
+function sLift() { try { if (!live()) return; const n0 = ac.currentTime; const o = tone(330, n0, 0.6, 0.06); o.frequency.exponentialRampToValueAtTime(495, n0 + 0.5); } catch {} }
+function sTick(f) { try { if (!ac) return; tone(f, ac.currentTime, 0.08, 0.05, 'triangle'); } catch {} }
+function sChime(d) {
+  try {
+    if (!live()) return;
+    const n0 = ac.currentTime + 0.05, base = d > 40 ? 392 : d > 20 ? 349 : 294;
+    tone(base, n0, 0.4, 0.07); tone(base * 1.25, n0 + 0.1, 0.5, 0.06);
+  } catch {}
+}
+function sFanfare() {
+  try {
+    if (!live()) return;
+    const n0 = ac.currentTime + 0.05;
+    [[392, 0], [494, 0.12], [587, 0.24], [784, 0.4]].forEach(([f, t]) => { tone(f, n0 + t, 0.5, 0.07); tone(f / 2, n0 + t, 0.5, 0.04); });
+  } catch {}
+}
+
+/* ---------- ループ ---------- */
+let acc = 0, lastTs = performance.now();
+function frame(ts2) {
+  acc += Math.min(100, ts2 - lastTs); lastTs = ts2;
+  let k = 0;
+  while (acc >= 1000 / 60 && k < 4) { step(1 / 60); acc -= 1000 / 60; k++; }
+  if (k >= 4) acc = 0;
+  render(1 / 60);
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 入力 ---------- */
+function start() {
+  wakeAudio(); state = 'play'; demo = null; demoMesh.visible = false; demoBlob.visible = false;
+  $('title').hidden = true; $('over').hidden = true; $('hud').hidden = false;
+  newGame();
+}
+function skipToResult() { if (state === 'play' && (phase === 'landed' || phase === 'side') && phaseT > 0.3) showOver(); }
+fxc.addEventListener('pointerdown', e => {
+  e.preventDefault(); wakeAudio();
+  if (state !== 'play') return;
+  if (phase === 'landed' || phase === 'side') { skipToResult(); return; }
+  try { fxc.setPointerCapture(e.pointerId); } catch {}
+  if (phase === 'ready') { drag = { x0: e.clientX, y0: e.clientY, id: e.pointerId, pts: [{ x: e.clientX, y: e.clientY, t: performance.now() }] }; kb = null; charge = null; }
+  else if (phase === 'fly') steer = { x0: e.clientX, id: e.pointerId, bank: 0 };
+});
+addEventListener('pointermove', e => {
+  if (drag && e.pointerId === drag.id) { drag.pts.push({ x: e.clientX, y: e.clientY, t: performance.now() }); if (drag.pts.length > 60) drag.pts.splice(0, drag.pts.length - 60); }
+  if (steer && e.pointerId === steer.id) steer.bank = clamp((e.clientX - steer.x0) / (W * 0.3), -1, 1) * 0.42;
+});
+addEventListener('pointerup', e => {
+  if (steer && e.pointerId === steer.id) steer = null;
+  if (!drag || e.pointerId !== drag.id) return;
+  const lp = drag.pts[drag.pts.length - 1];
+  if (Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 2) drag.pts.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+  else if (performance.now() - lp.t > 120) drag.pts.push({ x: lp.x, y: lp.y, t: performance.now() });   // 止めてから離したら、はじいていない
+  const a = aimFromDrag(drag, true);
+  drag = null;
+  if (a.ok && state === 'play' && phase === 'ready') throwNow(a);
+  else if (state === 'play' && phase === 'ready' && Math.hypot(e.clientX - a.x0, e.clientY - a.y0) > 12) pops.push({ text: 'もっと速く、上へシュッと！', life: 0, dur: 1.3, size: 20, small: true });
+});
+addEventListener('pointercancel', () => { drag = null; steer = null; });
+fxc.addEventListener('contextmenu', e => e.preventDefault());
+for (const id of ['title', 'over']) {
+  $(id).addEventListener('pointerdown', e => {
+    if (e.target.closest('button, a') || state === 'loading') return;
+    if (id === 'over' && performance.now() - overShownAt < 400) return;
+    e.preventDefault(); start();
+  });
+}
+addEventListener('keydown', e => {
+  if (state === 'play') {
+    if (e.target && e.target.closest && e.target.closest('input, button') && e.code !== 'Space') return;
+    if (phase === 'ready') {
+      const keys = { ArrowLeft: ['yaw', -2 * DEG], ArrowRight: ['yaw', 2 * DEG], ArrowUp: ['pitch', 2.5 * DEG], ArrowDown: ['pitch', -2.5 * DEG] };
+      if (keys[e.code]) {
+        e.preventDefault();
+        if (!kb) kb = { pitch: 5 * DEG, yaw: 0 };
+        const [k, d] = keys[e.code]; kb[k] += d;
+        kb.pitch = clamp(kb.pitch, -22 * DEG, 45 * DEG); kb.yaw = clamp(kb.yaw, -0.4, 0.4);
+        return;
+      }
+      if (['Digit1', 'Digit2', 'Digit3'].includes(e.code)) { setFold(FOLD_IDS[+e.code.slice(5) - 1]); return; }
+      if (e.code === 'Space' || e.code === 'Enter') {
+        e.preventDefault(); wakeAudio();
+        if (e.repeat || charge) return;
+        if (!kb) kb = { pitch: 5 * DEG, yaw: 0 };
+        charge = { t: 0, k: 0 };
+      }
+      return;
+    }
+    if (phase === 'fly') {
+      if (e.code === 'ArrowLeft') { keyBank = -0.42; e.preventDefault(); }
+      if (e.code === 'ArrowRight') { keyBank = 0.42; e.preventDefault(); }
+      if (e.code === 'Space' || e.code === 'Enter') e.preventDefault();
+      return;
+    }
+    if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat) { e.preventDefault(); skipToResult(); }
+    return;
+  }
+  if (e.code !== 'Space' && e.code !== 'Enter') return;
+  if (state === 'loading') return;
+  const el = document.activeElement;
+  if (el && el !== $('retryBtn') && el !== $('startBtn') && el.matches('button, a, input')) return;
+  if (state === 'over' && performance.now() - overShownAt < 400) { e.preventDefault(); return; }
+  e.preventDefault(); start();
+});
+addEventListener('keyup', e => {
+  if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') keyBank = 0;
+  if ((e.code === 'Space' || e.code === 'Enter') && charge && state === 'play' && phase === 'ready') {
+    const a = { v: 2.5 + charge.k * 11.5, pitch: kb.pitch, yaw: kb.yaw };
+    charge = null; throwNow(a);
+  }
+});
+$('startBtn').addEventListener('click', start);
+$('retryBtn').addEventListener('click', start);
+$('foldBtn').addEventListener('click', () => {
+  start();
+  const p = $('prep'); p.classList.remove('pulse'); void p.offsetWidth; p.classList.add('pulse');
+  document.querySelector(`.fold[data-fold="${fold}"]`).focus({ preventScroll: true });
+});
+$('copyBtn').addEventListener('click', () => {
+  const text = `${shareText()} ${gameUrl()}`;
+  const msg = $('copyMsg');
+  const fallback = () => { msg.textContent = text; const r = document.createRange(); r.selectNodeContents(msg); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.style.userSelect = 'text'; };
+  try { navigator.clipboard.writeText(text).then(() => { msg.textContent = 'コピーしました'; }, fallback); } catch { fallback(); }
+});
+
+/* ---------- 調整・検証用（#debug のときだけ） ---------- */
+if (HASH.has('debug')) {
+  window.__plane = {
+    info: () => ({ state, phase, fold, elev, dist: lastDist, sim: sim ? { x: sim.x, y: sim.y, z: sim.z, t: sim.t, phase: sim.phase, V: sim.V, phi: sim.phi, bank: sim.bank, thermal: sim.thermalUsed } : null, env, rec }),
+    env: s => makeEnv(s), sim: (f, el, aim, seed) => simulate(f, el, aim, makeEnv(seed)),
+    throwWith: a => throwNow(a), setFold, setElev: v => { elev = v; }, lastAim: () => lastAim,
+    FOLDS, makeEnv, simulate,
+  };
+}
+
+/* ---------- はじめ ---------- */
+try { await Promise.race([document.fonts.load(`40px "Dela Gothic One"`), new Promise(r => setTimeout(r, 1500))]); } catch {}
+buildLabels();
+updateFlag();
+toReady();
+state = 'title';
+fillTitle(); updateHud(); syncPrep();
+$('startBtn').disabled = false; $('startBtn').textContent = '投げにいく';
+$('startBtn').focus({ preventScroll: true });
+requestAnimationFrame(frame);
+</script>
+<a class="hub-back" id="hubBack" href="/" aria-label="あそび横丁（ゲーム一覧）にもどる" style="bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 10px);">← 横丁</a>
+<script>
+// プレイ中でもゲーム一覧に戻れるボタン。押してもゲームの入力（タップ・ドラッグ）に伝わらないようにする
+for (const ev of ['pointerdown', 'touchstart', 'mousedown']) document.getElementById('hubBack').addEventListener(ev, e => e.stopPropagation(), { passive: true });
+</script>
+</body>
+</html>
