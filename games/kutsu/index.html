@@ -1,0 +1,1404 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>靴飛ばし</title>
+<meta name="description" content="夕方の公園でブランコをこいで、靴をどこまで飛ばせるか一回勝負の3Dゲーム。足を伸ばす・曲げるタイミングで振れ幅を大きくして、上へスワイプで蹴り出す。止まった靴の向きで明日の天気も占える。ログイン不要のブラウザゲーム。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="靴飛ばし">
+<meta property="og:description" content="夕焼けの公園で、ブランコから靴をポーン。何メートル飛ばせる？ついでに明日の天気も占える。">
+<meta property="og:url" content="https://asobi.enludus.com/games/kutsu/">
+<meta property="og:image" content="https://asobi.enludus.com/games/kutsu/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%91%9F%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+:root { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+/* 全画面 WebGL（夕方の公園）+ 2D の演出レイヤー + HUD。タイトル/結果は1枚のカード（結果は靴が見えるよう下に） */
+:root {
+  --dusk: #3a3550;       /* 夕暮れの空の上のほう */
+  --sun: #e8843c;        /* 夕日 */
+  --ink: #2a2320;
+  --paper: #fbf5e8;      /* 画用紙 */
+  --noren: #8a3a2c;      /* 遊具のペンキの赤（少しあせた色） */
+  --noren-ink: #f8efe0;
+  --frame: #e2a83c;      /* ブランコの黄色い柱 */
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--dusk); color: var(--ink);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+#gl, #fx { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#fx { touch-action: none; cursor: pointer; }
+
+.hud {
+  position: fixed; right: 0; top: 0; pointer-events: none;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+}
+.pill {
+  background: var(--noren); color: var(--noren-ink);
+  border-radius: 6px; padding: 5px 10px 6px;
+  font-variant-numeric: tabular-nums; line-height: 1.1; text-align: right;
+  box-shadow: 0 2px 0 rgba(0,0,0,.3);
+}
+.pill .lab { font-size: 10px; letter-spacing: .12em; opacity: .75; display: block; }
+.pill .val { font-family: var(--font-display); font-size: 18px; }
+.pill .unit { font-size: 12px; margin-left: 2px; }
+.pill.wx { background: var(--paper); color: var(--ink); display: flex; align-items: center; gap: 6px; text-align: left; }
+.pill.wx svg { width: 24px; height: 24px; flex: none; }
+.pill.wx .val { font-size: 14px; }
+
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: center; z-index: 40;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px;
+  background: rgba(36, 28, 40, .26);
+  touch-action: none; cursor: pointer; overflow: hidden;
+}
+#over { place-items: end center; background: linear-gradient(to top, rgba(36, 28, 40, .5), rgba(36, 28, 40, 0) 70%); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); }
+.card {
+  width: min(360px, 100%); background: var(--paper); color: var(--ink);
+  border-radius: 10px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.4);
+  text-align: center; cursor: default;
+}
+.noren {
+  background: var(--noren); color: var(--noren-ink);
+  display: flex; gap: 3px;
+  padding-top: 16px;
+}
+.noren span {
+  flex: 1; background: var(--noren); border-bottom: 3px solid rgba(255,255,255,.08);
+  font-family: var(--font-display); font-size: 32px; line-height: 1; padding-block: 6px 14px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.2);
+}
+.noren.result { padding-top: 10px; }
+.noren.result span { font-size: 24px; padding-block: 4px 10px; }
+.body { padding: 16px 20px 18px; display: grid; gap: 11px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.7; text-wrap: balance; }
+.score { font-family: var(--font-display); font-size: 54px; line-height: 1; font-variant-numeric: tabular-nums; }
+.score small { font-size: 24px; margin-left: 4px; }
+.meta { display: flex; justify-content: center; gap: 6px 16px; font-size: 13px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.meta b { font-size: 16px; }
+.badge {
+  justify-self: center; background: var(--sun); color: #fff; font-weight: 700;
+  font-size: 12px; letter-spacing: .14em; padding: 3px 10px; border-radius: 99px;
+}
+.fortune {
+  display: grid; grid-template-columns: auto 1fr; gap: 10px; align-items: center; text-align: left;
+  background: #f1e6d0; border-radius: 8px; padding: 8px 12px; font-size: 13px; line-height: 1.45;
+}
+.fortune svg { width: 40px; height: 40px; }
+.fortune b { font-size: 15px; }
+#over .lead { font-size: 12.5px; line-height: 1.55; }
+#over .body { gap: 9px; padding-block: 12px 14px; }
+.btns { display: grid; gap: 8px; }
+.btns .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+button {
+  font: inherit; font-weight: 700; font-size: 16px; border: 0; border-radius: 8px;
+  padding: 13px 16px; cursor: pointer;
+  background: var(--noren); color: var(--noren-ink); box-shadow: 0 3px 0 #5a2219;
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 #5a2219; }
+button:disabled { opacity: .6; cursor: progress; }
+a.xbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font-weight: 700; font-size: 16px; border-radius: 8px; padding: 13px 16px;
+  background: #0f1419; color: #fff; box-shadow: 0 3px 0 #000;
+}
+a.xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+a.xbtn:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+a.xbtn svg { width: 16px; height: 16px; fill: currentColor; }
+button.sub { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); padding-inline: 8px; font-size: 15px; }
+button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.how { font-size: 12px; opacity: .72; margin: 0; line-height: 1.6; }
+.err { font-size: 13px; color: #b3361b; margin: 0; font-weight: 700; }
+.back { font-size: 13px; color: var(--ink); opacity: .75; }
+.back:hover { opacity: 1; }
+@media (max-height: 700px) {
+  .score { font-size: 46px; }
+  .body { gap: 8px; padding-block: 12px 14px; }
+  button, a.xbtn { padding-block: 10px; }
+  .noren span { font-size: 28px; }
+  .fortune { padding-block: 6px; }
+}
+@media (max-height: 620px) { #over .lead { display: none; } }
+.hub-back {
+  position: fixed; z-index: 60;
+  left: calc(env(safe-area-inset-left, 0px) + 10px); bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  font: 700 12px/1 "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif; letter-spacing: .04em;
+  padding: 7px 11px; border-radius: 99px; text-decoration: none;
+  background: rgba(20, 18, 24, .55); color: #fff; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.hub-back:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<canvas id="gl" aria-hidden="true"></canvas>
+<canvas id="fx" aria-label="靴飛ばしのゲーム画面。押している間は足を伸ばし、離すと曲げる。上へスワイプで靴を蹴り出す"></canvas>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-hare" viewBox="0 0 40 40"><g stroke="#e8843c" stroke-width="3" stroke-linecap="round"><path d="M20 3v5M20 32v5M3 20h5M32 20h5M8 8l3.5 3.5M28.5 28.5L32 32M8 32l3.5-3.5M28.5 11.5L32 8"/></g><circle cx="20" cy="20" r="8" fill="#f2a43c"/></symbol>
+  <symbol id="i-kumori" viewBox="0 0 40 40"><path d="M11 30a7 7 0 0 1-.6-14A9.5 9.5 0 0 1 28.6 14 7.5 7.5 0 0 1 29 30Z" fill="#9a97a6"/><path d="M14 30a5 5 0 0 1 0-10 7 7 0 0 1 13.4-1.6A5.8 5.8 0 0 1 28 30Z" fill="#c4c0cc"/></symbol>
+  <symbol id="i-ame" viewBox="0 0 40 40"><path d="M5 19a15 15 0 0 1 30 0Z" fill="#4f6f9a"/><path d="M20 19v13a3 3 0 0 1-6 0" fill="none" stroke="#3a3a44" stroke-width="2.6" stroke-linecap="round"/><path d="M8 26l-1.5 4M31 25l-1.5 4M34 32l-1 3" stroke="#6f8fbf" stroke-width="2.2" stroke-linecap="round"/></symbol>
+</svg>
+
+<div class="hud" id="hud" hidden>
+  <div class="pill"><span class="lab">自己ベスト</span><span class="val" id="hBest">—</span></div>
+  <div class="pill wx"><svg aria-hidden="true"><use id="hWxIcon" href="#i-hare"/></svg><span><span class="lab">きょうの天気</span><span class="val" id="hWx">晴れ</span></span></div>
+</div>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="noren" aria-hidden="true"><span>靴</span><span>飛</span><span>ば</span><span>し</span></div>
+    <div class="body">
+      <p class="lead">夕方の公園で、ブランコをこいで<br>靴を<b>ポーンと一回勝負</b>。<br>何メートル飛ばせるか。</p>
+      <div class="meta"><span>最長 <b id="tBest">—</b> m</span><span>飛ばした <b id="tPlays">0</b> 回</span><span>天気 <b id="tWx">晴れ</b></span></div>
+      <div class="btns"><button id="startBtn" disabled>よみこみ中…</button></div>
+      <p class="err" id="loadErr" hidden></p>
+      <p class="how">前へ振れる間は<b>押して足を伸ばす</b>、後ろへ振れる間は<b>離して曲げる</b>。<br>タイミングが合うと、ぐんぐん大きくなる。<br>好きな瞬間に<b>上へシュッ</b>とスワイプで靴を蹴り出す。<br>（キーボード: スペース長押し＝伸ばす・↑ で蹴る）</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <div class="noren result" aria-hidden="true"><span>ポ</span><span>ー</span><span>ン</span></div>
+    <div class="body">
+      <div class="badge" id="newRec" hidden>新記録</div>
+      <div class="score"><span id="oScore">0</span><small>m</small></div>
+      <div class="fortune"><svg aria-hidden="true"><use id="oWxIcon" href="#i-hare"/></svg><span id="oFortune"></span></div>
+      <p class="lead" id="oMsg"></p>
+      <div class="meta"><span>最長 <b id="oBest">0</b> m</span><span>飛ばした <b id="oPlays">0</b> 回</span></div>
+      <div class="btns">
+        <div class="two"><button id="retryBtn">もう一回</button><button class="sub" id="copyBtn">結果をコピー</button></div>
+        <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Xでシェア</a>
+      </div>
+      <p class="how" id="copyMsg">画面タップ・スペースでもう一回</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+let THREE;
+try {
+  THREE = await import(THREE_URL);
+} catch (e) {
+  $('startBtn').textContent = '読み込めませんでした';
+  $('loadErr').hidden = false;
+  $('loadErr').textContent = '3Dの読み込みに失敗しました。通信状況を確かめて、ページを再読み込みしてください。';
+  throw e;
+}
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FD = getComputedStyle(document.documentElement).getPropertyValue('--font-display');
+const FB = getComputedStyle(document.documentElement).getPropertyValue('--font-body');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const DEG = Math.PI / 180;
+const HASH = new URLSearchParams(location.hash.slice(1));
+
+/*PHYS-BEGIN*/
+/* ---------- ブランコと靴の物理（three には頼らない。m・kg・s・rad。x=前（距離の向き）、y=上、z=横（+はカメラ側）） ----------
+   ブランコ: 重さのないひも（長さ L）の先の座面に、子どもの体（剛体）が乗っている。
+   子どもは体の向き β（ひもに対する傾き。+ は「のけぞって足を前へ伸ばす」）だけを筋肉で変えられる。
+   体を回すと、反作用でひもが回り（角運動量の保存）、重心の位置も動く。前へ振れる間に伸ばし、後ろへ振れる間に曲げると、
+   毎回少しずつエネルギーが入る（座りこぎ）。逆だと抜ける。ひもの張力が足りなくなる高さでは、ひもがたるんでガクッと勢いが落ちる。
+   靴: 0.25kg の剛体（足の形の凸な点の集まり）。放物線＋空気抵抗＋回転。地面・砂場・植え込み・すべり台・フェンスなどに
+   点ごとの撃力（はね返り係数・摩擦）で当たり、バウンド・転がって止まる。止まった位置の x が記録、上を向いた面で「明日の天気」。 */
+const G = 9.81, RHO = 1.2;
+const PIVOT_Y = 2.95;
+const SW = { M: 32, L: 2.5, bb: -0.4, I: 15, bBent: -0.47, bExt: 0.78, om: 9, damp: 0.8, cd: 0.15, slack: 0.45, sk: 6 };
+const SW_J = SW.M * SW.bb * SW.bb + SW.I;
+const SW_DT = 1 / 600;
+function mulberry(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function swingInit(th0 = 0.7) { return { th: -th0, w: 0, b: SW.bBent, bv: 0, t: 0, ext: false, slackK: 0, peak: th0, peakF: 0, peakB: th0, foot: null, footV: { x: 0, y: 0 }, pumpE: 0 }; }
+// 1ステップ。ext = 足を伸ばしているか
+function swingStep(s, dt, ext) {
+  const { M, L, bb } = SW;
+  s.ext = ext;
+  const bt = ext ? SW.bExt : SW.bBent;
+  const ba = SW.om * SW.om * (bt - s.b) - 2 * SW.om * s.bv;
+  const phi = s.th + s.b;
+  const X = L * Math.sin(s.th) + bb * Math.sin(phi);           // 重心の横位置（重力のトルク）
+  const K = bb * Math.cos(s.b), Kb = -bb * Math.sin(s.b);
+  const Ieff = M * L * L + 2 * M * L * K + SW_J;
+  const v = L * s.w, drag = SW.cd * v * Math.abs(v) * L;
+  let thdd = (-M * G * X - M * L * Kb * s.bv * (2 * s.w + s.bv) - M * L * K * ba - SW_J * ba - SW.damp * s.w - drag) / Ieff;
+  // ひもの張力（座面あたり、重さで割った値）。足りないと、ひもがたるむ
+  const ten = L * s.w * s.w + G * Math.cos(s.th);
+  s.slackK = Math.max(0, (SW.slack * G - ten) / (SW.slack * G));
+  if (s.slackK > 0) thdd -= s.slackK * SW.sk * s.w;
+  const e0 = swingEnergy(s);
+  s.w += thdd * dt; s.th += s.w * dt; s.bv += ba * dt; s.b += s.bv * dt; s.t += dt;
+  s.pumpE += swingEnergy(s) - e0;
+  // 振れ幅（前・後ろの端）
+  if (s.w <= 0 && s.th > 0) s.peakF = Math.max(s.peakF * (1 - dt * 0.05), s.th);
+  if (s.w >= 0 && s.th < 0) s.peakB = Math.max(s.peakB * (1 - dt * 0.05), -s.th);
+  s.peak = Math.max(s.peakF, s.peakB);
+  // 足先（靴）の位置と速度
+  const f = footPos(s);
+  if (s.foot) { s.footV.x = (f.x - s.foot.x) / dt; s.footV.y = (f.y - s.foot.y) / dt; }
+  s.foot = f;
+}
+function swingEnergy(s) { const v = SW.L * s.w; return 0.5 * v * v + G * (SW.L * (1 - Math.cos(s.th))); }
+// 座面（ひもの先）と体の向き
+function seatPos(s) { return { x: SW.L * Math.sin(s.th), y: PIVOT_Y - SW.L * Math.cos(s.th) }; }
+// 姿勢 0=曲げ 1=伸ばし
+const postureOf = s => Math.max(0, Math.min(1, (s.b - SW.bBent) / (SW.bExt - SW.bBent)));
+function footPos(s, kk) {
+  const S = seatPos(s), k = kk == null ? postureOf(s) : kk;
+  // ふともも: ひもに直角の前向きを、伸ばすほど上へ起こす / すね: 曲げると座面の下へたたむ
+  const ta = s.th + lerp2(-0.12, 0.2, k), sa = ta + lerp2(-1.95, -0.1, k);
+  const kx = S.x + Math.cos(ta) * 0.34, ky = S.y + Math.sin(ta) * 0.34;      // ひざ
+  const sx = Math.cos(sa), sy = Math.sin(sa);
+  return { x: kx + sx * 0.36, y: ky + sy * 0.36, shinX: sx, shinY: sy, kx, ky, ta, sa };
+}
+const lerp2 = (a, b, k) => a + (b - a) * k;
+// 蹴り出す: kick = 蹴りの強さ m/s、yaw = 左右の向き（+はカメラ側）、seed = 回転のばらつき
+const SHOE = { m: 0.25, l: 0.25, h: 0.09, w: 0.09, cda: 0.011 };
+const SHOE_PTS = [
+  [-0.11, -0.03, 0.034],
+  [-0.11, -0.03, -0.034],
+  [0.0, -0.032, 0.04],
+  [0.0, -0.032, -0.04],
+  [0.115, -0.026, 0.03],
+  [0.115, -0.026, -0.03],
+  [0.135, 0.0, 0],
+  [0.105, 0.026, 0.026],
+  [0.105, 0.026, -0.026],
+  [-0.125, 0.01, 0.03],
+  [-0.125, 0.01, -0.03],
+  [-0.09, 0.05, 0.04],
+  [-0.09, 0.05, -0.04],
+  [0.04, 0.045, 0.038],
+  [0.04, 0.045, -0.038],
+  [-0.03, 0.05, 0.042],
+  [-0.03, 0.05, -0.042],
+];
+const SHOE_I = [SHOE.m / 12 * (SHOE.h ** 2 + SHOE.w ** 2), SHOE.m / 12 * (SHOE.l ** 2 + SHOE.w ** 2), SHOE.m / 12 * (SHOE.l ** 2 + SHOE.h ** 2)];
+function kickShoe(s, kick, yaw, seed) {
+  const R = mulberry(seed);
+  const f = s.foot || footPos(s);
+  // 向き = ブランコの角度（ひもに直角・前）を少しだけ上へ。足の振りの速さもそのまま乗る
+  const a = s.th + 0.14, dx = Math.cos(a), dy = Math.sin(a);
+  const vx = s.footV.x + dx * kick, vy = s.footV.y + dy * kick;
+  const cy = Math.cos(yaw), sy = Math.sin(yaw);
+  // 靴の姿勢: つま先 = すねに直角（足の甲の向き）
+  const ta = Math.atan2(f.shinX, -f.shinY);   // つま先の向き = すねを90°起こした向き
+  const q = qAxis(0, 0, 1, ta);
+  const spin = -(4 + 1.0 * kick) * (0.75 + 0.5 * R());
+  return {
+    x: f.x, y: f.y, z: 0.1, vx: vx * cy, vy, vz: vx * sy + (R() - 0.5) * 0.25,
+    q, wx: (R() - 0.5) * 7, wy: (R() - 0.5) * 5, wz: spin,
+    t: 0, phase: 'fly', contacts: 0, firstLand: null, onMat: null, rest: 0, maxY: f.y, over: false, kick, v0: Math.hypot(vx, vy), a0: Math.atan2(vy, vx), bounces: [], hitSlide: false, hitFence: false, inShrub: false, path: [],
+  };
+}
+/* クォータニオン [x,y,z,w] */
+function qAxis(x, y, z, a) { const s = Math.sin(a / 2); return [x * s, y * s, z * s, Math.cos(a / 2)]; }
+function qMul(a, b) { return [a[3] * b[0] + a[0] * b[3] + a[1] * b[2] - a[2] * b[1], a[3] * b[1] - a[0] * b[2] + a[1] * b[3] + a[2] * b[0], a[3] * b[2] + a[0] * b[1] - a[1] * b[0] + a[2] * b[3], a[3] * b[3] - a[0] * b[0] - a[1] * b[1] - a[2] * b[2]]; }
+function qRot(q, v) { // q で v を回す
+  const [x, y, z, w] = q, [a, b, c] = v;
+  const ix = w * a + y * c - z * b, iy = w * b + z * a - x * c, iz = w * c + x * b - y * a, iw = -x * a - y * b - z * c;
+  return [ix * w + iw * -x + iy * -z - iz * -y, iy * w + iw * -y + iz * -x - ix * -z, iz * w + iw * -z + ix * -y - iy * -x];
+}
+function qInvRot(q, v) { return qRot([-q[0], -q[1], -q[2], q[3]], v); }
+/* 公園の配置 */
+const PARK = {
+  sand: { x0: 8.2, x1: 11.6, z0: -2.0, z1: 2.0, y: 0.03 },
+  slide: { ax: 15.0, ay: 1.75, bx: 18.4, by: 0.32, cx: 19.2, z0: -0.8, z1: -0.2 },
+  shrub: { x0: 26.2, x1: 28.0, top: 0.78, z: 9 },
+  fenceX: 29.0, fenceH: 2.0,
+  boxes: [],
+};
+// 当たる箱: 砂場の木枠・すべり台の踊り場と階段の柱・植え込み・フェンス
+{
+  const S = PARK.sand, t = 0.12, h = 0.17;
+  PARK.boxes.push({ x0: S.x0 - t, x1: S.x0, y0: 0, y1: h, z0: S.z0 - t, z1: S.z1 + t, mat: 'wood' });
+  PARK.boxes.push({ x0: S.x1, x1: S.x1 + t, y0: 0, y1: h, z0: S.z0 - t, z1: S.z1 + t, mat: 'wood' });
+  PARK.boxes.push({ x0: S.x0, x1: S.x1, y0: 0, y1: h, z0: S.z0 - t, z1: S.z0, mat: 'wood' });
+  PARK.boxes.push({ x0: S.x0, x1: S.x1, y0: 0, y1: h, z0: S.z1, z1: S.z1 + t, mat: 'wood' });
+  const L = PARK.slide;
+  PARK.boxes.push({ x0: L.ax - 0.85, x1: L.ax, y0: L.ay - 0.08, y1: L.ay, z0: L.z0 - 0.05, z1: L.z1 + 0.05, mat: 'deck' });
+  PARK.boxes.push({ x0: PARK.shrub.x0, x1: PARK.shrub.x1, y0: 0, y1: PARK.shrub.top, z0: -PARK.shrub.z, z1: PARK.shrub.z, mat: 'shrub' });
+  PARK.boxes.push({ x0: PARK.fenceX, x1: PARK.fenceX + 0.06, y0: 0, y1: PARK.fenceH, z0: -14, z1: 14, mat: 'fence' });
+}
+// 天気ごとの地面（晴れは乾いてよく転がる、雨上がりはしめってすぐ止まる）
+const WEATHER = {
+  hare:   { name: '晴れ',   e: 0.40, mu: 0.42, damp: 0.0 },
+  kumori: { name: 'くもり', e: 0.33, mu: 0.52, damp: 0.6 },
+  ame:    { name: '雨上がり', e: 0.22, mu: 0.72, damp: 2.2 },
+};
+const MATS = {
+  wood: { e: 0.45, mu: 0.5, damp: 0 }, deck: { e: 0.4, mu: 0.5, damp: 0.5 },
+  sand: { e: 0.05, mu: 1.3, damp: 9 }, shrub: { e: 0.06, mu: 1.7, damp: 10 },
+  slide: { e: 0.5, mu: 0.13, damp: 0 }, fence: { e: 0.3, mu: 0.4, damp: 0 },
+};
+// 点 p の当たり: 一番深くめり込んでいる面を返す { d: 深さ, n: 法線, mat }
+function contactAt(px, py, pz, weather, over) {
+  let best = null;
+  const take = (d, nx, ny, nz, mat) => { if (d > 0 && (!best || d > best.d)) best = { d, nx, ny, nz, mat }; };
+  // 地面 / 砂場
+  const S = PARK.sand;
+  if (px > S.x0 && px < S.x1 && pz > S.z0 && pz < S.z1) take(S.y - py, 0, 1, 0, 'sand');
+  else take(-py, 0, 1, 0, 'ground');
+  // すべり台の滑る面（上からだけ）と、下の平らな所
+  const L = PARK.slide;
+  if (pz > L.z0 && pz < L.z1) {
+    const ux = L.bx - L.ax, uy = L.by - L.ay, ul = Math.hypot(ux, uy), tx = ux / ul, ty = uy / ul, nx = -ty, ny = tx;   // 法線は上向き
+    const rx = px - L.ax, ry = py - L.ay, u = rx * tx + ry * ty, d = -(rx * nx + ry * ny);
+    if (u > 0 && u < ul && d < 0.1) take(d, nx, ny, 0, 'slide');
+    if (px >= L.bx && px < L.cx && py < L.by + 0.02 && py > L.by - 0.1) take(L.by - py, 0, 1, 0, 'slide');
+  }
+  // 箱
+  for (const B of PARK.boxes) {
+    if (px <= B.x0 || px >= B.x1 || py <= B.y0 || py >= B.y1 || pz <= B.z0 || pz >= B.z1) continue;
+    const c = [[px - B.x0, -1, 0, 0], [B.x1 - px, 1, 0, 0], [B.y1 - py, 0, 1, 0], [pz - B.z0, 0, 0, -1], [B.z1 - pz, 0, 0, 1]];
+    if (B.mat === 'fence') { take(over ? B.x1 - px : px - B.x0, over ? 1 : -1, 0, 0, 'fence'); continue; }
+    let m = c[0]; for (const k of c) if (k[0] < m[0]) m = k;
+    take(m[0], m[1], m[2], m[3], B.mat);
+  }
+  return best;
+}
+const SH_DT = 1 / 1000;
+function shoeStep(sh, dt, weather) {
+  if (sh.phase !== 'fly') return;
+  const W = WEATHER[weather] || WEATHER.hare;
+  // 空気: 抵抗（向きで面積が変わる）と、回転の抵抗
+  const V = Math.hypot(sh.vx, sh.vy, sh.vz);
+  if (V > 1e-6) {
+    const lv = qInvRot(sh.q, [sh.vx / V, sh.vy / V, sh.vz / V]);
+    const A = SHOE.cda * (0.55 + 0.45 * Math.abs(lv[1]) + 0.35 * Math.abs(lv[2]));
+    const k = 0.5 * RHO * A * V / SHOE.m;
+    sh.vx -= k * sh.vx * dt; sh.vy -= k * sh.vy * dt; sh.vz -= k * sh.vz * dt;
+  }
+  sh.vy -= G * dt;
+  const wd = 1 - 0.15 * dt; sh.wx *= wd; sh.wy *= wd; sh.wz *= wd;
+  sh.x += sh.vx * dt; sh.y += sh.vy * dt; sh.z += sh.vz * dt;
+  sh.q = qIntegrate(sh.q, sh.wx, sh.wy, sh.wz, dt);
+  sh.t += dt;
+  if (sh.y > sh.maxY) sh.maxY = sh.y;
+  if (!sh.over && sh.x > PARK.fenceX + 0.03) sh.over = true;
+  // 当たり（点ごとに撃力）
+  let touch = false, deep = null, matNow = null;
+  for (let it = 0; it < 2; it++) {
+    for (const lp of SHOE_PTS) {
+      const r = qRot(sh.q, lp), px = sh.x + r[0], py = sh.y + r[1], pz = sh.z + r[2];
+      const c = contactAt(px, py, pz, weather, sh.over);
+      if (!c) continue;
+      const mat = c.mat === 'ground' ? W : MATS[c.mat];
+      touch = true; matNow = c.mat;
+      if (!deep || c.d > deep.d) deep = c;
+      // その点の速さ
+      const vpx = sh.vx + sh.wy * r[2] - sh.wz * r[1], vpy = sh.vy + sh.wz * r[0] - sh.wx * r[2], vpz = sh.vz + sh.wx * r[1] - sh.wy * r[0];
+      const vn = vpx * c.nx + vpy * c.ny + vpz * c.nz;
+      if (vn >= 0) continue;
+      if (it === 0 && vn < -0.8 && !sh.firstLand) sh.firstLand = { x: px, z: pz, t: sh.t, mat: c.mat };
+      if (it === 0 && vn < -0.8) { sh.bounces.push({ t: sh.t, x: px, y: py, z: pz, v: -vn, mat: c.mat }); if (c.mat === 'slide') sh.hitSlide = true; if (c.mat === 'fence') sh.hitFence = true; if (c.mat === 'shrub') sh.inShrub = true; }
+      const e = vn < -0.5 ? mat.e : 0;
+      const jn = -(1 + e) * vn / effMass(sh.q, r, c.nx, c.ny, c.nz);
+      applyImp(sh, r, c.nx * jn, c.ny * jn, c.nz * jn);
+      // 摩擦
+      const ux = sh.vx + sh.wy * r[2] - sh.wz * r[1], uy = sh.vy + sh.wz * r[0] - sh.wx * r[2], uz = sh.vz + sh.wx * r[1] - sh.wy * r[0];
+      const un = ux * c.nx + uy * c.ny + uz * c.nz;
+      let tx = ux - un * c.nx, ty = uy - un * c.ny, tz = uz - un * c.nz;
+      const tl = Math.hypot(tx, ty, tz);
+      if (tl > 1e-6) {
+        tx /= tl; ty /= tl; tz /= tl;
+        let jt = tl / effMass(sh.q, r, tx, ty, tz);
+        jt = Math.min(jt, mat.mu * jn);
+        applyImp(sh, r, -tx * jt, -ty * jt, -tz * jt);
+      }
+    }
+  }
+  if (deep) { const k = Math.min(deep.d, 0.02) * 0.6; sh.x += deep.nx * k; sh.y += deep.ny * k; sh.z += deep.nz * k; }
+  if (touch) {
+    const mat = matNow === 'ground' ? W : MATS[matNow];
+    const dd = 1 - Math.min(0.5, (mat.damp + 0.8) * dt), wd2 = 1 - Math.min(0.5, (mat.damp + 2.2) * dt);
+    sh.vx *= dd; sh.vz *= dd; sh.wx *= wd2; sh.wy *= wd2; sh.wz *= wd2;
+    if (mat.damp > 0 && sh.vy > 0) sh.vy *= dd;
+    sh.onMat = matNow;
+  }
+  sh.touch = touch;
+  // 止まった？
+  const sp = Math.hypot(sh.vx, sh.vy, sh.vz), wsp = Math.hypot(sh.wx, sh.wy, sh.wz);
+  if (touch && sp < 0.06 && wsp < 0.6) sh.rest += dt; else sh.rest = 0;
+  if (sh.rest > 0.25 || sh.t > 20 || sh.y < -2) { sh.phase = 'done'; sh.vx = sh.vy = sh.vz = sh.wx = sh.wy = sh.wz = 0; }
+}
+function qIntegrate(q, wx, wy, wz, dt) {
+  const a = Math.hypot(wx, wy, wz) * dt;
+  if (a < 1e-12) return q;
+  const k = Math.sin(a / 2) / (a / dt);
+  const r = qMul([wx * k, wy * k, wz * k, Math.cos(a / 2)], q);
+  const l = Math.hypot(r[0], r[1], r[2], r[3]);
+  return [r[0] / l, r[1] / l, r[2] / l, r[3] / l];
+}
+// 世界座標の慣性の逆数を、体の座標で計算
+function invIw(q, v) { const l = qInvRot(q, v); return qRot(q, [l[0] / SHOE_I[0], l[1] / SHOE_I[1], l[2] / SHOE_I[2]]); }
+function effMass(q, r, nx, ny, nz) {
+  const cx = r[1] * nz - r[2] * ny, cy = r[2] * nx - r[0] * nz, cz = r[0] * ny - r[1] * nx;
+  const a = invIw(q, [cx, cy, cz]);
+  const bx = a[1] * r[2] - a[2] * r[1], by = a[2] * r[0] - a[0] * r[2], bz = a[0] * r[1] - a[1] * r[0];
+  return 1 / SHOE.m + bx * nx + by * ny + bz * nz;
+}
+function applyImp(sh, r, jx, jy, jz) {
+  sh.vx += jx / SHOE.m; sh.vy += jy / SHOE.m; sh.vz += jz / SHOE.m;
+  const a = invIw(sh.q, [r[1] * jz - r[2] * jy, r[2] * jx - r[0] * jz, r[0] * jy - r[1] * jx]);
+  sh.wx += a[0]; sh.wy += a[1]; sh.wz += a[2];
+}
+// 止まった靴の向き: 表（底が下）= 晴れ / 裏 = 雨 / 横 = くもり
+function shoeFace(q) { const u = qRot(q, [0, 1, 0]); return u[1] > 0.55 ? 'omote' : u[1] < -0.55 ? 'ura' : 'yoko'; }
+const distOf = sh => Math.max(0, sh.x);
+// 最後まで計算（rec=true で 1/120 秒ごとの姿を残す）
+function simShoe(sh, weather, rec = false) {
+  let next = 0;
+  while (sh.phase === 'fly') {
+    shoeStep(sh, SH_DT, weather);
+    if (rec && sh.t >= next) { sh.path.push([sh.t, sh.x, sh.y, sh.z, ...sh.q]); next += 1 / 120; }
+  }
+  if (rec) sh.path.push([sh.t, sh.x, sh.y, sh.z, ...sh.q]);
+  return { dist: distOf(sh), face: shoeFace(sh.q), mat: sh.onMat, back: sh.x < 0, t: sh.t, maxY: sh.maxY, first: sh.firstLand, slide: sh.hitSlide, fence: sh.hitFence, over: sh.over, shrub: sh.inShrub };
+}
+/*PHYS-END*/
+
+/* ---------- 記録（このブラウザだけ） ---------- */
+const KEY = 'kutsu:v1';
+const DEF = () => ({ ver: 1, best: 0, plays: 0, backs: 0, faces: { omote: 0, ura: 0, yoko: 0 }, weather: 'hare', bestWeather: '', last: 0 });
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || '{}');
+    if (d && d.ver === 1) { const r = { ...DEF(), ...d, faces: { ...DEF().faces, ...(d.faces || {}) } }; if (!WEATHER[r.weather]) r.weather = 'hare'; r.best = +r.best || 0; return r; }
+  } catch {}
+  return DEF();
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch {} }
+let rec = load();
+if (HASH.has('weather') && WEATHER[HASH.get('weather')]) rec.weather = HASH.get('weather');
+const m1 = v => (Math.floor(v * 10 + 1e-6) / 10).toFixed(1);
+const FACE = {
+  omote: { name: '表', wx: 'hare', say: '靴が表で止まった。明日は晴れ！' },
+  ura:   { name: '裏', wx: 'ame', say: '靴が裏がえった。明日は雨かも…' },
+  yoko:  { name: '横', wx: 'kumori', say: '靴が横だおし。明日はくもり。' },
+};
+const WX_NOTE = { hare: '地面が乾いて、靴がよく転がる', kumori: 'ふつうの地面', ame: '地面がしめって、靴がすぐ止まる' };
+
+/* ---------- three.js ---------- */
+const glc = $('gl'), fxc = $('fx'), fx = fxc.getContext('2d');
+const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, powerPreference: 'high-performance' });
+const scene = new THREE.Scene();
+const HAZE = new THREE.Color('#d9a088');
+scene.background = new THREE.Color('#c98f7c');
+scene.fog = new THREE.Fog(HAZE, 40, 260);
+const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 1600);
+let W = 0, H = 0, dpr = 1, safeT = 0, safeB = 0;
+function resize() {
+  W = innerWidth; H = innerHeight; dpr = Math.min(devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(Math.min(dpr, 1.75)); renderer.setSize(W, H, false);
+  fxc.width = Math.round(W * dpr); fxc.height = Math.round(H * dpr);
+  camera.aspect = W / H; camera.fov = W / H < 0.75 ? 62 : 48; camera.updateProjectionMatrix();
+  const cs = getComputedStyle(document.documentElement);
+  safeT = parseFloat(cs.paddingTop) || 0; safeB = parseFloat(cs.paddingBottom) || 0;
+}
+addEventListener('resize', resize); resize();
+
+function canvasTex(w, h, draw, repeat) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
+  t.anisotropy = 4;
+  return t;
+}
+const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
+let srnd = 5; const prand = () => (srnd = (srnd * 9301 + 49297) % 233280) / 233280;
+const UPV = new THREE.Vector3(0, 1, 0);
+
+// 光: 夕方。奥（住宅街の向こう）に沈む夕日
+const SUN = new THREE.Vector3(0.42, 0.08, -1).normalize();
+const hemi = new THREE.HemisphereLight('#ffd9b8', '#6a5550', 2.0); scene.add(hemi);
+const sunLight = new THREE.DirectionalLight('#ffb27a', 1.7); sunLight.position.copy(SUN).multiplyScalar(100); scene.add(sunLight);
+const fillLight = new THREE.DirectionalLight('#a9b4d8', 0.7); fillLight.position.set(-0.3, 0.6, 1); scene.add(fillLight);
+
+/* 空: 頂点カラーのグラデーション（天気で色を変える） */
+const SKIES = {
+  hare:   { stops: [[-0.2, '#c88a72'], [0, '#fbc27c'], [0.06, '#f6a468'], [0.16, '#e98c6e'], [0.3, '#cf8a86'], [0.5, '#9a86a0'], [0.75, '#5e6a92'], [1, '#33405f']], glow: '#ffe3a6', g: 1, haze: '#dba088', hemi: ['#ffd9b8', '#6a5550', 2.0], sun: ['#ffb27a', 1.7] },
+  kumori: { stops: [[-0.2, '#9a8c8c'], [0, '#c9b4a6'], [0.08, '#b8a29c'], [0.2, '#a294a0'], [0.4, '#8a8498'], [0.7, '#666a84'], [1, '#474c64']], glow: '#e8c2a2', g: 0.25, haze: '#ab9a98', hemi: ['#e2d4cc', '#5e5656', 2.2], sun: ['#e8b498', 0.6] },
+  ame:    { stops: [[-0.2, '#7c8088'], [0, '#a8a4a4'], [0.08, '#9a9aa2'], [0.2, '#878ca0'], [0.4, '#707a92'], [0.7, '#556079'], [1, '#3c4560']], glow: '#e2c0a4', g: 0.35, haze: '#8e9098', hemi: ['#cfd6de', '#4f5254', 2.1], sun: ['#d8b49a', 0.5] },
+};
+const skyGeo = new THREE.SphereGeometry(1200, 48, 24);
+const sky = new THREE.Mesh(skyGeo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+sky.renderOrder = -10; scene.add(sky);
+const sunTex = canvasTex(128, 128, (g, w, h) => { const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,248,220,1)'); gr.addColorStop(0.22, 'rgba(255,226,160,1)'); gr.addColorStop(0.3, 'rgba(255,190,120,.55)'); gr.addColorStop(1, 'rgba(255,160,100,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+const sunSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunTex, fog: false, depthWrite: false, transparent: true }));
+sunSprite.position.copy(SUN).multiplyScalar(1100); sunSprite.scale.set(140, 140, 1); sunSprite.renderOrder = -9; scene.add(sunSprite);
+const cloudTex = canvasTex(256, 64, (g, w, h) => {
+  for (let i = 0; i < 14; i++) {
+    const x = 30 + prand() * 196, y = 26 + prand() * 16, r = 14 + prand() * 22;
+    const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(255,255,255,.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.fillStyle = gr; g.beginPath(); g.ellipse(x, y, r * 1.8, r * 0.55, 0, 0, Math.PI * 2); g.fill();
+  }
+});
+const clouds = [];
+for (const [az, el, s] of [[0.1, 0.06, 1.3], [0.45, 0.1, 1.6], [0.8, 0.07, 1.1], [-0.3, 0.13, 1.4], [0.25, 0.2, 1.7], [-0.7, 0.09, 1.2], [1.1, 0.16, 1.3]]) {
+  const cl = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTex, color: '#ffd2b0', fog: false, depthWrite: false, transparent: true, opacity: 0.8 }));
+  const d = new THREE.Vector3(Math.sin(az), Math.tan(el), -Math.cos(az)).normalize();
+  cl.position.copy(d).multiplyScalar(1000); cl.scale.set(380 * s, 80 * s, 1); cl.renderOrder = -8; scene.add(cl); clouds.push(cl);
+}
+function paintSky(wx) {
+  const S = SKIES[wx] || SKIES.hare;
+  const stops = S.stops.map(([e, c]) => [e, new THREE.Color(c)]);
+  const glow = new THREE.Color(S.glow), pos = skyGeo.attributes.position, col = [], v = new THREE.Vector3(), c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i).normalize();
+    const e = v.y;
+    let k = 0; while (k < stops.length - 2 && e > stops[k + 1][0]) k++;
+    const [e0, c0] = stops[k], [e1, c1] = stops[k + 1];
+    c.copy(c0).lerp(c1, clamp((e - e0) / (e1 - e0), 0, 1));
+    const g = (Math.pow(Math.max(0, v.dot(SUN)), 6) * 0.85 + Math.pow(Math.max(0, v.dot(SUN)), 60) * 0.3) * S.g;
+    c.lerp(glow, clamp(g, 0, 1));
+    col.push(c.r, c.g, c.b);
+  }
+  skyGeo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  sunSprite.visible = wx === 'hare';
+  for (const cl of clouds) { cl.material.color.set(wx === 'hare' ? '#ffd2b0' : wx === 'kumori' ? '#d8cdd0' : '#c2c4cc'); cl.material.opacity = wx === 'hare' ? 0.75 : 0.95; cl.scale.y = (wx === 'hare' ? 80 : 120) * (cl.scale.x / 380); }
+  HAZE.set(S.haze); scene.fog.color.copy(HAZE); scene.background.copy(HAZE);
+  hemi.color.set(S.hemi[0]); hemi.groundColor.set(S.hemi[1]); hemi.intensity = S.hemi[2];
+  sunLight.color.set(S.sun[0]); sunLight.intensity = S.sun[1];
+  groundMat.color.set(wx === 'ame' ? '#8f7d6a' : wx === 'kumori' ? '#b29a7e' : '#c2a582');
+  for (const p of puddles) p.visible = wx === 'ame';
+  for (const w of windows) w.material.color.set(wx === 'hare' ? '#ffd59a' : '#ffe2b0');
+}
+
+/* 遠くの山並みと町（円筒の内側に貼る） */
+function buildFar() {
+  const tex = canvasTex(2048, 256, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = 'rgba(122,100,124,.7)'; g.beginPath(); g.moveTo(0, h);
+    for (let x = 0; x <= w; x += 16) g.lineTo(x, h - 80 - 40 * Math.sin(x / 190) - 22 * Math.sin(x / 61 + 1));
+    g.lineTo(w, h); g.fill();
+    let x = 0;
+    while (x < w) {
+      const bw = 12 + prand() * 30, bh = 16 + prand() * 40;
+      g.fillStyle = prand() < 0.5 ? '#5a4a5e' : '#625266'; g.fillRect(x, h - bh, bw, bh);
+      for (let yy = h - bh + 5; yy < h - 4; yy += 7) for (let xx = x + 3; xx < x + bw - 3; xx += 5) if (prand() < 0.14) { g.fillStyle = '#ffd792'; g.fillRect(xx, yy, 2, 2); }
+      x += bw + 1 + prand() * 5;
+    }
+  });
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(800, 800, 120, 64, 1, true, Math.PI * 0.55, Math.PI * 0.9), new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+  m.position.y = 48; m.renderOrder = -7; scene.add(m);
+}
+buildFar();
+
+/* 地面: 公園の土 + 1mごとの目盛り + 5mごとの数字 */
+const groundTex = canvasTex(256, 256, (g, w, h) => {
+  g.fillStyle = '#c9ad8a'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 3200; i++) { g.fillStyle = prand() < 0.5 ? 'rgba(110,80,52,.14)' : 'rgba(255,236,210,.14)'; g.fillRect(prand() * w, prand() * h, 1 + prand() * 2, 1 + prand() * 2); }
+  for (let i = 0; i < 40; i++) { g.fillStyle = 'rgba(120,96,70,.25)'; g.beginPath(); g.ellipse(prand() * w, prand() * h, 2 + prand() * 3, 1.5 + prand() * 2, prand() * 3, 0, Math.PI * 2); g.fill(); }
+}, [60, 60]);
+const groundMat = lam('#c2a582', { map: groundTex });
+const puddles = [], windows = [];
+function buildGround() {
+  const g = new THREE.Mesh(new THREE.PlaneGeometry(480, 480), groundMat);
+  g.rotation.x = -Math.PI / 2; g.position.set(10, 0, 0); scene.add(g);
+  // 遊具のまわりのすり減ったところ（ブランコの下）
+  const worn = new THREE.Mesh(new THREE.CircleGeometry(1, 24), new THREE.MeshBasicMaterial({ color: '#8f7458', transparent: true, opacity: 0.35, depthWrite: false }));
+  worn.rotation.x = -Math.PI / 2; worn.scale.set(3.2, 1.0, 1); worn.position.set(0, 0.006, 0); scene.add(worn);
+  // 水たまり（雨上がりのときだけ）
+  for (const [x, z, s] of [[4.2, 1.4, 0.9], [13.5, -1.3, 1.3], [20.5, 1.2, 1.0], [-3.5, -1.8, 1.1]]) {
+    const p = new THREE.Mesh(new THREE.CircleGeometry(1, 20), new THREE.MeshLambertMaterial({ color: '#a4a8b8', emissive: '#4a4c5c', transparent: true, opacity: 0.5, depthWrite: false }));
+    p.rotation.x = -Math.PI / 2; p.scale.set(s * 1.4, s * 0.7, 1); p.position.set(x, 0.008, z); p.visible = false; scene.add(p); puddles.push(p);
+  }
+  // 目盛り: 1mごとの短い線（手前）と、5mごとの長い線（砂場の中は引かない）
+  const lime = new THREE.MeshBasicMaterial({ color: '#f6f1e6', transparent: true, opacity: 0.85, depthWrite: false });
+  const S = PARK.sand;
+  for (let d = 1; d <= 30; d++) {
+    const major = d % 5 === 0, inSand = d > S.x0 - 0.15 && d < S.x1 + 0.15;
+    if (major && !inSand) {
+      const ln = new THREE.Mesh(new THREE.PlaneGeometry(0.07, 3.6), lime); ln.rotation.x = -Math.PI / 2; ln.position.set(d, 0.01, 0.1); scene.add(ln);
+    } else if (!inSand) {
+      const t = new THREE.Mesh(new THREE.PlaneGeometry(0.045, 0.55), lime); t.rotation.x = -Math.PI / 2; t.position.set(d, 0.01, 1.55); scene.add(t);
+    } else {
+      const t = new THREE.Mesh(new THREE.PlaneGeometry(0.045, 0.4), lime); t.rotation.x = -Math.PI / 2; t.position.set(d, 0.01, S.z1 + 0.45); scene.add(t);
+    }
+  }
+  const zl = new THREE.Mesh(new THREE.PlaneGeometry(0.04, 3.6), new THREE.MeshBasicMaterial({ color: '#f6f1e6', transparent: true, opacity: 0.5, depthWrite: false })); zl.rotation.x = -Math.PI / 2; zl.position.set(0, 0.01, 0.1); scene.add(zl);
+}
+buildGround();
+function buildLabels() {
+  for (let d = 5; d <= 25; d += 5) {
+    const tex = canvasTex(256, 128, (g, w, h) => {
+      g.clearRect(0, 0, w, h); g.fillStyle = 'rgba(248,242,230,.92)'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = `96px ${FD}`; g.fillText(`${d}`, w / 2 - 22, h / 2 + 6); g.font = `52px ${FD}`; g.fillText('m', w / 2 + 64, h / 2 + 22);
+    });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.75), new THREE.MeshLambertMaterial({ map: tex, transparent: true, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2; m.position.set(d + 0.1, 0.012, -2.75); m.scale.setScalar(1.3); scene.add(m);
+    // 奥に立てた札（横から見ても読める）
+    const st = new THREE.Group(); st.position.set(d, 0, -3.7); scene.add(st);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.7, 5), lam('#d8d0c0')); pole.position.y = 0.35; st.add(pole);
+    const ptex = canvasTex(128, 80, (g, w, h) => { g.fillStyle = '#f4ecdc'; g.fillRect(0, 0, w, h); g.strokeStyle = '#8a3a2c'; g.lineWidth = 6; g.strokeRect(3, 3, w - 6, h - 6); g.fillStyle = '#8a3a2c'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `50px ${FD}`; g.fillText(`${d}m`, w / 2, h / 2 + 3); });
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(0.5, 0.31), lam('#ffffff', { map: ptex })); plate.position.set(0, 0.78, 0.03); st.add(plate);
+  }
+}
+
+/* ブランコ: 黄色い鉄の柱 + 上の横棒 + となりの空いたブランコ */
+const SWZ = [-0.24, 0.24];       // 鎖の z（座面の両はし）
+const frameMat = lam('#e2a83c'), barMat = lam('#5c4a52'), chainMat = lam('#8e8a86'), seatMat = lam('#3f3a40');
+function buildSwingSet() {
+  const top = PIVOT_Y + 0.08;
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 3.9, 10), barMat); bar.rotation.x = Math.PI / 2; bar.position.set(0, top, -1.0); scene.add(bar);
+  for (const z of [0.85, -2.85]) for (const s of [-1, 1]) {
+    const a = new THREE.Vector3(0, top, z), b = new THREE.Vector3(s * 1.45, 0, z);
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 1, 8), frameMat); limb(leg, a, b); scene.add(leg);
+  }
+  // となりの空いたブランコ（ゆっくり揺れる）
+  const g = new THREE.Group(); g.position.set(0, PIVOT_Y, -1.9); scene.add(g);
+  for (const z of SWZ) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, SW.L, 5), chainMat); c.position.set(0, -SW.L / 2, z); g.add(c); }
+  const st = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.04, 0.56), seatMat); st.position.y = -SW.L; g.add(st);
+  return g;
+}
+const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3(), tmpD = new THREE.Vector3();
+function limb(mesh, a, b) {
+  tmpD.subVectors(b, a); const L = tmpD.length() || 1e-4;
+  mesh.position.addVectors(a, b).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(UPV, tmpD.multiplyScalar(1 / L));
+  mesh.scale.set(1, L, 1);
+}
+const otherSwing = buildSwingSet();
+
+/* 鎖（たるむと曲がる） */
+const CHN = 7;
+const chains = SWZ.map(z => { const segs = []; for (let i = 0; i < CHN; i++) { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.013, 0.013, 1, 5), chainMat); scene.add(m); segs.push(m); } return { z, segs }; });
+const seat = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.045, 0.58), seatMat); scene.add(seat);
+
+/* 子ども（体はひもに対して β 回る。足は曲げ⇔伸ばし） */
+const skin = lam('#f0c8a4'), shirt = lam('#d9603e'), shorts = lam('#3d4e78'), sock = lam('#f2efe8'), hair = lam('#2e2624'), capMat = lam('#e2a83c');
+const kid = {
+  torso: new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.15, 1, 10), shirt),
+  hips: new THREE.Mesh(new THREE.SphereGeometry(0.15, 12, 8), shorts),
+  head: new THREE.Mesh(new THREE.SphereGeometry(0.115, 16, 12), skin),
+  hair: new THREE.Mesh(new THREE.SphereGeometry(0.122, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.55), hair),
+  arms: [0, 1].map(() => [new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1, 6), shirt), new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1, 6), skin)]),
+  thighs: [0, 1].map(() => new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.06, 1, 8), shorts)),
+  shins: [0, 1].map(() => new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.04, 1, 8), skin)),
+  socks: [0, 1].map(() => new THREE.Mesh(new THREE.CylinderGeometry(0.044, 0.044, 1, 8), sock)),
+};
+for (const k of ['torso', 'hips', 'head', 'hair']) scene.add(kid[k]);
+for (const a of kid.arms) scene.add(a[0], a[1]);
+for (const m of [...kid.thighs, ...kid.shins, ...kid.socks]) scene.add(m);
+
+/* 靴: 横から見た形を押し出したスニーカー（体の原点 = 物理の重心） */
+function shoeGeo() {
+  const up = new THREE.Shape();
+  up.moveTo(-0.122, -0.016); up.lineTo(0.128, -0.016); up.quadraticCurveTo(0.142, 0.0, 0.118, 0.024); up.quadraticCurveTo(0.085, 0.04, 0.045, 0.046);
+  up.lineTo(-0.035, 0.05); up.lineTo(-0.09, 0.058); up.quadraticCurveTo(-0.128, 0.05, -0.126, 0.01); up.closePath();
+  const ug = new THREE.ExtrudeGeometry(up, { depth: 0.074, bevelEnabled: true, bevelThickness: 0.006, bevelSize: 0.006, bevelSegments: 1, curveSegments: 4 }); ug.translate(0, 0, -0.037);
+  const so = new THREE.Shape();
+  so.moveTo(-0.118, -0.032); so.lineTo(0.12, -0.03); so.quadraticCurveTo(0.142, -0.022, 0.136, -0.012); so.lineTo(-0.126, -0.012); so.quadraticCurveTo(-0.13, -0.026, -0.118, -0.032);
+  const sg = new THREE.ExtrudeGeometry(so, { depth: 0.084, bevelEnabled: false, curveSegments: 3 }); sg.translate(0, 0, -0.042);
+  return { ug, sg };
+}
+function makeShoe() {
+  const { ug, sg } = shoeGeo(), g = new THREE.Group();
+  g.add(new THREE.Mesh(ug, lam('#c9463a', { flatShading: true })));
+  g.add(new THREE.Mesh(sg, lam('#f4f0e6')));
+  // 白いライン2本と、はき口
+  for (const s of [-1, 1]) { const ln = new THREE.Mesh(new THREE.PlaneGeometry(0.11, 0.014), new THREE.MeshLambertMaterial({ color: '#f4f0e6', side: THREE.DoubleSide })); ln.position.set(0.0, 0.016, s * 0.0435); ln.rotation.z = 0.28; g.add(ln); }
+  const col = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.03, 0.012, 10), lam('#3a2a2a')); col.position.set(-0.07, 0.058, 0); col.scale.set(1.5, 1, 1); g.add(col);
+  return g;
+}
+const SHOE_SCALE = 1.5;            // 見やすいように少し大きく描く（物理は実物大）
+const shoeFly = makeShoe(); shoeFly.scale.setScalar(SHOE_SCALE); scene.add(shoeFly);
+const shoeLeft = makeShoe(); scene.add(shoeLeft);
+const blobTex = canvasTex(64, 64, (c, w, h) => { const gr = c.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(40,24,20,.55)'); gr.addColorStop(1, 'rgba(40,24,20,0)'); c.fillStyle = gr; c.fillRect(0, 0, w, h); });
+function makeBlob(s) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false })); m.rotation.x = -Math.PI / 2; m.scale.set(s, s, 1); m.renderOrder = 1; scene.add(m); return m; }
+const shoeBlob = makeBlob(0.5), kidBlob = makeBlob(1.0);
+
+/* 砂場・すべり台・植え込み・フェンス・住宅街 */
+function buildPark() {
+  const S = PARK.sand;
+  const sandTex = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#e3cc9e'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 4000; i++) { g.fillStyle = prand() < 0.5 ? 'rgba(150,120,80,.16)' : 'rgba(255,248,226,.2)'; g.fillRect(prand() * w, prand() * h, 1 + prand() * 1.5, 1 + prand() * 1.5); }
+    for (let i = 0; i < 9; i++) { g.strokeStyle = 'rgba(160,130,90,.12)'; g.lineWidth = 5; g.beginPath(); const y = prand() * h; g.moveTo(0, y); g.bezierCurveTo(w * 0.3, y + 26, w * 0.6, y - 26, w, y); g.stroke(); }
+  }, [2, 2]);
+  const sand = new THREE.Mesh(new THREE.PlaneGeometry(S.x1 - S.x0, S.z1 - S.z0), lam('#ffffff', { map: sandTex }));
+  sand.rotation.x = -Math.PI / 2; sand.position.set((S.x0 + S.x1) / 2, S.y, (S.z0 + S.z1) / 2); scene.add(sand);
+  // 砂山とバケツ
+  const mound = new THREE.Mesh(new THREE.SphereGeometry(0.5, 12, 6, 0, Math.PI * 2, 0, Math.PI / 2), lam('#dcc496')); mound.scale.set(1, 0.32, 0.8); mound.position.set(S.x0 + 2.4, S.y, S.z0 + 0.7); scene.add(mound);
+  const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.08, 0.16, 10), lam('#3f8fb0')); bucket.position.set(S.x0 + 0.8, S.y + 0.08, S.z1 - 0.6); scene.add(bucket);
+  const shovel = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.02, 0.07), lam('#e2a83c')); shovel.position.set(S.x0 + 1.1, S.y + 0.02, S.z1 - 0.35); shovel.rotation.y = 0.6; scene.add(shovel);
+  const wood = lam('#a5774c');
+  for (const B of PARK.boxes) {
+    if (B.mat !== 'wood') continue;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(B.x1 - B.x0, B.y1 - B.y0, B.z1 - B.z0), wood);
+    m.position.set((B.x0 + B.x1) / 2, (B.y0 + B.y1) / 2, (B.z0 + B.z1) / 2); scene.add(m);
+  }
+  // すべり台（ステンレスの滑る面 + 赤い手すり + 踊り場 + はしご）
+  const L = PARK.slide, zc = (L.z0 + L.z1) / 2, zw = L.z1 - L.z0;
+  const len = Math.hypot(L.bx - L.ax, L.by - L.ay), ang = Math.atan2(L.by - L.ay, L.bx - L.ax);
+  const steel = new THREE.MeshLambertMaterial({ color: '#c9ccd2', emissive: '#3c3e44' });
+  const bed = new THREE.Mesh(new THREE.BoxGeometry(len, 0.03, zw), steel); bed.position.set((L.ax + L.bx) / 2, (L.ay + L.by) / 2 - 0.015, zc); bed.rotation.z = ang; scene.add(bed);
+  const run = new THREE.Mesh(new THREE.BoxGeometry(L.cx - L.bx, 0.03, zw), steel); run.position.set((L.bx + L.cx) / 2, L.by - 0.015, zc); scene.add(run);
+  const red = lam('#c9463a');
+  for (const z of [L.z0 - 0.02, L.z1 + 0.02]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(len, 0.14, 0.035), red); rail.position.set((L.ax + L.bx) / 2, (L.ay + L.by) / 2 + 0.05, z); rail.rotation.z = ang; scene.add(rail);
+  }
+  const deck = PARK.boxes.find(b => b.mat === 'deck');
+  const dk = new THREE.Mesh(new THREE.BoxGeometry(deck.x1 - deck.x0, deck.y1 - deck.y0, deck.z1 - deck.z0), lam('#3f7f6a')); dk.position.set((deck.x0 + deck.x1) / 2, (deck.y0 + deck.y1) / 2, zc); scene.add(dk);
+  for (const x of [deck.x0 + 0.05, deck.x1 - 0.05]) for (const z of [L.z0 - 0.03, L.z1 + 0.03]) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, L.ay + 0.7, 6), frameMat); p.position.set(x, (L.ay + 0.7) / 2, z); scene.add(p); }
+  for (const z of [L.z0 - 0.03, L.z1 + 0.03]) { const r = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, deck.x1 - deck.x0, 6), red); r.rotation.z = Math.PI / 2; r.position.set((deck.x0 + deck.x1) / 2, L.ay + 0.6, z); scene.add(r); }
+  // はしご
+  const lx0 = deck.x0 - 0.55;
+  for (const z of [L.z0, L.z1]) { const s = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 1, 6), frameMat); limb(s, tmpA.set(lx0, 0, z), tmpB.set(deck.x0, L.ay, z)); scene.add(s); }
+  for (let i = 1; i <= 5; i++) { const k = i / 6, st = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, zw, 5), lam('#d8d0c0')); st.rotation.x = Math.PI / 2; st.position.set(lerp(lx0, deck.x0, k), L.ay * k, zc); scene.add(st); }
+  // 植え込み（丸く刈ったツツジ）: 公園の奥の端と、奥のフェンス沿い
+  const bushes = [];
+  const SH = PARK.shrub;
+  for (let z = -SH.z; z <= SH.z; z += 0.9) bushes.push([lerp(SH.x0, SH.x1, 0.5) + (prand() - 0.5) * 0.3, z + (prand() - 0.5) * 0.3, 0.95 + prand() * 0.2, SH.top]);
+  for (let x = -7; x < SH.x0 - 1; x += 1.0) bushes.push([x + (prand() - 0.5) * 0.3, -8.6 + (prand() - 0.5) * 0.3, 0.8 + prand() * 0.25, 0.7]);
+  const bm = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 1), lam('#4f6e3c', { flatShading: true }), bushes.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), c = new THREE.Color();
+  bushes.forEach(([x, z, s, top], i) => { sc.set(s * 0.62, top * 0.62, s * 0.62); m4.compose(new THREE.Vector3(x, top * 0.5, z), q, sc); bm.setMatrixAt(i, m4); c.set('#4f6e3c').offsetHSL((prand() - 0.5) * 0.04, 0, (prand() - 0.5) * 0.08); bm.setColorAt(i, c); });
+  scene.add(bm);
+  // フェンス（緑の金網）: 奥の端と、奥（住宅街の側）
+  const meshTex = (w, h) => canvasTex(64, 64, (g, cw, ch) => { g.clearRect(0, 0, cw, ch); g.strokeStyle = 'rgba(60,96,74,.85)'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(0, 0); g.lineTo(cw, ch); g.moveTo(cw, 0); g.lineTo(0, ch); g.stroke(); }, [w / 0.14, h / 0.14]);
+  const postMat = lam('#3c6a52');
+  const fenceAt = (x0, z0, x1, z1, h) => {
+    const len = Math.hypot(x1 - x0, z1 - z0);
+    const net = new THREE.Mesh(new THREE.PlaneGeometry(len, h), new THREE.MeshBasicMaterial({ map: meshTex(len, h), transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+    net.position.set((x0 + x1) / 2, h / 2, (z0 + z1) / 2); net.rotation.y = -Math.atan2(z1 - z0, x1 - x0); scene.add(net);
+    const n = Math.ceil(len / 2.5);
+    for (let i = 0; i <= n; i++) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, h + 0.05, 5), postMat); p.position.set(lerp(x0, x1, i / n), h / 2, lerp(z0, z1, i / n)); scene.add(p); }
+    const rail = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1, 5), postMat); limb(rail, tmpA.set(x0, h, z0), tmpB.set(x1, h, z1)); scene.add(rail);
+  };
+  fenceAt(PARK.fenceX + 0.03, -9.5, PARK.fenceX + 0.03, 9, PARK.fenceH);
+  fenceAt(-9, -9.5, PARK.fenceX + 0.03, -9.5, 1.8);
+  // 住宅街（フェンスの向こう）
+  const roofCols = ['#5a4a4e', '#6a4038', '#45505e', '#7a5a3e', '#4e5a4a'], wallCols = ['#e6dccb', '#d8c8b0', '#cfd2cc', '#e2cfb8', '#bfb6aa', '#d6c0aa'];
+  const winTex = canvasTex(64, 64, (g, w, h) => { g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h); g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(w / 2 - 2, 0, 4, h); g.fillRect(0, h / 2 - 2, w, 4); });
+  const house = (x, z, w, d, h, rot) => {
+    const grp = new THREE.Group(); grp.position.set(x, 0, z); grp.rotation.y = rot; scene.add(grp);
+    const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), lam(wallCols[Math.floor(prand() * wallCols.length)])); body.position.y = h / 2; grp.add(body);
+    const rs = new THREE.Shape(); rs.moveTo(-w / 2 - 0.3, 0); rs.lineTo(0, h * 0.42); rs.lineTo(w / 2 + 0.3, 0); rs.closePath();
+    const roof = new THREE.Mesh(new THREE.ExtrudeGeometry(rs, { depth: d + 0.5, bevelEnabled: false }), lam(roofCols[Math.floor(prand() * roofCols.length)], { flatShading: true })); roof.position.set(0, h, -d / 2 - 0.25); grp.add(roof);
+    // 灯りのついた窓（夕方）
+    for (let fl = 0; fl < (h > 4.5 ? 2 : 1); fl++) for (let i = 0; i < Math.floor(w / 2.2); i++) {
+      if (prand() < 0.35) continue;
+      const wm = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.8), new THREE.MeshBasicMaterial({ color: '#ffd59a', map: winTex, fog: true }));
+      wm.position.set(-w / 2 + 1.1 + i * 2.2, 1.4 + fl * 2.6, d / 2 + 0.01); grp.add(wm); windows.push(wm);
+    }
+  };
+  for (let x = -16; x < 60; x += 6.5 + prand() * 2) house(x, -15 - prand() * 2, 5 + prand() * 2, 5.5, 4 + prand() * 2.5, (prand() - 0.5) * 0.08);
+  for (let x = -12; x < 60; x += 7 + prand() * 3) house(x + 3, -24 - prand() * 3, 5.5 + prand() * 2, 6, 5 + prand() * 2, (prand() - 0.5) * 0.1);
+  for (let z = -10; z < 12; z += 7 + prand() * 2) house(36 + prand() * 3, z, 6, 5.5, 4.5 + prand() * 2, Math.PI / 2 + (prand() - 0.5) * 0.08);
+  // 電柱と電線
+  const poleMat = lam('#6e6660'), wire = new THREE.LineBasicMaterial({ color: '#3a3236' });
+  const poles = [];
+  for (let x = -14; x < 60; x += 14) { const p = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 9, 6), poleMat); p.position.set(x, 4.5, -12); scene.add(p); const arm = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.08, 1.4), poleMat); arm.position.set(x, 8.4, -12); scene.add(arm); poles.push(x); }
+  for (const dz of [-0.6, 0.6]) for (let i = 0; i < poles.length - 1; i++) {
+    const pts = []; for (let k = 0; k <= 12; k++) { const t = k / 12; pts.push(new THREE.Vector3(lerp(poles[i], poles[i + 1], t), 8.45 - Math.sin(t * Math.PI) * 0.6, -12 + dz)); }
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wire));
+  }
+  // 木と街灯
+  const trees = [[-6, -6.5, 1.2], [3.5, -7.5, 1.0], [12, -7.8, 1.3], [19.5, -7.2, 1.1], [-8.5, 2.5, 1.2], [31, -6, 1.4], [31.5, 4, 1.2]];
+  const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1.6, 1), lam('#4b5f3a', { flatShading: true }), trees.length);
+  const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.16, 0.22, 2.6, 6), lam('#5b4636'), trees.length);
+  trees.forEach(([x, z, s], i) => { sc.set(s, s * 1.1, s); m4.compose(new THREE.Vector3(x, 2.6 * s + 1.2 * s, z), q, sc); crown.setMatrixAt(i, m4); m4.compose(new THREE.Vector3(x, 1.3 * s, z), q, sc.set(s, s, s)); trunk.setMatrixAt(i, m4); });
+  scene.add(crown, trunk);
+  const lamp = new THREE.Group(); lamp.position.set(12.5, 0, -4.2); scene.add(lamp);
+  const lp = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.07, 3.6, 6), lam('#4e5a5e')); lp.position.y = 1.8; lamp.add(lp);
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.17, 10, 8), new THREE.MeshBasicMaterial({ color: '#ffe6b0' })); bulb.position.y = 3.7; lamp.add(bulb);
+  const glowTex = canvasTex(64, 64, (g, w, h) => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,230,170,.8)'); gr.addColorStop(1, 'rgba(255,220,160,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+  const gl = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false })); gl.scale.set(1.6, 1.6, 1); gl.position.y = 3.7; lamp.add(gl);
+  // ベンチ（後ろのほう）
+  const bench = new THREE.Group(); bench.position.set(-5.2, 0, -1.2); scene.add(bench);
+  const bs = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.06, 0.42), lam('#9a6a44')); bs.position.y = 0.44; bench.add(bs);
+  const bb = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.36, 0.05), lam('#9a6a44')); bb.position.set(0, 0.7, -0.2); bench.add(bb);
+  for (const x of [-0.7, 0.7]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.44, 0.4), lam('#4e4a4c')); l.position.set(x, 0.22, 0); bench.add(l); }
+}
+buildPark();
+
+/* 自己ベストの旗 */
+const flag = new THREE.Group(); scene.add(flag);
+let flagLabel = null;
+{
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.8, 6), lam('#e9e4d8')); pole.position.y = 0.9; flag.add(pole);
+  const shape = new THREE.Shape(); shape.moveTo(0, 0); shape.lineTo(0.75, -0.24); shape.lineTo(0, -0.48); shape.closePath();
+  const cloth = new THREE.Mesh(new THREE.ShapeGeometry(shape), lam('#e8843c', { side: THREE.DoubleSide })); cloth.position.set(0.03, 1.8, 0); flag.add(cloth);
+  flag.userData.cloth = cloth;
+}
+function updateFlag() {
+  flag.visible = rec.best > 0.5;
+  flag.position.set(rec.best, 0, -1.25);
+  if (flagLabel) { flag.remove(flagLabel); flagLabel.material.map.dispose(); }
+  const tex = canvasTex(256, 96, (g, w, h) => {
+    g.fillStyle = 'rgba(138,58,44,.94)'; g.beginPath(); g.roundRect(4, 8, w - 8, h - 16, 14); g.fill();
+    g.fillStyle = '#f8efe0'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `700 26px ${FB}`; g.fillText('ベスト', w / 2, 32);
+    g.font = `34px ${FD}`; g.fillText(`${m1(rec.best)}m`, w / 2, 64);
+  });
+  flagLabel = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true }));
+  flagLabel.scale.set(1.5, 0.56, 1); flagLabel.position.set(0, 2.35, 0); flag.add(flagLabel);
+}
+
+/* ---------- ゲーム状態 ---------- */
+let state = 'loading';     // loading | title | play | over
+let phase = 'swing';       // swing | fly | rest
+let sw = swingInit(), res = null, shoe = null, pt = 0, bI = 0, wasNew = false, lastDist = 0, kickInfo = null;
+let phaseT = 0, tt = 0, overShownAt = 0, pops = [], ext = false, press = null, keyExt = false, kickLock = 0;
+let lastW = 0, creakCool = 0, slackShown = false, goodK = 0, shake = 0;
+let seed = HASH.has('seed') ? (+HASH.get('seed') >>> 0) : (Math.random() * 2 ** 32) >>> 0;
+const nextSeed = () => { const s = seed; seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return s; };
+const START_AMP = HASH.has('amp') ? clamp(+HASH.get('amp') || 40, 5, 85) * DEG : 0.7;   // 最初は誰かに押してもらった振れ幅から
+
+function newRound() {
+  sw = swingInit(START_AMP); res = null; shoe = null; pt = 0; bI = 0; kickInfo = null;
+  phase = 'swing'; phaseT = 0; ext = false; press = null; keyExt = false; slackShown = false; goodK = 0;
+  pops = []; snapCam = true; camPan = 0;
+  paintSky(rec.weather);
+  updateHud();
+}
+
+/* ---------- 蹴る ---------- */
+function kickNow(k, yaw) {
+  if (state !== 'play' || phase !== 'swing') return false;
+  k = clamp(k, 1, 9);
+  const s = nextSeed();
+  shoe = kickShoe(sw, k, yaw, s);
+  const v0 = shoe.v0, a0 = shoe.a0;
+  res = simShoe(shoe, rec.weather, true);
+  res.path = shoe.path; res.v0 = v0; res.a0 = a0; res.k = k; res.th = sw.th; res.w = sw.w; res.amp = sw.peak;
+  kickInfo = { t: 0 };
+  rec.plays++; save();
+  phase = 'fly'; phaseT = 0; pt = 0; bI = 0; press = null; kickLock = 0.5; $('hud').hidden = true;
+  sKick(k);
+  flyWindStart();
+  if (Math.cos(res.a0) < 0) pops.push({ text: '後ろへ…！', life: 0, dur: 1.2, size: 26, small: true, cool: true });
+  else if (res.a0 > 72 * DEG) pops.push({ text: '高すぎ！', life: 0, dur: 1.2, size: 26, small: true, cool: true });
+  return true;
+}
+
+/* ---------- 1フレーム ---------- */
+function onRest() {
+  const d = res.back ? 0 : Math.floor(res.dist * 10 + 1e-6) / 10;
+  lastDist = d;
+  const prevBest = rec.best;
+  wasNew = d > rec.best + 1e-9 && d > 0;
+  if (wasNew) { rec.best = d; rec.bestWeather = rec.weather; }
+  if (res.back) rec.backs++;
+  rec.faces[res.face]++; rec.last = d;
+  res.wxPlayed = rec.weather;
+  rec.weather = FACE[res.face].wx;      // 占いが、次の回の天気になる
+  save();
+  if (wasNew) updateFlag();
+  phase = 'rest'; phaseT = 0;
+  flyWindStop();
+  const sub = res.back ? '後ろに飛んだ…' : res.mat === 'sand' ? '砂場で止まった' : res.mat === 'shrub' ? '植え込みに引っかかった' : res.over ? 'フェンスを越えた！' : wasNew && prevBest > 0 ? '自己ベスト！' : `靴が${FACE[res.face].name}`;
+  pops = pops.filter(p => !p.small);
+  pops.push({ text: `${d.toFixed(1)}m`, sub, life: 0, dur: 99, size: 72, big: true, hot: wasNew });
+  if (wasNew && prevBest > 0) sFanfare(); else sChime(d);
+}
+function step(dt) {
+  tt += dt; phaseT += dt;
+  if (kickLock > 0) kickLock -= dt;
+  // ブランコ（タイトルの間は自動でこぐ）
+  const n = Math.round(dt / SW_DT);
+  let want = ext || keyExt;
+  if (state === 'title' || state === 'loading') want = sw.peak < 38 * DEG ? sw.w > 0 : false;
+  if (state === 'play' && phase !== 'swing') want = kickInfo && kickInfo.t < 0.45;
+  if (state === 'over') want = false;
+  const prevW = sw.w;
+  for (let i = 0; i < n; i++) swingStep(sw, SW_DT, want);
+  if (kickInfo) kickInfo.t += dt;
+  // きしみ: 端で向きが変わるとき
+  creakCool -= dt;
+  if (Math.sign(sw.w) !== Math.sign(prevW) && creakCool < 0) { sCreak(sw.peak, sw.th > 0); creakCool = 0.4; }
+  if (sw.slackK > 0.35 && state === 'play' && phase === 'swing') { if (!slackShown) { slackShown = true; pops.push({ text: 'ひもがゆるむ！', life: 0, dur: 1.2, size: 24, small: true, cool: true }); sClunk(); if (!reduceMotion) shake = 0.25; } }
+  else if (sw.slackK === 0 && Math.abs(sw.th) < 0.5) slackShown = false;
+  // こぎ方の手ごたえ（エネルギーが入っているか）
+  if (state === 'play' && phase === 'swing') { const good = (want && sw.w > 0) || (!want && sw.w < 0); goodK += ((good ? 1 : 0) - goodK) * Math.min(1, dt * 3); swingWind(Math.abs(sw.w) * SW.L); }
+  else swingWind(0);
+  otherSwing.rotation.z = Math.sin(tt * 1.9) * 0.05;
+  if (state === 'play' && res && (phase === 'fly' || phase === 'rest')) {
+    pt += dt;
+    while (bI < shoe.bounces.length && shoe.bounces[bI].t <= pt) { const b = shoe.bounces[bI++]; sLand(b.v, b.mat); }
+    if (phase === 'fly' && pt >= res.t) onRest();
+    if (phase === 'fly') { const V = speedAt(pt); flyWindLevel(V); }
+  }
+  if (state === 'play' && phase === 'rest' && phaseT > 1.5) showOver();
+  if (shake > 0) shake -= dt;
+  for (const p of pops) p.life += dt;
+  pops = pops.filter(p => p.life < p.dur);
+}
+function speedAt(t) {
+  const P = res.path, j = Math.min(P.length - 1, Math.max(1, Math.round(t * 120)));
+  return Math.hypot(P[j][1] - P[j - 1][1], P[j][2] - P[j - 1][2], P[j][3] - P[j - 1][3]) * 120;
+}
+
+/* ---------- 描画 ---------- */
+const tmpV = new THREE.Vector3();
+function project(x, y, z) { tmpV.set(x, y, z).project(camera); return { x: (tmpV.x + 1) / 2 * W, y: (1 - tmpV.y) / 2 * H, front: tmpV.z < 1 }; }
+const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion();
+function poseShoe(t) {
+  const P = res.path; let lo = 0, hi = P.length - 1;
+  if (t >= P[hi][0]) { const p = P[hi]; shoeFly.position.set(p[1], p[2], p[3]); shoeFly.quaternion.set(p[4], p[5], p[6], p[7]); }
+  else {
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (P[m][0] <= t) lo = m; else hi = m; }
+    const a = P[lo], b = P[hi], k = clamp((t - a[0]) / (b[0] - a[0] || 1), 0, 1);
+    shoeFly.position.set(lerp(a[1], b[1], k), lerp(a[2], b[2], k), lerp(a[3], b[3], k));
+    shoeFly.quaternion.set(a[4], a[5], a[6], a[7]); _q.set(b[4], b[5], b[6], b[7]); shoeFly.quaternion.slerp(_q, k);
+  }
+  // 大きく描いたぶん、地面・砂にめりこまないよう持ち上げる
+  const q = [shoeFly.quaternion.x, shoeFly.quaternion.y, shoeFly.quaternion.z, shoeFly.quaternion.w];
+  let minY = 1e9; for (const lp of SHOE_PTS) { const r = qRot(q, lp); minY = Math.min(minY, r[1]); }
+  const p = shoeFly.position, S = PARK.sand;
+  const surf = (p.x > S.x0 && p.x < S.x1 && p.z > S.z0 && p.z < S.z1) ? S.y : 0;
+  const lowNow = p.y + minY * SHOE_SCALE, lowPhys = p.y + minY;
+  if (lowPhys < surf + 0.05 && lowNow < surf) p.y += Math.min(surf - lowNow, (SHOE_SCALE - 1) * -minY);
+}
+// 子どもとブランコを、物理の状態どおりに置く
+const HIP = new THREE.Vector3();
+function poseKid(s, shoeOn) {
+  const th = s.th, b = s.b, k = postureOf(s);
+  const S = seatPos(s);
+  const sag = s.slackK;
+  // 鎖: たるむと内側へ少し曲がる
+  for (const ch of chains) {
+    const ax = 0, ay = PIVOT_Y, bx = S.x, by = S.y;
+    const mx = (ax + bx) / 2 - Math.cos(th) * sag * 0.25, my = (ay + by) / 2 - Math.sin(th) * sag * 0.25;
+    let px = ax, py = ay;
+    for (let i = 0; i < CHN; i++) {
+      const t = (i + 1) / CHN, u = 1 - t;
+      const qx = u * u * ax + 2 * u * t * mx + t * t * bx, qy = u * u * ay + 2 * u * t * my + t * t * by;
+      limb(ch.segs[i], tmpA.set(px, py, ch.z), tmpB.set(qx, qy, ch.z)); px = qx; py = qy;
+    }
+  }
+  seat.position.set(S.x, S.y - 0.02, 0); seat.rotation.set(0, 0, th);
+  // 体: 座面から上へ（ひもに沿った上を β だけ後ろへ倒す）
+  const phi = th + b, ux = -Math.sin(phi), uy = Math.cos(phi);
+  const hip = HIP.set(S.x + ux * 0.12, S.y + uy * 0.12, 0);
+  kid.hips.position.copy(hip); kid.hips.scale.set(1, 0.75, 1.15); kid.hips.rotation.set(0, 0, phi);
+  const sh = new THREE.Vector3(hip.x + ux * 0.46, hip.y + uy * 0.46, 0);
+  kid.torso.position.set((hip.x + sh.x) / 2, (hip.y + sh.y) / 2, 0); kid.torso.rotation.set(0, 0, phi); kid.torso.scale.set(1, 0.5, 1.25);
+  const hd = new THREE.Vector3(sh.x + ux * 0.15, sh.y + uy * 0.15, 0);
+  kid.head.position.copy(hd); kid.hair.position.copy(hd); kid.hair.rotation.set(0, 0, phi - 0.25);
+  // 腕: 肩から鎖をにぎる手へ（にぎる所はひもの上のほう）
+  const gx = Math.sin(th) * (SW.L - 0.62), gy = PIVOT_Y - Math.cos(th) * (SW.L - 0.62);
+  kid.arms.forEach((a, i) => {
+    const z = i ? 0.2 : -0.2;
+    const shp = tmpB.set(sh.x - ux * 0.04, sh.y - uy * 0.04, z * 0.8);
+    const hand = new THREE.Vector3(gx, gy, SWZ[i] * 0.92);
+    const el = new THREE.Vector3((shp.x + hand.x) / 2 + Math.cos(th) * 0.08, (shp.y + hand.y) / 2 + Math.sin(th) * 0.08 - 0.03, (shp.z + hand.z) / 2);
+    limb(a[0], shp, el); limb(a[1], el, hand);
+  });
+  // 脚
+  const f = footPos(s);
+  kid.thighs.forEach((m, i) => {
+    const z = i ? 0.1 : -0.1;
+    limb(m, tmpB.set(hip.x, hip.y - 0.02, z), tmpA.set(f.kx, f.ky, z));
+    limb(kid.shins[i], tmpA.set(f.kx, f.ky, z), tmpB.set(f.kx + (f.x - f.kx) * 0.82, f.ky + (f.y - f.ky) * 0.82, z));
+    limb(kid.socks[i], tmpA.set(f.kx + (f.x - f.kx) * 0.8, f.ky + (f.y - f.ky) * 0.8, z), tmpB.set(f.x, f.y, z));
+  });
+  // 靴: すねに直角（つま先）
+  const ta = Math.atan2(f.shinX, -f.shinY);
+  shoeLeft.position.set(f.x + Math.cos(ta) * 0.03, f.y + Math.sin(ta) * 0.03 - 0.0, -0.1); shoeLeft.rotation.set(0, 0, ta);
+  if (shoeOn) { shoeFly.position.set(f.x + Math.cos(ta) * 0.03, f.y + Math.sin(ta) * 0.03, 0.1); shoeFly.rotation.set(0, 0, ta); shoeFly.scale.setScalar(1); }
+  else shoeFly.scale.setScalar(SHOE_SCALE);
+  kidBlob.position.set(S.x, 0.008, 0); const hgt = S.y; kidBlob.scale.set(1.1 + hgt * 0.3, 0.7 + hgt * 0.2, 1); kidBlob.material.opacity = clamp(1 - hgt / 4, 0.25, 0.8);
+}
+const camTarget = new THREE.Vector3(), camLookT = new THREE.Vector3(), camFrom = new THREE.Vector3(), camLookFrom = new THREE.Vector3();
+const camLook = new THREE.Vector3();
+let camMode = '', camBlend = 1, camPan = 0, snapCam = true;
+const ease = k => k * k * (3 - 2 * k);
+// 横から: 縦長でも振れ幅が全部入る距離
+function updateCamera(dt) {
+  const m = state === 'play' ? phase : state === 'over' ? 'rest' : 'swing';
+  if (m !== camMode) { camMode = m; camBlend = 0; camFrom.copy(camera.position); camLookFrom.copy(camLook); }
+  camBlend = Math.min(1, camBlend + dt * (m === 'fly' ? 1.6 : m === 'rest' ? 1.5 : 1.2));
+  if (m === 'swing' || !res) {
+    // 横から。座面を少しだけ追いかける（振れ幅が全部見えるように）
+    const t = Math.tan(camera.fov * DEG / 2), D = clamp(Math.max(1.95 / (t * camera.aspect), 2.35 / t), 4.2, 16), sx = seatPos(sw).x * (camera.aspect < 0.75 ? 0.6 : 0.3);
+    camPan += (sx - camPan) * Math.min(1, dt * 2.5);
+    camTarget.set(0.1 + camPan, camera.aspect < 0.75 ? 2.0 + D * 0.05 : 2.0, D); camLookT.set(0.1 + camPan, camera.aspect < 0.75 ? 2.35 : 1.8, 0);
+  } else if (m === 'fly') {
+    const p = shoeFly.position, D = clamp(4.6 + p.y * 0.55, 4.6, 11);
+    camTarget.set(p.x - 1.4, Math.max(1.3, p.y * 0.6 + 1.0), p.z + D);
+    camLookT.set(p.x + 0.8, Math.max(0.5, p.y * 0.8), p.z);
+    if (camBlend < 1) camBlend = Math.min(1, camBlend + dt * 1.2);
+  } else {
+    // 止まった靴を、斜め上から（下は結果のカードなので、靴は画面の上のほうに）
+    const p = shoeFly.position, k = reduceMotion ? 0 : Math.min(phaseT, 4) * 0.1, port = W / H < 0.75;
+    camTarget.set(p.x + Math.sin(0.4 + k) * 2.6, port ? 1.9 : 1.6, p.z + Math.cos(0.4 + k) * 2.6);
+    camLookT.set(p.x, port ? -1.45 : -1.0, p.z);
+  }
+  if (snapCam) { snapCam = false; camBlend = 1; camFrom.copy(camTarget); camLookFrom.copy(camLookT); }
+  const k = ease(camBlend);
+  camera.position.copy(camFrom).lerp(camTarget, k);
+  camLook.copy(camLookFrom).lerp(camLookT, k);
+  if (shake > 0) { camera.position.x += Math.sin(tt * 70) * 0.04 * shake / 0.25; camera.position.y += Math.cos(tt * 63) * 0.03 * shake / 0.25; }
+  camera.lookAt(camLook);
+}
+function render(dt) {
+  const flying = state !== 'title' && res && phase !== 'swing';
+  poseKid(sw, !flying);
+  if (flying) {
+    poseShoe(pt);
+    const p = shoeFly.position, S = PARK.sand;
+    const surf = (p.x > S.x0 && p.x < S.x1 && p.z > S.z0 && p.z < S.z1) ? S.y : 0;
+    shoeBlob.visible = true; const h = Math.max(0, p.y - surf);
+    shoeBlob.position.set(p.x, surf + 0.012, p.z); shoeBlob.scale.set(0.45 + h * 0.08, 0.3 + h * 0.06, 1); shoeBlob.material.opacity = clamp(1 - h / 6, 0.15, 0.85);
+  } else shoeBlob.visible = false;
+  flag.userData.cloth.rotation.y = Math.sin(tt * 2.6) * 0.2;
+  if (flagLabel) flagLabel.visible = camMode !== 'rest' || Math.abs(shoeFly.position.x - rec.best) > 1.2;
+  updateCamera(dt);
+  renderer.render(scene, camera);
+  drawFx();
+}
+function txt(s, x, y, size, fill = '#fbf5e8', stroke = 'rgba(40,24,30,.88)', lw = 6, font = FD) {
+  const wt = /^\d00 /.exec(font);   // 「700 ゴシック」→ 太さは大きさの前に
+  fx.font = wt ? `${wt[0]}${size}px ${font.slice(wt[0].length)}` : `${size}px ${font}`; fx.lineJoin = 'round'; fx.lineWidth = lw; fx.strokeStyle = stroke; fx.strokeText(s, x, y); fx.fillStyle = fill; fx.fillText(s, x, y);
+}
+function drawFx() {
+  fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fx.clearRect(0, 0, W, H);
+  fx.textAlign = 'center';
+  const sc = Math.min(1, W / 390 + 0.05);
+  if (state === 'play' && phase === 'swing') drawSwingUi(sc);
+  if (state === 'play' && phase === 'fly' && res) {
+    const d = shoeFly.position.x;
+    txt(`${d < 0 ? '-' : ''}${Math.abs(d).toFixed(1)}`, W / 2, safeT + 74, 54 * sc, d < 0 ? '#d8e2f2' : '#fbf5e8');
+    fx.textAlign = 'left'; txt('m', W / 2 + fx.measureText(Math.abs(d).toFixed(1)).width / 2 + 6, safeT + 74, 22 * sc); fx.textAlign = 'center';
+    txt(`初速 ${res.v0.toFixed(1)}m/s・角度 ${Math.round(res.a0 / DEG)}°`, W / 2, safeT + 100, 14 * sc, '#fbf5e8', 'rgba(40,24,30,.8)', 4, `700 ${FB}`);
+  }
+  for (const p of pops) {
+    const k = clamp(p.life / 0.18, 0, 1), out = clamp((p.dur - p.life) / 0.25, 0, 1);
+    if (p.big) {
+      if (state === 'over') continue;
+      const s = (1 + (reduceMotion ? 0 : (1 - k) * 0.5)) * sc, y = safeT + H * 0.2;
+      fx.save(); fx.translate(W / 2, y); fx.scale(s, s); fx.globalAlpha = k;
+      fx.fillStyle = 'rgba(232,132,60,.95)'; fx.font = `${p.size}px ${FD}`; fx.fillText(p.text, 4, 5);
+      txt(p.text, 0, 0, p.size, p.hot ? '#ffe2a6' : '#fbf5e8', '#2a2026', 9);
+      if (p.sub) txt(p.sub, 0, 42, 22, '#fbf5e8', '#2a2026', 6);
+      fx.restore();
+    } else {
+      fx.globalAlpha = Math.min(k, out);
+      txt(p.text, W / 2, safeT + H * 0.25 - p.life * 16, p.size * sc, p.cool ? '#d8e6f2' : '#ffe2a6', 'rgba(40,24,30,.9)', 6);
+    }
+    fx.globalAlpha = 1;
+  }
+  fx.textAlign = 'start';
+}
+function drawSwingUi(sc) {
+  const amp = Math.round(sw.peak / DEG);
+  // 振れ幅（大きく）と、こぎ方の手ごたえ
+  txt(`${amp}°`, W / 2, safeT + 74, 52 * sc);
+  txt('振れ幅', W / 2, safeT + 98, 13 * sc, '#fbf5e8', 'rgba(40,24,30,.8)', 4, `700 ${FB}`);
+  const gw = 120 * sc, gx = W / 2 - gw / 2, gy = safeT + 108;
+  fx.fillStyle = 'rgba(40,24,30,.45)'; fx.beginPath(); fx.roundRect(gx, gy, gw, 7, 4); fx.fill();
+  fx.fillStyle = goodK > 0.6 ? '#9fe08a' : goodK > 0.4 ? '#ffe2a6' : '#f0907a'; fx.beginPath(); fx.roundRect(gx, gy, gw * clamp(goodK, 0.04, 1), 7, 4); fx.fill();
+  // 足の向き（いま伸ばしているか）と、ひもの支点まわりの振れ幅の弧
+  const pv = project(0, PIVOT_Y, 0), sp = project(seatPos(sw).x, seatPos(sw).y, 0);
+  const R = Math.hypot(sp.x - pv.x, sp.y - pv.y);
+  fx.strokeStyle = 'rgba(251,245,232,.28)'; fx.lineWidth = 3; fx.setLineDash([3, 7]);
+  fx.beginPath(); fx.arc(pv.x, pv.y, R + 30, Math.PI / 2 - sw.peakF, Math.PI / 2 + sw.peakB, false); fx.stroke(); fx.setLineDash([]);
+  // 蹴り出す向き（ブランコの角度 = 靴の飛ぶ向き）
+  const f = sw.foot || footPos(sw), fp = project(f.x, f.y, 0.1);
+  const a = sw.th + 0.14, dir = Math.sign(sw.w) || 1, vx = sw.footV.x, vy = sw.footV.y;
+  const fwd = vx + Math.cos(a) * 5 > 0;
+  const len = 26 + Math.min(60, Math.hypot(vx, vy) * 9);
+  const ex = fp.x + Math.cos(a) * len, ey = fp.y - Math.sin(a) * len;
+  fx.strokeStyle = fwd ? 'rgba(255,226,166,.9)' : 'rgba(200,214,240,.7)'; fx.lineWidth = 3; fx.setLineDash([5, 6]);
+  fx.beginPath(); fx.moveTo(fp.x, fp.y); fx.lineTo(ex, ey); fx.stroke(); fx.setLineDash([]);
+  fx.fillStyle = fx.strokeStyle; fx.beginPath(); fx.arc(ex, ey, 4.5, 0, Math.PI * 2); fx.fill();
+  // 説明（はじめの数回はくわしく）
+  const help = rec.plays < 3;
+  const want = ext || keyExt;
+  const by = H - safeB - 74;
+  const goingFwd = sw.w > 0;
+  if (help) {
+    const cue = goingFwd ? (want ? 'そのまま伸ばして…' : '押して足を伸ばす！') : (want ? '離して足を曲げる！' : 'そのまま曲げて…');
+    const ok = goingFwd === want;
+    txt(cue, W / 2, by - 24, 19 * sc, ok ? '#c8f0b0' : '#ffe2a6', 'rgba(40,24,30,.9)', 6, `700 ${FB}`);
+    txt(goingFwd ? '→ 前へ振れている' : '← 後ろへ振れている', W / 2, by, 13 * sc, '#fbf5e8', 'rgba(40,24,30,.8)', 4, `700 ${FB}`);
+  } else {
+    txt(want ? '伸ばす' : '曲げる', W / 2, by - 16, 16 * sc, '#fbf5e8', 'rgba(40,24,30,.85)', 5, `700 ${FB}`);
+  }
+  const kh = amp >= 30 || !help;
+  if (kh) txt('好きな瞬間に、上へシュッと蹴り出す', W / 2, by + 22, 14 * sc, '#ffe2a6', 'rgba(40,24,30,.85)', 4, `700 ${FB}`);
+  if (press && press.pts.length > 1) {
+    const l = press.pts[press.pts.length - 1], up = press.y0 - l.y;
+    if (up > 14) { fx.globalAlpha = clamp(up / 60, 0, 1); txt('↑', l.x, l.y - 26, 30, '#ffe2a6'); fx.globalAlpha = 1; }
+  }
+}
+
+/* ---------- 結果 ---------- */
+const tomorrow = face => face === 'ura' ? '雨' : WEATHER[FACE[face].wx].name;
+const shareText = () => res.back ? '👟靴飛ばし 後ろに飛んだ…（0.0m）' : `👟靴飛ばし ${lastDist.toFixed(1)}m 飛んだ！（明日は${tomorrow(res.face)}）`;
+function showOver() {
+  if (state !== 'play' || phase === 'swing') return;
+  if (phase === 'fly') { pt = res.t; onRest(); }
+  state = 'over';
+  $('oScore').textContent = lastDist.toFixed(1);
+  const F = FACE[res.face];
+  $('oWxIcon').setAttribute('href', `#i-${F.wx}`);
+  $('oFortune').innerHTML = `<b>明日の天気: ${tomorrow(res.face)}</b><br>${F.say}<br><small>次の回は「${WEATHER[F.wx].name}」（${WX_NOTE[F.wx]}）</small>`;
+  const bits = [`振れ幅 ${Math.round(res.amp / DEG)}°`, `初速 ${res.v0.toFixed(1)}m/s`, `角度 ${Math.round(res.a0 / DEG)}°`, `蹴り ${res.k.toFixed(1)}m/s`];
+  let msg = bits.join('・');
+  if (res.back) msg = '後ろへ振れている時に蹴ると、後ろに飛ぶ。前へ振れている時に！';
+  else if (res.a0 > 68 * DEG) msg = '上に高く飛びすぎて、近くに落ちた。前の端より少し手前で蹴ると前へ伸びる。' + msg;
+  else if (res.mat === 'sand') msg = '砂場に落ちると転がらない。越えられるか？ ' + msg;
+  else if (res.amp < 35 * DEG && lastDist < 9) msg = 'まずは大きくこごう。前へ振れる間に足を伸ばす。' + msg;
+  else if (res.slide) msg = 'すべり台で跳ねた！ ' + msg;
+  $('oMsg').textContent = msg;
+  $('oBest').textContent = m1(rec.best); $('oPlays').textContent = rec.plays;
+  $('newRec').hidden = !wasNew;
+  $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({ text: `${shareText()}${wasNew && rec.plays > 1 ? ' 自己ベスト！' : ''}\n`, url: gameUrl(), hashtags: '靴飛ばし' });
+  $('copyMsg').textContent = '画面タップ・スペースでもう一回';
+  $('over').hidden = false; $('hud').hidden = true;
+  overShownAt = performance.now();
+  $('retryBtn').focus({ preventScroll: true });
+}
+
+/* ---------- シェア ---------- */
+// 公開先のURL。ローカルで開いたときもこれをシェアする
+const PUBLIC_URL = 'https://asobi.enludus.com/games/kutsu/';
+function gameUrl() {
+  try {
+    if (/^https?:$/.test(location.protocol) && location.hostname !== 'localhost') return location.origin + location.pathname;
+  } catch {}
+  return PUBLIC_URL;
+}
+
+/* ---------- HUD ---------- */
+function updateHud() {
+  $('hBest').textContent = rec.best ? `${m1(rec.best)}m` : '—';
+  $('hWx').textContent = WEATHER[rec.weather].name; $('hWxIcon').setAttribute('href', `#i-${rec.weather}`);
+}
+function fillTitle() { $('tBest').textContent = rec.best ? m1(rec.best) : '—'; $('tPlays').textContent = rec.plays; $('tWx').textContent = WEATHER[rec.weather].name; }
+
+/* ---------- 音（低めでやわらかく。2kHz以上は使わない） ---------- */
+let ac = null, master = null, noiseBuf = null, swWind = null, flyWind = null;
+function wakeAudio() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1900; lp.Q.value = 0.5;
+      master = ac.createDynamicsCompressor(); master.threshold.value = -16; master.ratio.value = 5;
+      master.connect(lp).connect(ac.destination);
+      const len = ac.sampleRate * 2; noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0); let b = 0;
+      for (let i = 0; i < len; i++) { b = b * 0.8 + (Math.random() * 2 - 1) * 0.2; d[i] = b * 2.2; }   // 丸めたノイズ（低め）
+      swWind = loopNoise(260);
+    }
+    if (ac.state === 'suspended') ac.resume();
+  } catch {}
+}
+const live = () => ac && state === 'play';
+function tone(freq, at, dur, vol, type = 'sine') {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at);
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  o.connect(g).connect(master); o.start(at); o.stop(at + dur + 0.05);
+  return o;
+}
+function noise(at, dur, vol, type, freq, q = 1, atk = 0.006) {
+  const s = ac.createBufferSource(); s.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1500;
+  const g = ac.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + atk); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  s.connect(f).connect(lp).connect(g).connect(master); s.start(at, Math.random() * 1.5); s.stop(at + dur + 0.05);
+  return { f, g };
+}
+function loopNoise(freq) {
+  const s = ac.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+  const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = freq; f.Q.value = 0.6;
+  const g = ac.createGain(); g.gain.value = 0.0001;
+  s.connect(f).connect(g).connect(master); s.start();
+  return { s, f, g };
+}
+// ブランコのきしみ「ギィ…」: 低いのこぎり波を細かく揺らして、ローパスで丸める
+function sCreak(amp, front) {
+  try {
+    if (!ac || document.hidden) return;
+    const n0 = ac.currentTime, k = clamp(amp / (70 * DEG), 0.15, 1), vol = (state === 'play' ? 0.05 : 0.02) * k;
+    const o = ac.createOscillator(), g = ac.createGain(), f = ac.createBiquadFilter();
+    const base = front ? 210 : 175;
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(base, n0); o.frequency.linearRampToValueAtTime(base * 1.18, n0 + 0.12); o.frequency.linearRampToValueAtTime(base * 0.94, n0 + 0.32);
+    const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = 38; lg.gain.value = 14; lfo.connect(lg).connect(o.frequency); lfo.start(n0); lfo.stop(n0 + 0.4);
+    f.type = 'lowpass'; f.frequency.value = 700; f.Q.value = 3;
+    g.gain.setValueAtTime(0.0001, n0); g.gain.exponentialRampToValueAtTime(vol, n0 + 0.05); g.gain.exponentialRampToValueAtTime(0.0001, n0 + 0.36);
+    o.connect(f).connect(g).connect(master); o.start(n0); o.stop(n0 + 0.4);
+  } catch {}
+}
+function sClunk() { try { if (!live()) return; const n0 = ac.currentTime; tone(120, n0, 0.18, 0.1, 'triangle'); noise(n0, 0.1, 0.08, 'bandpass', 500, 2); } catch {} }
+function swingWind(v) { try { if (!swWind) return; const n0 = ac.currentTime; swWind.g.gain.setTargetAtTime(state === 'play' ? clamp(v * v * 0.0014, 0.0001, 0.06) : 0.0001, n0, 0.12); swWind.f.frequency.setTargetAtTime(160 + v * 40, n0, 0.15); } catch {} }
+function sKick(k) { try { if (!live()) return; const n0 = ac.currentTime, kk = clamp(k / 9, 0, 1); const { f } = noise(n0, 0.24, 0.1 + kk * 0.12, 'bandpass', 320, 1.3, 0.02); f.frequency.exponentialRampToValueAtTime(800 + kk * 400, n0 + 0.1); f.frequency.exponentialRampToValueAtTime(400, n0 + 0.24); tone(150, n0, 0.08, 0.06, 'triangle'); } catch {} }
+function flyWindStart() { try { if (!ac) return; flyWindStop(); flyWind = loopNoise(300); } catch {} }
+function flyWindLevel(V) { try { if (!flyWind) return; const n0 = ac.currentTime; flyWind.g.gain.setTargetAtTime(clamp(V * V * 0.0011, 0.0001, 0.13), n0, 0.08); flyWind.f.frequency.setTargetAtTime(200 + V * 45, n0, 0.1); } catch {} }
+function flyWindStop() { try { if (!flyWind) return; const w = flyWind; flyWind = null; const n0 = ac.currentTime; w.g.gain.setTargetAtTime(0.0001, n0, 0.1); w.s.stop(n0 + 0.6); } catch {} }
+// 靴が落ちる「トッ」（地面）・「ザッ」（砂）・「コン」（すべり台）・「ガサッ」（植え込み）
+function sLand(v, mat) {
+  try {
+    if (!live()) return;
+    const n0 = ac.currentTime, k = clamp(v / 9, 0.08, 1);
+    if (mat === 'sand') { noise(n0, 0.16, 0.12 * k + 0.03, 'lowpass', 520, 0.7, 0.01); return; }
+    if (mat === 'shrub') { noise(n0, 0.22, 0.12 * k + 0.04, 'bandpass', 650, 1.0, 0.01); noise(n0 + 0.08, 0.16, 0.06 * k, 'bandpass', 480, 1.0, 0.01); return; }
+    if (mat === 'slide') { tone(520, n0, 0.35, 0.07 * k + 0.02, 'triangle'); tone(780, n0, 0.25, 0.03 * k, 'sine'); return; }
+    if (mat === 'fence') { noise(n0, 0.2, 0.1 * k + 0.03, 'bandpass', 900, 3); tone(260, n0, 0.2, 0.05 * k, 'triangle'); return; }
+    const o = tone(170 + 40 * k, n0, 0.1, 0.1 * k + 0.03); o.frequency.exponentialRampToValueAtTime(90, n0 + 0.09);
+    noise(n0, 0.07, 0.1 * k + 0.02, 'lowpass', 750, 0.8, 0.003);
+  } catch {}
+}
+function sChime(d) { try { if (!live()) return; const n0 = ac.currentTime + 0.1, base = d >= 20 ? 392 : d >= 12 ? 349 : 294; tone(base, n0, 0.45, 0.07); tone(base * 1.25, n0 + 0.1, 0.55, 0.06); } catch {} }
+function sFanfare() { try { if (!live()) return; const n0 = ac.currentTime + 0.1; [[392, 0], [494, 0.12], [587, 0.24], [784, 0.4]].forEach(([f, t]) => { tone(f, n0 + t, 0.5, 0.07); tone(f / 2, n0 + t, 0.5, 0.04); }); } catch {} }
+
+/* ---------- ループ ---------- */
+let acc = 0, lastTs = performance.now(), frozen = false;
+function frame(ts2) {
+  const el = Math.min(100, ts2 - lastTs); acc += el; lastTs = ts2;
+  let k = 0;
+  while (acc >= 1000 / 60 && k < 4) { step(1 / 60); acc -= 1000 / 60; k++; }
+  if (k >= 4) acc = 0;
+  if (!frozen) render(k / 60);
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 入力 ---------- */
+function start() {
+  wakeAudio(); state = 'play';
+  $('title').hidden = true; $('over').hidden = true; $('hud').hidden = false;
+  newRound();
+}
+function skipToResult() { if (state === 'play' && phase === 'rest' && phaseT > 0.3) showOver(); }
+const evT = e => (e.timeStamp > 0 && Math.abs(e.timeStamp - performance.now()) < 5000) ? e.timeStamp : performance.now();
+// 上へのスワイプの速さ（画面の高さ/秒）
+function swipeSpeed(pts) {
+  const last = pts[pts.length - 1];
+  let i = pts.length - 1; while (i > 0 && last.t - pts[i - 1].t < 90) i--;
+  const a = pts[Math.max(0, i - 1)], dt = Math.max(16, last.t - a.t) / 1000;
+  return { up: (a.y - last.y) / dt / H, side: (last.x - a.x) / dt / H };
+}
+const kickOfSwipe = sp => clamp(0.6 + 1.75 * sp, 1, 9);
+function tryKick(final) {
+  if (!press || kickLock > 0) return false;
+  const pts = press.pts, last = pts[pts.length - 1], up = press.y0 - last.y;
+  const v = swipeSpeed(pts);
+  if (up > Math.max(36, H * 0.05) && v.up > (final ? 0.7 : 0.9)) {
+    const yaw = clamp(Math.atan2(last.x - press.x0, up), -0.6, 0.6) * 0.12;
+    const k = kickOfSwipe(Math.hypot(v.up, v.side * 0.5));
+    press.kicked = true;
+    return kickNow(k, -yaw);
+  }
+  return false;
+}
+fxc.addEventListener('pointerdown', e => {
+  e.preventDefault(); wakeAudio();
+  if (state !== 'play') return;
+  if (phase === 'rest') { skipToResult(); return; }
+  if (phase !== 'swing') return;
+  try { fxc.setPointerCapture(e.pointerId); } catch {}
+  press = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: evT(e), was: ext, pts: [{ x: e.clientX, y: e.clientY, t: evT(e) }] };
+  ext = true;
+});
+addEventListener('pointermove', e => {
+  if (!press || e.pointerId !== press.id) return;
+  press.pts.push({ x: e.clientX, y: e.clientY, t: evT(e) }); if (press.pts.length > 60) press.pts.splice(0, press.pts.length - 60);
+  if (!press.kicked && state === 'play' && phase === 'swing') tryKick(false);
+});
+addEventListener('pointerup', e => {
+  if (!press || e.pointerId !== press.id) return;
+  const p = press;
+  if (!p.kicked) {
+    const lp = p.pts[p.pts.length - 1], tu = evT(e);
+    if (Math.hypot(e.clientX - lp.x, e.clientY - lp.y) > 2) p.pts.push({ x: e.clientX, y: e.clientY, t: tu });
+    if (tryKick(true)) { press = null; return; }
+    const moved = Math.hypot(e.clientX - p.x0, e.clientY - p.y0);
+    // 短いタップ: 伸ばす⇔曲げる を切り替える / 長押し: 離したら曲げる
+    if (tu - p.t0 < 220 && moved < 24) ext = !p.was;
+    else ext = false;
+    if (p.y0 - e.clientY > 30 && state === 'play' && phase === 'swing') pops.push({ text: 'もっと速く、上へシュッと！', life: 0, dur: 1.2, size: 20, small: true });
+  }
+  press = null;
+});
+addEventListener('pointercancel', () => { press = null; ext = false; });
+fxc.addEventListener('contextmenu', e => e.preventDefault());
+for (const id of ['title', 'over']) {
+  $(id).addEventListener('pointerdown', e => {
+    if (e.target.closest('button, a') || state === 'loading') return;
+    if (id === 'over' && performance.now() - overShownAt < 400) return;
+    e.preventDefault(); start();
+  });
+}
+addEventListener('keydown', e => {
+  if (state === 'play') {
+    if (phase === 'swing') {
+      if (e.code === 'Space' || e.code === 'ArrowDown') { e.preventDefault(); wakeAudio(); keyExt = true; return; }
+      if ((e.code === 'ArrowUp' || e.code === 'Enter' || e.code === 'KeyK') && !e.repeat) { e.preventDefault(); kickNow(6.5, 0); return; }
+      return;
+    }
+    if ((e.code === 'Space' || e.code === 'Enter') && !e.repeat) { e.preventDefault(); skipToResult(); }
+    return;
+  }
+  if (e.code !== 'Space' && e.code !== 'Enter') return;
+  if (state === 'loading') return;
+  const el = document.activeElement;
+  if (el && el !== $('retryBtn') && el !== $('startBtn') && el.matches('button, a, input')) return;
+  if (state === 'over' && performance.now() - overShownAt < 400) { e.preventDefault(); return; }
+  e.preventDefault(); start();
+  if (e.code === 'Space') keyExt = false;
+});
+addEventListener('keyup', e => { if (e.code === 'Space' || e.code === 'ArrowDown') keyExt = false; });
+addEventListener('blur', () => { keyExt = false; ext = false; press = null; });
+$('startBtn').addEventListener('click', start);
+$('retryBtn').addEventListener('click', start);
+$('copyBtn').addEventListener('click', () => {
+  const text = `${shareText()} ${gameUrl()}`;
+  const msg = $('copyMsg');
+  const fallback = () => { msg.textContent = text; const r = document.createRange(); r.selectNodeContents(msg); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.style.userSelect = 'text'; };
+  try { navigator.clipboard.writeText(text).then(() => { msg.textContent = 'コピーしました'; }, fallback); } catch { fallback(); }
+});
+
+/* ---------- 調整・検証用（#debug のときだけ） ---------- */
+if (HASH.has('debug')) {
+  window.__kutsu = {
+    info: () => ({ seat: seatPos(sw), state, phase, pt, ext: ext || keyExt, th: sw.th / DEG, w: sw.w, amp: sw.peak / DEG, slack: sw.slackK, dist: lastDist, res: res ? { dist: res.dist, face: res.face, mat: res.mat, back: res.back, t: res.t, v0: res.v0, a0: res.a0 / DEG, slide: res.slide } : null, rec }),
+    kick: (k = 6, yaw = 0) => kickNow(k, yaw), setExt: b => { ext = !!b; }, setSwing: (thDeg, w = 0) => { sw.th = thDeg * DEG; sw.w = w; sw.peak = sw.peakF = sw.peakB = Math.abs(thDeg) * DEG; },
+    freeze: b => { frozen = !!b; }, look: (px, py, pz, lx, ly, lz) => { frozen = true; camera.position.set(px, py, pz); camera.lookAt(lx, ly, lz); renderer.render(scene, camera); }, swingInit, swingStep, kickShoe, simShoe, PARK, WEATHER, scene, camera,
+  };
+}
+
+/* ---------- はじめ ---------- */
+try { await Promise.race([document.fonts.load(`40px "Dela Gothic One"`), new Promise(r => setTimeout(r, 1500))]); } catch {}
+buildLabels();
+updateFlag();
+paintSky(rec.weather);
+sw = swingInit(0.5);
+state = 'title';
+fillTitle(); updateHud();
+$('startBtn').disabled = false; $('startBtn').textContent = 'ブランコに乗る';
+$('startBtn').focus({ preventScroll: true });
+requestAnimationFrame(frame);
+</script>
+<a class="hub-back" id="hubBack" href="/" aria-label="あそび横丁（ゲーム一覧）にもどる" style="bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 10px);">← 横丁</a>
+<script>
+// プレイ中でもゲーム一覧に戻れるボタン。押してもゲームの入力（タップ・ドラッグ）に伝わらないようにする
+for (const ev of ['pointerdown', 'touchstart', 'mousedown']) document.getElementById('hubBack').addEventListener(ev, e => e.stopPropagation(), { passive: true });
+</script>
+</body>
+</html>
