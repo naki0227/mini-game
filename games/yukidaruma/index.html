@@ -1,0 +1,1619 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>雪だるま転がし</title>
+<meta name="description" content="雪の積もった夕方の村の坂道で、雪玉を押して転がし、雪をくっつけて大きくする。新雪は早く育ち、踏み固めた道や土の出た所では育たない。大きく重くなるほど曲がらず、坂で勝手に転がり、ぶつかると割れやすい。崩さずどこまで大きくできるか、最後に頭をのせて雪だるま完成。転がりと衝撃まで計算する3D物理のブラウザゲーム。ログイン不要。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="雪だるま転がし">
+<meta property="og:description" content="雪玉を押して、坂を転がして、どこまで大きく？ 割らずに、川に落とさずに。最後に頭をのせて雪だるま完成。">
+<meta property="og:url" content="https://asobi.enludus.com/games/yukidaruma/">
+<meta property="og:image" content="https://asobi.enludus.com/games/yukidaruma/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%9B%84%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+:root { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+/* 全画面 WebGL（夕方の雪の村。雪玉のうしろ上から見る）+ 2D の演出レイヤー（直径・大きさの目盛り）。タイトル/結果は下のカード1枚 */
+:root {
+  --sky: #e9b9a0;        /* 夕焼けの雪空 */
+  --ink: #23283a;        /* 夕暮れの藍墨 */
+  --paper: #f7f3ee;
+  --noren: #2c3d5c;      /* 雪国の藍 */
+  --noren-ink: #f5efe6;
+  --beni: #c4462f;       /* 手袋の紅 */
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--sky); color: var(--ink);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+#gl, #fx { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#fx { touch-action: none; cursor: grab; }
+
+.overlay {
+  position: fixed; inset: 0; display: grid; z-index: 40;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: 16px;
+  touch-action: none; cursor: pointer; overflow: hidden;
+}
+#title { place-items: end center; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); background: linear-gradient(to top, rgba(28, 30, 48, .5), rgba(28, 30, 48, 0) 62%); }
+#over { place-items: end center; background: linear-gradient(to top, rgba(28, 30, 48, .55), rgba(28, 30, 48, 0) 66%); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); }
+.card {
+  width: min(360px, 100%); background: var(--paper); color: var(--ink);
+  border-radius: 10px; overflow: hidden; box-shadow: 0 10px 40px rgba(20, 22, 40, .42);
+  text-align: center; cursor: default;
+}
+.noren {
+  background: var(--noren); color: var(--noren-ink);
+  display: flex; gap: 3px;
+  padding-top: 16px;
+}
+.noren span {
+  flex: 1; background: var(--noren); border-bottom: 3px solid rgba(255,255,255,.08);
+  font-family: var(--font-display); font-size: 32px; line-height: 1; padding-block: 6px 14px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.2); white-space: nowrap;
+}
+.noren span.w { flex: 1.7; font-size: 26px; padding-top: 9px; }
+.noren.result { padding-top: 10px; }
+.noren.result span { font-size: 26px; padding-block: 4px 10px; }
+.noren.result.long span { font-size: 21px; padding-top: 7px; }
+.body { padding: 16px 20px 18px; display: grid; gap: 11px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.7; text-wrap: balance; }
+.score { font-family: var(--font-display); font-size: 60px; line-height: 1; font-variant-numeric: tabular-nums; }
+.score small { font-size: 26px; margin-left: 4px; }
+.passed { margin: -2px 0 0; font-size: 15px; font-weight: 700; color: var(--beni); min-height: 1.4em; }
+.meta { display: flex; justify-content: center; gap: 6px 16px; font-size: 13px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.meta b { font-size: 16px; }
+.badge {
+  justify-self: center; background: var(--beni); color: #fff; font-weight: 700;
+  font-size: 12px; letter-spacing: .14em; padding: 3px 10px; border-radius: 99px;
+}
+#over .lead { font-size: 13px; line-height: 1.55; }
+#over .body { gap: 9px; padding-block: 12px 14px; }
+.btns { display: grid; gap: 8px; }
+.btns .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+button {
+  font: inherit; font-weight: 700; font-size: 16px; border: 0; border-radius: 8px;
+  padding: 13px 16px; cursor: pointer;
+  background: var(--noren); color: var(--noren-ink); box-shadow: 0 3px 0 #18233a;
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 #18233a; }
+button:disabled { opacity: .6; cursor: progress; }
+a.xbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font-weight: 700; font-size: 16px; border-radius: 8px; padding: 13px 16px;
+  background: #0f1419; color: #fff; box-shadow: 0 3px 0 #000;
+}
+a.xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+a.xbtn:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+a.xbtn svg { width: 16px; height: 16px; fill: currentColor; }
+button.sub { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); padding-inline: 8px; font-size: 15px; }
+button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.how { font-size: 12px; opacity: .72; margin: 0; line-height: 1.6; }
+.err { font-size: 13px; color: #b3361b; margin: 0; font-weight: 700; }
+.back { font-size: 13px; color: var(--ink); opacity: .75; }
+.back:hover { opacity: 1; }
+@media (max-height: 700px) {
+  .score { font-size: 48px; }
+  .body { gap: 8px; padding-block: 12px 14px; }
+  button, a.xbtn { padding-block: 10px; }
+  .noren span { font-size: 28px; }
+}
+@media (max-height: 600px) { #over .lead, #title .how { display: none; } }
+.hub-back {
+  position: fixed; z-index: 60;
+  left: calc(env(safe-area-inset-left, 0px) + 10px); bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  font: 700 12px/1 "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif; letter-spacing: .04em;
+  padding: 7px 11px; border-radius: 99px; text-decoration: none;
+  background: rgba(20, 18, 24, .55); color: #fff; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.hub-back:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<canvas id="gl" aria-hidden="true"></canvas>
+<canvas id="fx" aria-label="雪だるま転がしのゲーム画面。指を置いている間は雪玉を前へ押す。指を左右にずらすと押す向きが変わる"></canvas>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="noren" aria-hidden="true"><span>雪</span><span>だ</span><span>る</span><span>ま</span><span class="w">転がし</span></div>
+    <div class="body">
+      <p class="lead">雪玉を<b>押して</b>、坂を<b>転がして</b>、大きく。<br><b>新雪</b>ほどよく育つ。道や土では育たない。<br>割らず、川に落とさず、<b>どこまで大きく</b>？</p>
+      <div class="meta"><span>最高 <b id="tBest">—</b> cm</span><span>遊んだ <b id="tPlays">0</b> 回</span></div>
+      <div class="btns"><button id="startBtn" disabled>よみこみ中…</button></div>
+      <p class="err" id="loadErr" hidden></p>
+      <p class="how"><b>指を置いている間</b>＝押す。<b>左右にずらす</b>＝押す向き。<br>大きく重くなるほど曲がらず、坂で勝手に転がる。<br>速いままぶつかると割れる。急に曲げるといびつに。<br>（キーボード: ← → で向き、↑ / スペースで押す）</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <div class="noren result" aria-hidden="true" id="oNoren"><span>柴</span><span>犬</span><span>級</span></div>
+    <div class="body">
+      <div class="badge" id="newRec" hidden>新記録</div>
+      <div class="score"><span id="oScore">0</span><small>cm</small></div>
+      <p class="passed" id="oPassed"></p>
+      <p class="lead" id="oMsg"></p>
+      <div class="meta"><span>最高 <b id="oBest">0</b> cm</span><span>遊んだ <b id="oPlays">0</b> 回</span><span>ころがした <b id="oDist">0</b> m</span></div>
+      <div class="btns">
+        <div class="two"><button id="retryBtn">もう一回</button><button class="sub" id="copyBtn">結果をコピー</button></div>
+        <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Xでシェア</a>
+      </div>
+      <p class="how" id="copyMsg">画面タップ・スペースでもう一回</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+let THREE;
+try {
+  THREE = await import(THREE_URL);
+} catch (e) {
+  $('startBtn').textContent = '読み込めませんでした';
+  $('loadErr').hidden = false;
+  $('loadErr').textContent = '3Dの読み込みに失敗しました。通信状況を確かめて、ページを再読み込みしてください。';
+  throw e;
+}
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FD = getComputedStyle(document.documentElement).getPropertyValue('--font-display');
+const FB = getComputedStyle(document.documentElement).getPropertyValue('--font-body');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const DEG = Math.PI / 180;
+const HASH = new URLSearchParams(location.hash.slice(1));
+
+/*PHYS-BEGIN*/
+/* ---------- 雪玉の物理（three には頼らない。単位は m・kg・秒。判定は全部この結果から） ----------
+   坂: 上（s=0、村の上）から下の広場（s≈306）まで。x は横（+ が右 = 山側、- が左 = 川）。
+     村の坂道 7° → 田んぼ（ほぼ平ら、15m ごとに 0.6m の段差）→ 木立 7.5° → 下の原っぱ 5° → 広場。
+     どこも少し川のほうへ傾いている（放っておくと左の川へ寄っていく）。
+   雪玉: 半径 R の球。重さ = 雪の密度 × 体積。転がる球なので、加速は力の 5/7（回る分の慣性）。
+     押す: 指を置いている間、子どもが「押す向き ψ」へ歩く速さ V_PUSH に雪玉を合わせようとする。
+       出せる力には限りがあり（F0·(R/0.5)²。大きい玉は体ごと押せるぶん増えるが、重さは R³ で増える）、
+       大きく重い玉ほど 押しても曲がらず、止められず、坂で勝手に転がる。V_RUN より速くなると子どもが追いつけない。
+       押す向きは子どもが玉のまわりを歩いて変える（PSI_RATE rad/s まで）。
+     転がり抵抗: 雪に沈むぶん（新雪が深いほど、玉が小さいほど大きい）。道（踏み固め）は軽く転がる。
+   育つ: 転がった距離 × 前の雪の深さ（まだ誰も通っていない新雪ほど深い）× (R/0.5)^A_GROW で体積が増える。
+     重い玉ほど雪を押し固めて巻きこむので、大きくなるほど育ちが速い（ただし止めにくい）。
+     通ったあとは踏み固められる（自分の跡の上を通っても育たない）。土の出た所では育たず、欠けて、いびつになる。
+   いびつ: 急に曲げる（横向きの加速が A_SAFE をこえる）、ぶつかる、土の上 で溜まる。新雪を転がると少し丸く戻る。1 で割れる。
+   割れる: 石・木・柵・電柱にぶつかる / 段差から落ちて着地する / 急な凹みに当たる ときの、ぶつかる向きの速さが
+     雪玉の強さ S0·(0.5/R)^S_EXP·(1 − いびつ/2) をこえたら崩れる。強さは大きさに比例しない＝大きい玉ほど割れやすい。
+     十分小さい石は巻きこむ（R が石の高さの 1/SWALLOW 倍より大きい）。大きい玉は柵をなぎ倒す。
+   おわり: 90 秒（日が暮れる）/ 下の広場に着く / 押しても動かなくなる → そこで雪だるま。
+     割れたら一番大きいかけら（直径 ×0.7）、川に落ちたら引き上げて半分とけた（×0.6）で雪だるま。 */
+const DEGP = Math.PI / 180;
+const PH = {
+  DT: 1 / 120, G: 9.81, T_LIMIT: 90,
+  RHO: 380,                      // 雪玉の密度 kg/m³
+  R0: 0.125,                     // はじめの半径（直径 25cm。手で丸めた玉）
+  INERTIA: 5 / 7,                // 転がる球
+  V_PUSH: 4.2,                   // 押して走る速さ m/s（これより速いと押さえる）
+  V_RUN: 5.0,                    // これより速いと追いつけない（手が離れる）
+  K_P: 3.2,                      // 速さを合わせる強さ 1/s
+  F0: 380, F_EXP: 2,             // 押す力の上限 N（R=0.5m で 380N。大きい玉は体ごと押す）
+  PSI_RATE: 2.6, PSI_MAX: 1.75,  // 押す向きを変える速さ rad/s・向きの範囲（真下から ±100°）
+  KEY_RATE: 1.6,                 // キーボードで向きを変える速さ rad/s
+  CRR0: 0.035, CPLOW: 0.14,      // 転がり抵抗 = CRR0 + CPLOW·深さ/(R+0.05)
+  CAIR: 0.012,                   // 雪をかき分ける抵抗（速さ² に比例）
+  PACK: 0.02,                    // 踏み固められた雪の深さ（育たない）
+  W_K: 1.0,                      // 踏み跡の幅 = W_K·R·2 … の半分（巻きこむ幅）
+  K_GROW: 0.075, A_GROW: 2.8,    // 体積の増え方 dV = K_GROW·(R/0.5)^A_GROW·深さ·距離
+  D_MAX: 0.45,
+  CHIP: 0.006, K_BARE: 0.035,    // 土の上: 1m で半径が CHIP 欠ける・いびつが K_BARE 溜まる
+  REC: 0.5,                      // 新雪を転がると丸くもどる
+  K_TW: 0.045, A_SAFE: 2.2,      // 急に曲げた: 横向きの加速 A_SAFE m/s² をこえたぶん × K_TW / 秒
+  S0: 3.0, S_EXP: 0.45,          // 強さ（ぶつかる速さ m/s。R=0.5m で 3.0）
+  K_HIT: 0.35, E_BOUNCE: 0.15,   // 割れなかったときのいびつ・はね返り
+  SWALLOW: 0.55, CRUSH_R: 1.25,  // 石を巻きこむ大きさ・柵をなぎ倒す大きさ
+  STUCK_T: 4,
+  BREAK_KEEP: 0.7, RIVER_KEEP: 0.6,
+};
+const clampP = (v, a, b) => Math.max(a, Math.min(b, v));
+function mulberry(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function gaussR(r) { let u = r(); while (u < 1e-9) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+const smooth01 = k => k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k);
+const massOf = R => PH.RHO * 4 / 3 * Math.PI * R * R * R;
+const angDiff = (a, b) => { let d = b - a; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI; return d; };
+
+/* ---------- コース（いつも同じ。覚えられる） ---------- */
+const CRS = { S_GOAL: 306, S_LEN: 370, CROSS: 0.04, HWR: 14, PLAZA: 300 };
+const ZONES = [[0, 60, '村の坂道'], [60, 152, '田んぼ'], [152, 242, '木立'], [242, 300, '下の原っぱ'], [300, 999, '広場']];
+const SEGS = [[0, 8, 4], [8, 60, 7], [60, 152, 2.2], [152, 160, 4.5], [160, 242, 7.5], [242, 300, 5], [300, 999, 0.6]];
+const RISERS = []; for (let k = 0; k < 6; k++) RISERS.push(68 + k * 15);
+const RISER_H = 0.6, RISER_L = 1.3;
+const TB = 0.25, NT = Math.ceil(CRS.S_LEN / TB) + 2;
+const HB = new Float32Array(NT), XC = new Float32Array(NT), HL = new Float32Array(NT), XRD = new Float32Array(NT);
+{
+  let y = 0;
+  for (let i = 0; i < NT; i++) {
+    const s = i * TB;
+    if (i > 0) { const sm = s - TB / 2; let deg = 0; for (const [a, b, d] of SEGS) if (sm >= a && sm < b) deg = d; y -= Math.tan(deg * DEGP) * TB; }
+    let r = 0; for (const s0 of RISERS) r += RISER_H * smooth01((s - s0) / RISER_L);
+    HB[i] = y - r;
+    XC[i] = 6 * Math.sin(s / 58) + 3 * Math.sin(s / 25 + 1.3);
+    HL[i] = 13 + 2.5 * Math.sin(s / 37 + 0.4) - (s > 225 && s < 280 ? 3 * Math.sin((s - 225) / 55 * Math.PI) : 0);
+    // 道: 村の坂道 → 田んぼを斜めに横切る農道 → 木立の小道 → 広場へ
+    const xc = XC[i];
+    let rd;
+    if (s < 60) rd = xc + 3.5 + 1.5 * Math.sin(s / 20);
+    else if (s < 152) rd = lerp0(xc + 3.5 + 1.5 * Math.sin(60 / 20), xc - 6, smooth01((s - 60) / 92));
+    else if (s < 242) rd = xc - 6 + 8 * smooth01((s - 152) / 90) + 1.5 * Math.sin(s / 14);
+    else rd = xc + 2 - 2 * smooth01((s - 242) / 58);
+    XRD[i] = rd;
+  }
+}
+function lerp0(a, b, k) { return a + (b - a) * k; }
+function tabAt(T, s) { const f = clampP(s, 0, CRS.S_LEN - 0.01) / TB, i = f | 0, k = f - i; return T[i] + (T[i + 1] - T[i]) * k; }
+const xcAt = s => tabAt(XC, s);
+const xrAt = s => tabAt(XC, s) - tabAt(HL, s);       // 川岸のふち
+const xhAt = s => tabAt(XC, s) + CRS.HWR;             // 山すそ
+const roadAt = s => tabAt(XRD, s);
+function hAt(x, s) {
+  const xc = tabAt(XC, s), hl = tabAt(HL, s);
+  let y = tabAt(HB, s) + CRS.CROSS * (x - xc);
+  if (s < 0) y += -s * 0.5 + s * s * 0.08;           // うしろ（上）は急になる
+  const xr = xc - hl;
+  if (x < xr) { const d = xr - x; y -= Math.min(3.0, d * 1.3); if (d > 15) y += (d - 15) * 0.8; }   // 川岸 → 川 → 向こう岸
+  const xh = xc + CRS.HWR; if (x > xh) { const d = x - xh; y += d * 0.2 + d * d * 0.05; }       // 山すそ
+  return y;
+}
+const waterY = s => tabAt(HB, s) - CRS.CROSS * tabAt(HL, s) - 2.25;
+const zoneAt = s => { for (const z of ZONES) if (s < z[1]) return z[2]; return '広場'; };
+
+/* 雪の深さの地図（0.5m ます）。種類: 0 新雪 1 道（踏み固め） 2 木の下（落ち葉まじり） 3 土 4 川岸 */
+const CELL = 0.5, GX0 = -40, GNX = 160, GNS = Math.ceil(CRS.S_LEN / CELL);
+const D0 = new Float32Array(GNX * GNS), TY = new Uint8Array(GNX * GNS);
+// 障害物: k = stone 石 / tree 木 / pole 電柱 / jizo 地蔵 / kakashi 案山子 / fence 柵（線分）
+const OB = [], BKS = 6, BK = [];
+const BARE = [];
+{
+  const r = mulberry(20261219);
+  const addOb = o => { o.id = OB.length; OB.push(o); const s0 = Math.min(o.s, o.s2 ?? o.s) - (o.r || 0) - 0.5, s1 = Math.max(o.s, o.s2 ?? o.s) + (o.r || 0) + 0.5; for (let b = Math.max(0, Math.floor(s0 / BKS)); b <= Math.floor(s1 / BKS); b++) (BK[b] ||= []).push(o.id); return o; };
+  const clear = (x, s, d) => { for (const o of OB) { if (o.k === 'fence') { const q = segDist(x, s, o); if (q < d) return false; } else if (Math.hypot(x - o.x, s - o.s) < d + o.r) return false; } return true; };
+  const inCourse = (x, s, m = 1.5) => x > xrAt(s) + m && x < xhAt(s) - m;
+  const place = (n, s0, s1, mk, minD = 3, tries = 60, offRoad = 0) => {
+    for (let i = 0; i < n; i++) for (let k = 0; k < tries; k++) {
+      const s = s0 + r() * (s1 - s0), x = xrAt(s) + 1.5 + r() * (xhAt(s) - xrAt(s) - 3);
+      if (!inCourse(x, s, 2) || !clear(x, s, minD) || (offRoad && Math.abs(x - roadAt(s)) < offRoad)) continue;
+      addOb(mk(x, s)); break;
+    }
+  };
+  const stone = (x, s) => ({ k: 'stone', x, s, r: 0.22 + r() * 0.3, h: 0.25 + r() * 0.3, sw: 1 });
+  const tree = (x, s) => ({ k: 'tree', x, s, r: 0.2 + r() * 0.17, h: 9, conifer: r() < 0.6 });
+  const fence = (x1, s1, x2, s2, h = 0.9) => addOb({ k: 'fence', x: x1, s: s1, x2, s2, r: 0.07, h });
+  // 村の坂道: 電柱・お地蔵さん・畑の柵・石
+  for (const s of [20, 40, 58]) addOb({ k: 'pole', x: roadAt(s) + 2.4, s, r: 0.15, h: 9 });
+  addOb({ k: 'jizo', x: roadAt(30) - 2.3, s: 30, r: 0.32, h: 9 });
+  fence(roadAt(22) - 2.7, 22, roadAt(28) - 2.7, 28); fence(roadAt(44) - 2.7, 44, roadAt(52) - 2.6, 52);
+  place(6, 14, 60, stone, 3, 60, 2);
+  // 田んぼ: 段差の上の竹垣・案山子・石
+  for (const [k, a, b] of [[1, -7, -3], [2, 3, 7.5], [3, -10, -6], [4, 0, 4], [5, 5, 9]]) { const s = RISERS[k] - 0.35; fence(xcAt(s) + a, s, xcAt(s) + b, s, 0.8); }
+  for (const s of [88, 118]) place(1, s, s + 6, (x, s2) => ({ k: 'kakashi', x, s: s2, r: 0.16, h: 1.6 }), 4, 60, 2);
+  place(10, 64, 150, stone, 3.5, 60, 1.6);
+  // 木立: 木（杉と、葉の落ちた木）・石
+  place(34, 156, 242, tree, 4.4, 80, 2.2);
+  place(5, 156, 242, stone, 3, 60, 1.6);
+  // 下の原っぱ: 石・木・川べりの柵（すきまあり）
+  place(7, 244, 298, stone, 3.5, 60, 1.6);
+  place(5, 244, 296, tree, 6, 60, 2.5);
+  for (const [a, b] of [[248, 255], [262, 270], [280, 288]]) fence(xrAt(a) + 1.4, a, xrAt(b) + 1.4, b, 0.9);
+  // 土の出た所（村の家の前・あぜ・ところどころ）
+  for (let i = 0; i < 26; i++) { const s = 14 + r() * 284, x = xrAt(s) + 2 + r() * (xhAt(s) - xrAt(s) - 4); BARE.push([x, s, 0.7 + r() * 1.4]); }
+  for (const s0 of RISERS) for (let k = 0; k < 2; k++) { const a = xrAt(s0) + 2 + r() * 20, L = 3 + r() * 6; BARE.push({ seg: [a, s0 + 0.15, a + L, s0 + 0.15], w: 0.35 }); }
+  // 深さの地図
+  const nz = (x, s) => 0.5 * Math.sin(x * 0.37 + s * 0.11) + 0.3 * Math.sin(x * 0.13 - s * 0.29 + 1.7) + 0.2 * Math.sin(x * 0.71 + s * 0.53 + 0.4);
+  for (let j = 0; j < GNS; j++) {
+    const s = (j + 0.5) * CELL, xr = xrAt(s), rd = roadAt(s);
+    for (let i = 0; i < GNX; i++) {
+      const x = GX0 + (i + 0.5) * CELL, q = j * GNX + i;
+      let d = 0.26 + 0.07 * nz(x, s), ty = 0;
+      d += 0.16 * Math.max(0, Math.sin(x * 0.21 + s * 0.047 + 2.2) * Math.sin(s * 0.061 - x * 0.05) - 0.35);   // 吹きだまり
+      d -= 0.12 * Math.max(0, Math.sin(x * 0.17 - s * 0.033 + 0.5) * Math.sin(s * 0.043 + 1.1) - 0.45);   // 風で飛ばされてうすい所
+      if (s > CRS.PLAZA) { d = 0.04; ty = 1; }
+      else if (Math.abs(x - rd) < 1.6) { d = 0.035; ty = 1; }
+      else if (x < xr + 1.2) { d = 0.2; ty = 4; }
+      D0[q] = d; TY[q] = ty;
+    }
+  }
+  const paint = (x, s, rad, f) => { const i0 = Math.max(0, Math.floor((x - rad - GX0) / CELL)), i1 = Math.min(GNX - 1, Math.floor((x + rad - GX0) / CELL)), j0 = Math.max(0, Math.floor((s - rad) / CELL)), j1 = Math.min(GNS - 1, Math.floor((s + rad) / CELL)); for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) { const cx = GX0 + (i + 0.5) * CELL, cs = (j + 0.5) * CELL, d = Math.hypot(cx - x, cs - s); if (d <= rad) f(j * GNX + i, d); } };
+  for (const o of OB) if (o.k === 'tree') { paint(o.x, o.s, 2.6, q => { if (TY[q] === 0) { TY[q] = 2; D0[q] = Math.min(D0[q], 0.13); } }); paint(o.x, o.s, 0.85, q => { TY[q] = 3; D0[q] = 0; }); }
+  for (const o of OB) if (o.k === 'stone' || o.k === 'jizo' || o.k === 'pole') paint(o.x, o.s, o.r + 0.35, q => { if (TY[q] === 0) D0[q] *= 0.6; });
+  for (const b of BARE) {
+    if (b.seg) { const [x1, s1, x2, s2] = b.seg; for (let t = 0; t <= 1; t += 0.05) paint(x1 + (x2 - x1) * t, s1 + (s2 - s1) * t, b.w, q => { if (TY[q] !== 1) { TY[q] = 3; D0[q] = 0; } }); }
+    else paint(b[0], b[1], b[2], (q, d) => { if (TY[q] === 1) return; if (d < b[2] * 0.75) { TY[q] = 3; D0[q] = 0; } else D0[q] = Math.min(D0[q], 0.1); });
+  }
+}
+function segDist(x, s, o) { const dx = o.x2 - o.x, ds = o.s2 - o.s, L2 = dx * dx + ds * ds; const t = clampP(((x - o.x) * dx + (s - o.s) * ds) / L2, 0, 1); return Math.hypot(x - (o.x + dx * t), s - (o.s + ds * t)); }
+const cellOf = (x, s) => { const i = Math.floor((x - GX0) / CELL), j = Math.floor(s / CELL); return i < 0 || j < 0 || i >= GNX || j >= GNS ? -1 : j * GNX + i; };
+const tyAt = (x, s) => { const q = cellOf(x, s); return q < 0 ? (s > CRS.PLAZA ? 1 : 0) : TY[q]; };
+
+function makeSim(seed = 1) {
+  const rnd = mulberry(seed);
+  const depth = new Float32Array(D0), gone = new Uint8Array(OB.length), seen = new Uint32Array(OB.length);
+  const x0 = xcAt(5) - 3.5;
+  const g = {
+    t: 0, phase: 'play', reason: '', hitKind: '', x: x0, s: 5, y: hAt(x0, 5) + PH.R0, vy: 0, air: false, airT: 0,
+    v: { x: 0, s: 0 }, R: PH.R0, def: 0, psi: 0, psiT: 0, on: false, kl: 0, kr: 0, lost: false,
+    dist: 0, freshDist: 0, roadDist: 0, bareDist: 0, dEff: 0, twist: 0, pushA: 0, maxSp: 0, maxR: PH.R0, stuckT: 0,
+    hits: 0, swallowed: 0, crushed: 0, nTwist: 0, defBy: { twist: 0, hit: 0, bare: 0 }, maxImpact: 0, finalR: 0, contactT: -9,
+    events: [], depth, gone, stepN: 0,
+  };
+  const ev = e => { if (g.events.length < 200) g.events.push(e); };
+  g.depthAt = (x, s) => { const q = cellOf(x, s); return q < 0 ? (s > CRS.PLAZA ? 0.04 : 0.25) : (TY[q] === 3 ? 0 : depth[q]); };
+  g.strength = () => PH.S0 * Math.pow(0.5 / g.R, PH.S_EXP) * (1 - 0.5 * clampP(g.def, 0, 1));
+  g.canSwallow = o => (o.sw && o.h < PH.SWALLOW * g.R) || (o.k === 'fence' && g.R > PH.CRUSH_R) || (o.k === 'kakashi' && 1.6 < PH.SWALLOW * g.R);
+  // (x, s) のまわり rad 以内にある、巻きこめない障害物（ボットの目）
+  g.obstacleAt = (x, s, rad) => {
+    for (let b = Math.max(0, Math.floor((s - rad - 1) / BKS)); b <= Math.floor((s + rad + 1) / BKS); b++) for (const id of BK[b] || []) {
+      if (gone[id]) continue; const o = OB[id];
+      if (g.canSwallow(o)) continue;
+      const d = o.k === 'fence' ? segDist(x, s, o) : Math.hypot(x - o.x, s - o.s);
+      if (d < rad + o.r) return o;
+    }
+    return null;
+  };
+  g.setInput = (on, psiT) => { g.on = on; if (psiT != null) g.psiT = clampP(psiT, -PH.PSI_MAX, PH.PSI_MAX); };
+  function end(reason, kind = '') {
+    if (g.phase !== 'play') return;
+    g.phase = 'end'; g.reason = reason; g.hitKind = kind;
+    g.finalR = g.R * (reason === 'break' || reason === 'deform' ? PH.BREAK_KEEP : reason === 'river' ? PH.RIVER_KEEP : 1);
+    ev({ type: 'end', reason, kind });
+  }
+  g.end = end;
+  function impact(vn, kind) {
+    const S = g.strength();
+    g.maxImpact = Math.max(g.maxImpact, vn / S);
+    if (vn > S) { end('break', kind); return true; }
+    const dd = PH.K_HIT * (vn / S) * (vn / S); g.def += dd; g.defBy.hit += dd;
+    if (vn > 0.35) { g.hits++; ev({ type: 'bump', vn, kind, k: vn / S }); }
+    return false;
+  }
+  // 前に巻きこむ雪（まだ踏んでいない所）を見る。幅の 3 点
+  function frontSnow(ux, us, w) {
+    const f = Math.max(w / 2, 0.38) + 0.55, lx = us, ls = -ux;
+    let d = 0, nb = 0, nl = 0;
+    for (const k of [-0.35, 0, 0.35]) {
+      const px = g.x + ux * f + lx * k * w, ps = g.s + us * f + ls * k * w, q = cellOf(px, ps);
+      const ty = q < 0 ? 0 : TY[q];
+      if (ty === 3) nb++; else { if (ty === 2) nl++; d += Math.max(0, (q < 0 ? 0.25 : depth[q]) - PH.PACK); }
+    }
+    return { d: d / 3, fb: nb / 3, fl: nl / 3 };
+  }
+  // 通ったところを踏み固める
+  function stamp(w) {
+    const rad = Math.max(CELL * 0.5, w / 2);
+    const i0 = Math.max(0, Math.floor((g.x - rad - GX0) / CELL)), i1 = Math.min(GNX - 1, Math.floor((g.x + rad - GX0) / CELL));
+    const j0 = Math.max(0, Math.floor((g.s - rad) / CELL)), j1 = Math.min(GNS - 1, Math.floor((g.s + rad) / CELL));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const cx = GX0 + (i + 0.5) * CELL, cs = (j + 0.5) * CELL;
+      if ((cx - g.x) ** 2 + (cs - g.s) ** 2 <= rad * rad + 0.13) { const q = j * GNX + i; if (depth[q] > PH.PACK) depth[q] = PH.PACK; }
+    }
+  }
+  // 地面に乗っている玉の中心の高さ（段差を玉の丸みでならす）
+  function support(x, s, R, ux, us) {
+    let y = hAt(x, s) + R;
+    for (const k of [-0.7, -0.35, 0.35, 0.7]) { const dk = k * R, yy = hAt(x + ux * dk, s + us * dk) + Math.sqrt(R * R - dk * dk); if (yy > y) y = yy; }
+    return y;
+  }
+  function collide() {
+    const R = g.R, v = g.v, sn = ++g.stepN;
+    for (let b = Math.max(0, Math.floor((g.s - R - 1) / BKS)); b <= Math.floor((g.s + R + 1) / BKS); b++) for (const id of BK[b] || []) {
+      if (gone[id] || seen[id] === sn) continue; seen[id] = sn;
+      const o = OB[id];
+      let cx = o.x, cs = o.s;
+      if (o.k === 'fence') { const dx = o.x2 - o.x, ds = o.s2 - o.s, t = clampP(((g.x - o.x) * dx + (g.s - o.s) * ds) / (dx * dx + ds * ds), 0, 1); cx = o.x + dx * t; cs = o.s + ds * t; }
+      const rEff = o.h >= R ? R : Math.sqrt(Math.max(0, 2 * R * o.h - o.h * o.h));
+      const dx = g.x - cx, ds = g.s - cs, d = Math.hypot(dx, ds) || 1e-6, pen = rEff + o.r - d;
+      if (pen <= 0) continue;
+      if (g.canSwallow(o)) {
+        gone[id] = 1;
+        if (o.k === 'fence') { g.crushed++; v.x *= 0.82; v.s *= 0.82; g.def += 0.06; ev({ type: 'crush', id }); }
+        else { g.swallowed++; v.x *= 0.92; v.s *= 0.92; g.def += 0.03; ev({ type: 'swallow', id, h: o.h, r: o.r, k: o.k }); }
+        continue;
+      }
+      const nx = dx / d, ns = ds / d, vn = -(v.x * nx + v.s * ns);
+      g.contactT = g.t; g.contactOb = o;
+      g.x += nx * pen; g.s += ns * pen;
+      if (vn > 0) {
+        if (impact(vn, o.k)) return;
+        v.x += (1 + PH.E_BOUNCE) * vn * nx; v.s += (1 + PH.E_BOUNCE) * vn * ns;
+        // こすれて横の速さも少し落ちる（ぶつかった勢いに比例）
+        const tx = -ns, ts = nx, vt = v.x * tx + v.s * ts, dvt = Math.min(Math.abs(vt), 0.3 * (1 + PH.E_BOUNCE) * vn) * Math.sign(vt);
+        v.x -= dvt * tx; v.s -= dvt * ts;
+      }
+    }
+  }
+  g.step = () => {
+    if (g.phase !== 'play') return;
+    const dt = PH.DT, v = g.v, R = g.R, M = massOf(R);
+    if (g.kl || g.kr) g.psiT = clampP(g.psiT + (g.kr - g.kl) * PH.KEY_RATE * dt, -PH.PSI_MAX, PH.PSI_MAX);
+    g.psi += clampP(g.psiT - g.psi, -PH.PSI_RATE * dt, PH.PSI_RATE * dt);
+    let sp = Math.hypot(v.x, v.s);
+    if (!g.lost && sp > PH.V_RUN) { g.lost = true; ev({ type: 'lost' }); }
+    else if (g.lost && sp < PH.V_RUN - 0.7) { g.lost = false; ev({ type: 'catch' }); }
+    const ux = sp > 0.05 ? v.x / sp : Math.sin(g.psi), us = sp > 0.05 ? v.s / sp : Math.cos(g.psi);
+    g.twist = 0; g.pushA = 0;
+    const fs = frontSnow(ux, us, PH.W_K * 2 * R * 0.55);   // 前にある雪（まだ踏んでいない所）
+    if (!g.air) {
+      const e = clampP(R * 0.8, 0.3, 1.6), x = g.x, s = g.s;
+      let ax = -PH.G * (hAt(x + e, s) - hAt(x - e, s)) / (2 * e);
+      let as = -PH.G * (hAt(x, s + e) - hAt(x, s - e)) / (2 * e);
+      if (g.on && !g.lost) {
+        let px = PH.K_P * (PH.V_PUSH * Math.sin(g.psi) - v.x), ps = PH.K_P * (PH.V_PUSH * Math.cos(g.psi) - v.s);
+        const am = PH.F0 * Math.pow(R / 0.5, PH.F_EXP) / M, l = Math.hypot(px, ps);
+        if (l > am) { px *= am / l; ps *= am / l; }
+        if (sp > 0.3) {
+          const aLat = Math.abs(px * v.s - ps * v.x) / sp, over = aLat - PH.A_SAFE;
+          if (over > 0) { const dd = PH.K_TW * over * dt; g.def += dd; g.defBy.twist += dd; g.twist = over; }
+        }
+        g.pushA = Math.hypot(px, ps);
+        ax += px; as += ps;
+      }
+      const dd = fs.d + PH.PACK;
+      const fr = PH.G * (PH.CRR0 + PH.CPLOW * dd / (R + 0.05) + 0.1 * fs.fb) + PH.CAIR * sp * sp;
+      const k = PH.INERTIA;
+      if (sp < 0.03) {
+        const al = Math.hypot(ax, as);
+        if (al <= fr) { v.x = 0; v.s = 0; }
+        else { v.x += k * ax * (1 - fr / al) * dt; v.s += k * as * (1 - fr / al) * dt; }
+      } else {
+        const nx = v.x + k * (ax - fr * ux) * dt, ns = v.s + k * (as - fr * us) * dt;
+        if (nx * v.x + ns * v.s < 0) { v.x = 0; v.s = 0; } else { v.x = nx; v.s = ns; }
+      }
+    }
+    g.x += v.x * dt; g.s += v.s * dt;
+    collide();
+    if (g.phase !== 'play') return;
+    sp = Math.hypot(v.x, v.s); g.maxSp = Math.max(g.maxSp, sp);
+    // 上下: 段差から飛ぶ・着地・凹みにぶつかる
+    const yc = support(g.x, g.s, g.R, ux, us);
+    if (!g.air) {
+      const vyReq = (yc - g.y) / dt;
+      if (vyReq < g.vy - PH.G * dt && yc < g.y - 0.001) { g.air = true; g.airT = 0; g.vy -= PH.G * dt; g.y += g.vy * dt; ev({ type: 'air' }); }
+      else { const dv = vyReq - g.vy; if (dv > 1.0 && impact(dv * 0.8, 'step')) return; g.vy = vyReq; g.y = yc; }
+    } else {
+      g.airT += dt; g.vy -= PH.G * dt; g.y += g.vy * dt;
+      if (g.y <= yc) {
+        const e = 0.4, gx = (hAt(g.x + e, g.s) - hAt(g.x - e, g.s)) / (2 * e), gs = (hAt(g.x, g.s + e) - hAt(g.x, g.s - e)) / (2 * e);
+        const vyG = gx * v.x + gs * v.s, vn = (vyG - g.vy) / Math.sqrt(1 + gx * gx + gs * gs);
+        g.y = yc; g.vy = vyG; g.air = false;
+        ev({ type: 'land', vn, airT: g.airT });
+        if (vn > 0.3 && impact(vn, 'land')) return;
+      }
+    }
+    // 育つ・欠ける・踏み固める
+    if (!g.air && sp > 0.02) {
+      const ds = sp * dt, f = fs;
+      g.dEff += (f.d - g.dEff) * Math.min(1, dt * 4);
+      let R3 = g.R ** 3;
+      if (f.d > 0) R3 += 3 / (4 * Math.PI) * PH.K_GROW * Math.pow(g.R / 0.5, PH.A_GROW) * Math.min(PH.D_MAX, f.d) * ds;
+      let Rn = Math.cbrt(R3);
+      if (f.fb > 0) { Rn -= PH.CHIP * f.fb * ds; const dd = PH.K_BARE * f.fb * ds; g.def += dd; g.defBy.bare += dd; g.bareDist += f.fb * ds; if (rnd() < f.fb * ds * 0.6) ev({ type: 'pebble' }); }
+      if (f.fl > 0 && rnd() < f.fl * ds * 0.5) ev({ type: 'leaf' });
+      if (f.d > 0.15) g.freshDist += ds; else if (f.fb === 0) g.roadDist += ds;
+      g.def = Math.max(0, g.def - PH.REC * Math.min(PH.D_MAX, f.d) * ds / (2 * Math.PI * g.R));
+      g.R = Math.max(0.08, Rn); g.maxR = Math.max(g.maxR, g.R);
+      g.dist += ds;
+      stamp(PH.W_K * 2 * g.R * 0.55);
+    }
+    g.t += dt;
+    if (g.def >= 1) { end('deform'); return; }
+    if (g.x < xrAt(g.s) - 0.5) { end('river'); return; }
+    if (g.s >= CRS.S_GOAL) { end('goal'); return; }
+    if (g.on && sp < 0.12 && g.t > 2 && g.t - g.contactT > 0.5) { g.stuckT += dt; if (g.stuckT > PH.STUCK_T) { end('stuck'); return; } } else g.stuckT = 0;
+    if (g.t >= PH.T_LIMIT) { end('time'); return; }
+  };
+  return g;
+}
+const cmOf = R => Math.round(R * 200);
+/*PHYS-END*/
+
+/*BOT-BEGIN*/
+/* ---------- ボット（調整・タイトルのデモ・OGP 用）: 人と同じく「指を置く/離す」と「押す向き」だけを決める ----------
+   every: 何秒ごとに向きを考えなおすか、look: 何 m 先まで見るか、cand: 向きの候補のきざみ（rad）、
+   wDepth: 新雪を選ぶ気持ち、wDown: 坂の下へ向かう気持ち、wTurn: 向きを変えたがらなさ、noise: 判断のぶれ、
+   see: 障害物に気づく確率、river: 川をこわがる、speedCare: 速すぎたら坂を横切って落とす、comp: 流されるぶんを見こす、
+   offP / offT: ときどき指を離してしまう */
+const SKILLS = {
+  first:  { every: 0.6, everySd: 0.35, look: 6, step: 1.2, cand: 0.35, maxTurn: 1.4, wDepth: 0.25, wDown: 1.0, wTurn: 0.6, noise: 0.6, see: 0.45, river: 1.2, speedCare: 0, comp: 0, offP: 0.08, offT: 1.0, jit: 0.25 },
+  casual: { every: 0.4, everySd: 0.25, look: 9, step: 1, cand: 0.2, maxTurn: 1.3, wDepth: 0.6, wDown: 0.6, wTurn: 0.4, noise: 0.35, see: 0.75, river: 3, speedCare: 0.4, vSafe: 1.0, hzLook: 1.2, letGo: 0, comp: 0.3, offP: 0.03, offT: 0.8, jit: 0.12 },
+  good:   { every: 0.2, everySd: 0.08, look: 16, step: 0.8, cand: 0.1, maxTurn: 1.6, wDepth: 1.0, wDown: 1.0, wTurn: 0.25, noise: 0.08, see: 1, river: 6, speedCare: 1, vSafe: 1.1, hzLook: 1.8, letGo: 1, mpc: 1, horizon: 3.2, comp: 0.7, offP: 0, offT: 0, jit: 0.03 },
+};
+const obDist = (o, x, s) => o.k === 'fence' ? segDist(x, s, o) : Math.hypot(x - o.x, s - o.s);   // 近づく向きのときだけ「ぶつかる」
+function makeBot(g, sk, rnd) {
+  let next = 0.25 + rnd() * 0.3, offUntil = -1, want = 0, jt = 0, escUntil = -1, touchT = 0;
+  function decide() {
+    // ぶつかって止まっている → 柵のはし・石の横へ回りこむ（しばらくその向き）
+    if (g.t < escUntil) return;
+    if (g.t - g.contactT < 0.3) touchT += sk.every; else touchT = 0;
+    if (touchT > 0.7 && g.contactOb) {
+      const o = g.contactOb;
+      let ex, es;
+      if (o.k === 'fence') { const d1 = Math.hypot(g.x - o.x, g.s - o.s), d2 = Math.hypot(g.x - o.x2, g.s - o.s2); [ex, es] = d1 < d2 ? [o.x - o.x2, o.s - o.s2] : [o.x2 - o.x, o.s2 - o.s]; }
+      else { ex = o.s - g.s; es = -(o.x - g.x); if (es < 0) { ex = -ex; es = -es; } }
+      if (g.x + ex * 0.2 < xrAt(g.s) + g.R + 2) { ex = Math.abs(ex); }
+      want = clampP(Math.atan2(ex, es + 0.15 * Math.hypot(ex, es)), -PH.PSI_MAX, PH.PSI_MAX); escUntil = g.t + 1.4 + rnd() * 0.6; touchT = 0;
+      return;
+    }
+    if (sk.offP && rnd() < sk.offP) offUntil = g.t + sk.offT * (0.5 + rnd());
+    const R = g.R, sp = Math.hypot(g.v.x, g.v.s), S = g.strength();
+    let best = -1e9, bpsi = 0;
+    if (sk.mpc) {
+      // 上手い人: その向きに押しつづけたら玉がどう動くかを先読みして（慣性・坂・抵抗こみ）、育ちと危なさで選ぶ
+      for (let a = -sk.maxTurn; a <= sk.maxTurn + 1e-6; a += sk.cand) {
+        let sc = rollout(a) - sk.wTurn * Math.abs(a - g.psiT) + sk.noise * gaussR(rnd);
+        if (g.t - g.contactT < 0.6) sc -= 3 * Math.max(0, Math.cos(a - g.psi));
+        if (sc > best) { best = sc; bpsi = a; }
+      }
+      want = clampP(bpsi, -PH.PSI_MAX, PH.PSI_MAX);
+      return;
+    }
+    for (let a = -sk.maxTurn; a <= sk.maxTurn + 1e-6; a += sk.cand) {
+      const ux = Math.sin(a), us = Math.cos(a);
+      let sc = 0;
+      for (let d = sk.step; d <= sk.look; d += sk.step) {
+        const px = g.x + ux * d, ps = g.s + us * d;
+        if (px < xrAt(ps) + R + 1.5) { sc -= sk.river * 30 * (1 - d / (sk.look + 1)); break; }
+        if (px > xhAt(ps) - R) sc -= 0.5;
+        const dep = g.depthAt(px, ps), ty = tyAt(px, ps);
+        sc += sk.wDepth * ((dep - 0.12) * 2 - (ty === 3 ? 0.4 : 0));
+        if (d < 2.5 || rnd() < sk.see) { const ob = g.obstacleAt(px, ps, R + 0.45); if (ob && obDist(ob, px, ps) < obDist(ob, g.x, g.s) - 0.05) { sc -= 25 * (1 + sp * 0.5) * (1 - d / (sk.look + 2)); break; } }
+      }
+      sc += sk.wDown * us * 2 - sk.wTurn * Math.abs(a - g.psiT);
+      if (g.t - g.contactT < 0.6) sc -= 6 * Math.max(0, Math.cos(a - g.psi));   // ぶつかって止まった → 向きを変える
+      if (sk.speedCare && hazard()) { const vs = sk.vSafe * S; if (sp > vs) sc -= sk.speedCare * (sp - vs) * us * 4; }
+      sc += sk.noise * gaussR(rnd);
+      if (sc > best) { best = sc; bpsi = a; }
+    }
+    if (sk.comp && sp > 0.5) { const va = Math.atan2(g.v.x, g.v.s); bpsi += sk.comp * clampP(angDiff(va, bpsi), -0.8, 0.8); }
+    want = clampP(bpsi, -PH.PSI_MAX, PH.PSI_MAX);
+  }
+  function rollout(a) {
+    const R = g.R, M = massOf(R), am = PH.F0 * Math.pow(R / 0.5, PH.F_EXP) / M, S = g.strength(), e = clampP(R * 0.8, 0.3, 1.6), k = PH.INERTIA, dtR = 0.15;
+    let x = g.x, s = g.s, vx = g.v.x, vs = g.v.s, psi = g.psi, sc = 0;
+    const tx = PH.V_PUSH * Math.sin(a), ts = PH.V_PUSH * Math.cos(a);
+    for (let t = 0; t < sk.horizon; t += dtR) {
+      psi += clampP(a - psi, -PH.PSI_RATE * dtR, PH.PSI_RATE * dtR);
+      let px = PH.K_P * (PH.V_PUSH * Math.sin(psi) - vx), ps = PH.K_P * (PH.V_PUSH * Math.cos(psi) - vs); const l = Math.hypot(px, ps); if (l > am) { px *= am / l; ps *= am / l; }
+      const sp = Math.hypot(vx, vs) || 1e-6, ux = vx / sp, us = vs / sp;
+      const dep = g.depthAt(x + ux * (R + 0.6), s + us * (R + 0.6)), bare = tyAt(x + ux * (R + 0.6), s + us * (R + 0.6)) === 3;
+      const fr = PH.G * (PH.CRR0 + PH.CPLOW * (dep + PH.PACK) / (R + 0.05) + (bare ? 0.1 : 0)) + PH.CAIR * sp * sp;
+      const gx = -PH.G * (hAt(x + e, s) - hAt(x - e, s)) / (2 * e), gs = -PH.G * (hAt(x, s + e) - hAt(x, s - e)) / (2 * e);
+      vx += k * (gx + px - (sp > 0.03 ? fr * ux : 0)) * dtR; vs += k * (gs + ps - (sp > 0.03 ? fr * us : 0)) * dtR;
+      x += vx * dtR; s += vs * dtR;
+      const v2 = Math.hypot(vx, vs), w = 1 - 0.5 * t / sk.horizon;
+      if (x < xrAt(s) + R * 0.6 + 0.6) { sc -= 60 * w; break; }
+      const ob = g.obstacleAt(x, s, R + 0.15);
+      if (ob) { sc -= (v2 > S * 0.92 ? 80 : 6 + 10 * v2 / S) * w; break; }
+      for (const r0 of RISERS) if (s > r0 && s - vs * dtR <= r0 && v2 > S * 0.75) sc -= 30 * w;
+      sc += sk.wDepth * (dep - 0.1) * v2 * dtR * 4 - (bare ? 0.6 * v2 * dtR : 0);
+      if (v2 > sk.vSafe * S) sc -= (v2 - sk.vSafe * S) * dtR * 6;
+    }
+    return sc + sk.wDown * Math.cos(a) * 0.5;
+  }
+  // 進む先（速さ × 2 秒ぶん）に、ぶつかると困るもの・段差があるか
+  let hzT = -1, hzV = false;
+  function hazard() {
+    if (g.t - hzT < 0.1) return hzV;
+    hzT = g.t; hzV = false;
+    const sp = Math.hypot(g.v.x, g.v.s); if (sp < 0.5) return false;
+    const ux = g.v.x / sp, us = g.v.s / sp, L = 2.5 + g.R + sp * sk.hzLook;
+    for (let d = 0.5; d <= L; d += 0.7) {
+      const px = g.x + ux * d, ps = g.s + us * d;
+      for (const k of [-1, 0, 1]) { const ob = g.obstacleAt(px + us * k * g.R, ps - ux * k * g.R, g.R + 0.3); if (ob && obDist(ob, px, ps) < obDist(ob, g.x, g.s)) { hzV = true; return true; } }
+      for (const r0 of RISERS) if (ps > r0 - 0.5 && ps < r0 + 1.5 && g.s < r0) { hzV = true; return true; }
+    }
+    return false;
+  }
+  return {
+    step() {
+      if (g.t >= next) { next = g.t + sk.every * Math.max(0.3, 1 + gaussR(rnd) * sk.everySd); decide(); jt = sk.jit * gaussR(rnd); }
+      let on = g.t >= offUntil;
+      // 何もない坂で、まだ遅いなら手を離して転がす（押す速さより速くなる）
+      if (sk.letGo) { const sp = Math.hypot(g.v.x, g.v.s); if (!hazard() && sp > 2 && sp < sk.vSafe * g.strength() && g.s > 8 && g.x > xrAt(g.s) + g.R + 4 && Math.abs(angDiff(Math.atan2(g.v.x, g.v.s), want)) < 0.25) on = false; }
+      g.setInput(on, want + jt);
+    },
+  };
+}
+// 物理だけで1回ぶん。rate を与えると、ボットが画面を rate Hz でしか見られない（入力もそのコマでしか変えられない）ときをまねる
+function runBot(sk, seed, opts = {}) {
+  const g = makeSim(seed), r = mulberry((seed * 7919 + 13) >>> 0), bot = makeBot(g, sk, r);
+  let lastF = -1;
+  while (g.phase === 'play') {
+    if (opts.rate) { const f = Math.floor(g.t * opts.rate); if (f !== lastF) { lastF = f; bot.step(); } } else bot.step();
+    g.step(); g.events.length = 0;
+  }
+  return { cm: cmOf(g.finalR), rawCm: cmOf(g.R), reason: g.reason, kind: g.hitKind, t: g.t, s: g.s, dist: g.dist, fresh: g.freshDist, def: g.def, defBy: g.defBy, maxSp: g.maxSp, hits: g.hits };
+}
+/*BOT-END*/
+
+/* ---------- 大きさの目印（直径をくらべる。ほんとうの大きさ） ---------- */
+const SIZES = [
+  { cm: 30, name: 'こけし', title: 'こけし級', pop: 'こけしこえ！' },
+  { cm: 55, name: '柴犬', title: '柴犬級', pop: '柴犬こえ！' },
+  { cm: 80, name: 'ランドセルの子', title: '一年生級', pop: '一年生こえ！' },
+  { cm: 120, name: '小学生', title: '小学生級', pop: '小学生こえ！' },
+  { cm: 135, name: 'ポスト', title: 'ポスト級', pop: 'ポストこえ！' },
+  { cm: 170, name: '大人', title: '大人級', pop: '大人こえ！' },
+  { cm: 190, name: '自販機', title: '自販機級', pop: '自販機こえ！' },
+  { cm: 250, name: '物置', title: '物置級', pop: '物置こえ！' },
+  { cm: 340, name: '軽トラ', title: '軽トラ級', pop: '軽トラこえ！' },
+  { cm: 480, name: '二階のまど', title: '二階まど級', pop: '二階にとどいた！' },
+  { cm: 650, name: '家', title: '家より大きい', pop: '家より大きい！' },
+  { cm: 900, name: '火の見やぐら', title: 'やぐら級', pop: 'やぐらこえ！' },
+];
+const titleOf = cm => { let t = 'てのひら級'; for (const k of SIZES) if (cm >= k.cm) t = k.title; return t; };
+const passedSize = cm => { let m = null; for (const k of SIZES) if (cm >= k.cm) m = k; return m; };
+
+/* ---------- 記録（このブラウザだけ） ---------- */
+const KEY = 'yukidaruma:v1';
+const DEF = () => ({ ver: 1, best: 0, plays: 0, total: 0, last: 0, lastTitle: '' });
+function load() {
+  try { const d = JSON.parse(localStorage.getItem(KEY) || '{}'); if (d && d.ver === 1) { const r = { ...DEF(), ...d }; for (const k of ['best', 'plays', 'total', 'last']) r[k] = +r[k] || 0; return r; } } catch {}
+  return DEF();
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch {} }
+let rec = load();
+let seed = HASH.has('seed') ? (+HASH.get('seed') >>> 0) : (Math.random() * 2 ** 32) >>> 0;
+function nextSeed() { const s = seed; seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return s; }
+
+/* ---------- three.js ---------- */
+const glc = $('gl'), fxc = $('fx'), fx = fxc.getContext('2d');
+const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, powerPreference: 'high-performance' });
+const scene = new THREE.Scene();
+const HORIZON = new THREE.Color('#e2bdb2');
+scene.background = HORIZON.clone();
+scene.fog = new THREE.Fog(HORIZON, 45, 170);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 1500);
+let W = 0, H = 0, dpr = 1, safeT = 0, safeB = 0, Upx = 350;
+function resize() {
+  W = innerWidth; H = innerHeight; dpr = Math.min(devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(Math.min(dpr, 1.6)); renderer.setSize(W, H, false);
+  fxc.width = Math.round(W * dpr); fxc.height = Math.round(H * dpr);
+  camera.aspect = W / H; camera.updateProjectionMatrix();
+  Upx = clamp(W * 0.75, 260, 520);   // 指を Upx ピクセルずらす = 押す向きが 90° 変わる
+  const cs = getComputedStyle(document.documentElement);
+  safeT = parseFloat(cs.paddingTop) || 0; safeB = parseFloat(cs.paddingBottom) || 0;
+}
+addEventListener('resize', resize);
+
+function canvasTex(w, h, draw, repeat) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
+  t.anisotropy = 4;
+  return t;
+}
+const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
+const basic = (color, extra = {}) => new THREE.MeshBasicMaterial({ color, ...extra });
+let srnd = 7; const prand = () => (srnd = (srnd * 9301 + 49297) % 233280) / 233280;
+const V3 = (x, s, y) => new THREE.Vector3(x, y, -s);   // コースの座標 (x, s) → three（坂の下 = -z）
+
+// 光: 沈みかけの夕日（左の前、川の向こう）と、雪あかり
+const hemi = new THREE.HemisphereLight('#e2e5f6', '#8f8698', 1.45); scene.add(hemi);
+const sun = new THREE.DirectionalLight('#ffc89a', 1.35); scene.add(sun);
+const SUN_DIR = new THREE.Vector3(-0.6, 0.16, -0.78).normalize();
+
+/* 空（カメラについて動く大きな球。上は藍、すそは夕焼け） */
+const skyTex = canvasTex(4, 512, (g, w, h) => {
+  const gr = g.createLinearGradient(0, 0, 0, h);
+  gr.addColorStop(0, '#26304f'); gr.addColorStop(0.22, '#4c5178'); gr.addColorStop(0.38, '#9a7e98'); gr.addColorStop(0.46, '#dba293');
+  gr.addColorStop(0.5, '#efbf9c'); gr.addColorStop(0.53, '#e2bdb2'); gr.addColorStop(1, '#b49aa4');
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+});
+const sky = new THREE.Mesh(new THREE.SphereGeometry(1200, 24, 16), new THREE.MeshBasicMaterial({ map: skyTex, side: THREE.BackSide, fog: false, depthWrite: false }));
+sky.renderOrder = -10; scene.add(sky);
+const glowTex = canvasTex(128, 128, (g) => { const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,236,200,1)'); gr.addColorStop(0.16, 'rgba(255,200,150,.7)'); gr.addColorStop(1, 'rgba(255,170,130,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); });
+const sunSpr = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false, fog: false }));
+sunSpr.scale.set(300, 300, 1); sunSpr.renderOrder = -9; scene.add(sunSpr);
+
+/* ---------- 地面（雪の坂・道・土・川） ---------- */
+const C_SNOW = new THREE.Color('#f6f2f2'), C_ROAD = new THREE.Color('#d6ccc4'), C_LEAF = new THREE.Color('#d9cbbb'), C_BARE = new THREE.Color('#806351'), C_BANK = new THREE.Color('#cfd3de'), C_DARK = new THREE.Color('#5d6573');
+const terrainMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+function buildTerrain() {
+  const XS = [];
+  for (let x = -48; x <= 52; x += (x < -30 || x > 26 ? 3 : 1)) XS.push(x);
+  const CH = 30;
+  for (let c0 = -30; c0 < CRS.S_LEN; c0 += CH) {
+    const SS = []; for (let s = c0; s <= Math.min(CRS.S_LEN, c0 + CH) + 1e-6; s += (s > 62 && s < 152 ? 0.5 : 0.8)) SS.push(s);
+    if (SS[SS.length - 1] < Math.min(CRS.S_LEN, c0 + CH) - 1e-6) SS.push(Math.min(CRS.S_LEN, c0 + CH));
+    const nx = XS.length, ns = SS.length, pos = new Float32Array(nx * ns * 3), col = new Float32Array(nx * ns * 3);
+    const c = new THREE.Color();
+    for (let j = 0; j < ns; j++) for (let i = 0; i < nx; i++) {
+      const x = XS[i], s = SS[j], q = (j * nx + i) * 3;
+      pos[q] = x; pos[q + 1] = hAt(x, s); pos[q + 2] = -s;
+      const xr = xrAt(s), ty = tyAt(x, s);
+      if (x < xr - 0.3) c.copy(C_BANK).lerp(C_DARK, clamp((xr - x - 0.5) / 2.5, 0, 1) * (x > xr - 15 ? 1 : 0));
+      else if (ty === 1) c.copy(C_ROAD);
+      else if (ty === 3) c.copy(C_BARE);
+      else if (ty === 2) c.copy(C_LEAF);
+      else c.copy(C_SNOW);
+      if (x < xr - 15) c.copy(C_SNOW);
+      const n = 1 + 0.025 * Math.sin(x * 1.7 + s * 0.9) + 0.02 * Math.sin(x * 0.5 - s * 2.3);
+      col[q] = c.r * n; col[q + 1] = c.g * n; col[q + 2] = c.b * n;
+    }
+    const idx = [];
+    for (let j = 0; j < ns - 1; j++) for (let i = 0; i < nx - 1; i++) { const a = j * nx + i, b = a + 1, d = a + nx, e = d + 1; idx.push(a, d, b, b, d, e); }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3)); geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setIndex(idx); geo.computeVertexNormals(); geo.computeBoundingSphere();
+    scene.add(new THREE.Mesh(geo, terrainMat));
+  }
+  // 川（水面）
+  const wp = [], wi = [];
+  let n = 0;
+  for (let s = -30; s <= CRS.S_LEN; s += 2) { const xr = xrAt(s), y = waterY(s); wp.push(xr - 0.6, y, -s, xr - 17, y, -s); if (n) wi.push(2 * n - 2, 2 * n, 2 * n - 1, 2 * n - 1, 2 * n, 2 * n + 1); n++; }
+  const wg = new THREE.BufferGeometry(); wg.setAttribute('position', new THREE.Float32BufferAttribute(wp, 3)); wg.setIndex(wi); wg.computeVertexNormals();
+  scene.add(new THREE.Mesh(wg, new THREE.MeshLambertMaterial({ color: '#3f5868', emissive: '#1f2c3a' })));
+}
+buildTerrain();
+
+/* ---------- 村・田んぼ・木立（見た目） ---------- */
+const OBM = [];   // 障害物 id → メッシュ（巻きこむと消える）
+const snowM = lam('#f7f4f4'), woodM = lam('#5b4636'), darkWood = lam('#3d3029'), stoneM = lam('#8f8c8c', { flatShading: true }), sugiM = lam('#33503f', { flatShading: true }), barkM = lam('#5c4a3e');
+const plasterM = lam('#e9e0d2'), winM = basic('#ffc979'), beniM = lam('#c4462f'), strawM = lam('#c9a467');
+const stoneGeo = new THREE.DodecahedronGeometry(1, 0), capGeo = new THREE.SphereGeometry(1, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2), coneGeo = new THREE.ConeGeometry(1, 1, 8), cylGeo = new THREE.CylinderGeometry(1, 1, 1, 8), boxGeo = new THREE.BoxGeometry(1, 1, 1), sphGeo = new THREE.SphereGeometry(1, 12, 8);
+// 小物のメッシュを材質ごとに1つにまとめる（スマホで軽く。描く回数を減らす）
+const _m4 = new THREE.Matrix4(), _inv = new THREE.Matrix4();
+function mergeGroup(G) {
+  G.updateMatrixWorld(true); _inv.copy(G.matrixWorld).invert();
+  const byMat = new Map(), olds = [];
+  G.traverse(o => { if (o.isMesh) { olds.push(o); let g = o.geometry.index ? o.geometry.toNonIndexed() : o.geometry.clone(); g.applyMatrix4(_m4.multiplyMatrices(_inv, o.matrixWorld)); if (!byMat.has(o.material)) byMat.set(o.material, []); byMat.get(o.material).push(g); } });
+  for (const o of olds) o.parent.remove(o);
+  for (const [mat, gs] of byMat) {
+    let n = 0; for (const g of gs) n += g.attributes.position.count;
+    const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3); let k = 0;
+    for (const g of gs) { pos.set(g.attributes.position.array, k * 3); nor.set(g.attributes.normal.array, k * 3); k += g.attributes.position.count; g.dispose(); }
+    const mg = new THREE.BufferGeometry(); mg.setAttribute('position', new THREE.BufferAttribute(pos, 3)); mg.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); mg.computeBoundingSphere();
+    G.add(new THREE.Mesh(mg, mat));
+  }
+  return G;
+}
+function mesh(geo, mat, x, y, z, sx, sy, sz, parent = scene) { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.scale.set(sx, sy ?? sx, sz ?? sx); parent.add(m); return m; }
+const DECO = [];   // 見た目だけの木（カメラの前に来たら消す）
+function makeTree(x, s, r, conifer, parent = scene, scale = 1) {
+  const G = new THREE.Group(); G.position.set(x, hAt(x, s), -s); parent.add(G);
+  if (conifer) {
+    const hh = (7 + prand() * 4) * scale;
+    mesh(cylGeo, barkM, 0, hh * 0.2, 0, r, hh * 0.4, r, G);
+    for (let k = 0; k < 3; k++) { const y = hh * (0.32 + k * 0.22), rr = (2.4 - k * 0.6) * scale; mesh(coneGeo, sugiM, 0, y, 0, rr, hh * 0.36, rr, G); mesh(coneGeo, snowM, 0, y + hh * 0.06, 0, rr * 0.82, hh * 0.27, rr * 0.82, G).rotation.y = 0.4; }
+  } else {
+    const hh = (6 + prand() * 3) * scale;
+    mesh(cylGeo, barkM, 0, hh / 2, 0, r * 0.8, hh, r * 0.8, G);
+    for (let k = 0; k < 5; k++) { const b = mesh(cylGeo, barkM, 0, hh * (0.45 + k * 0.1), 0, 0.07 * scale, hh * 0.35, 0.07 * scale, G); b.rotation.set(0.7 + prand() * 0.4, k * 1.3, 0); b.position.x += Math.sin(k * 1.3) * 0.5; b.position.z += Math.cos(k * 1.3) * 0.5; }
+    mesh(sphGeo, snowM, 0, hh * 0.98, 0, 0.5 * scale, 0.25 * scale, 0.5 * scale, G);
+  }
+  return mergeGroup(G);
+}
+function makeHouse(x, s, w, d, h, rot = 0, kura = false) {
+  const G = new THREE.Group(); G.position.set(x, hAt(x, s) - 0.2, -s); G.rotation.y = rot; scene.add(G);
+  mesh(boxGeo, kura ? plasterM : woodM, 0, h / 2, 0, w, h, d, G);
+  if (!kura) mesh(boxGeo, plasterM, 0, h * 0.75, 0, w * 1.01, h * 0.42, d * 1.01, G);
+  // 雪の積もった切妻屋根
+  const sh = new THREE.Shape(); sh.moveTo(-w / 2 - 0.6, 0); sh.lineTo(0, h * 0.55); sh.lineTo(w / 2 + 0.6, 0); sh.lineTo(w / 2 + 0.6, -0.25); sh.lineTo(0, h * 0.55 - 0.3); sh.lineTo(-w / 2 - 0.6, -0.25); sh.closePath();
+  const rg = new THREE.ExtrudeGeometry(sh, { depth: d + 1.0, bevelEnabled: false }); rg.translate(0, 0, -(d + 1.0) / 2);
+  const roof = new THREE.Mesh(rg, darkWood); roof.position.y = h; G.add(roof);
+  const sn = new THREE.Shape(); sn.moveTo(-w / 2 - 0.55, 0.02); sn.lineTo(0, h * 0.55 + 0.35); sn.lineTo(w / 2 + 0.55, 0.02); sn.closePath();
+  const sg = new THREE.ExtrudeGeometry(sn, { depth: d + 0.9, bevelEnabled: false }); sg.translate(0, 0, -(d + 0.9) / 2);
+  const snr = new THREE.Mesh(sg, snowM); snr.position.y = h + 0.05; G.add(snr);
+  // あかりのついた窓
+  for (const sx of [-1, 1]) { if (prand() < 0.25) continue; mesh(boxGeo, winM, sx * w * 0.22, h * 0.42, d / 2 + 0.02, w * 0.18, h * 0.22, 0.04, G); }
+  if (prand() < 0.7) mesh(boxGeo, winM, -w / 2 - 0.02, h * 0.42, 0, 0.04, h * 0.2, d * 0.2, G);
+  return mergeGroup(G);
+}
+function buildWorld() {
+  // 障害物
+  for (const o of OB) {
+    let m = null;
+    if (o.k === 'stone') {
+      m = new THREE.Group(); m.position.set(o.x, hAt(o.x, o.s), -o.s); scene.add(m);
+      const st = mesh(stoneGeo, stoneM, 0, o.h * 0.45, 0, o.r * 1.05, o.h * 0.75, o.r * 0.95, m); st.rotation.set(prand() * 3, prand() * 3, 0);
+      mesh(capGeo, snowM, 0, o.h * 0.72, 0, o.r * 0.9, o.h * 0.35, o.r * 0.85, m);
+    } else if (o.k === 'tree') m = makeTree(o.x, o.s, o.r, o.conifer);
+    else if (o.k === 'pole') {
+      m = new THREE.Group(); m.position.set(o.x, hAt(o.x, o.s), -o.s); scene.add(m);
+      mesh(cylGeo, lam('#9e9a93'), 0, 4.5, 0, 0.13, 9, 0.13, m); mesh(boxGeo, lam('#8f8a82'), 0, 8.3, 0, 1.6, 0.1, 0.1, m); mesh(capGeo, snowM, 0, 9, 0, 0.14, 0.08, 0.14, m);
+    } else if (o.k === 'jizo') {
+      m = new THREE.Group(); m.position.set(o.x, hAt(o.x, o.s), -o.s); scene.add(m);
+      mesh(boxGeo, stoneM, 0, 0.12, 0, 0.6, 0.24, 0.5, m); mesh(capGeo, stoneM, 0, 0.24, 0, 0.24, 0.55, 0.2, m); mesh(sphGeo, stoneM, 0, 0.82, 0, 0.15, 0.17, 0.15, m);
+      mesh(coneGeo, beniM, 0, 0.6, 0.02, 0.2, 0.22, 0.17, m).rotation.x = Math.PI; mesh(capGeo, snowM, 0, 0.94, 0, 0.17, 0.12, 0.17, m);
+      // 笠
+      mesh(coneGeo, strawM, 0, 1.05, 0, 0.32, 0.16, 0.32, m); mesh(coneGeo, snowM, 0, 1.11, 0, 0.27, 0.1, 0.27, m);
+    } else if (o.k === 'kakashi') {
+      m = new THREE.Group(); m.position.set(o.x, hAt(o.x, o.s), -o.s); scene.add(m);
+      mesh(cylGeo, woodM, 0, 0.8, 0, 0.05, 1.6, 0.05, m); mesh(cylGeo, woodM, 0, 1.15, 0, 0.04, 1.3, 0.04, m).rotation.z = Math.PI / 2;
+      mesh(boxGeo, lam('#4c6c8c'), 0, 1.05, 0, 0.6, 0.5, 0.18, m); mesh(sphGeo, plasterM, 0, 1.45, 0, 0.15, m);
+      mesh(coneGeo, strawM, 0, 1.62, 0, 0.36, 0.18, 0.36, m); mesh(coneGeo, snowM, 0, 1.68, 0, 0.3, 0.12, 0.3, m);
+    } else if (o.k === 'fence') {
+      m = new THREE.Group(); scene.add(m);
+      const L = Math.hypot(o.x2 - o.x, o.s2 - o.s), n = Math.max(2, Math.round(L / 1.8) + 1);
+      for (let i = 0; i < n; i++) { const t = i / (n - 1), x = o.x + (o.x2 - o.x) * t, s = o.s + (o.s2 - o.s) * t, y = hAt(x, s); mesh(cylGeo, darkWood, x, y + o.h / 2, -s, 0.06, o.h, 0.06, m); mesh(capGeo, snowM, x, y + o.h, -s, 0.08, 0.06, 0.08, m); }
+      for (const hy of [0.4, 0.78]) {
+        const xm = (o.x + o.x2) / 2, sm = (o.s + o.s2) / 2, rail = mesh(boxGeo, darkWood, xm, hAt(xm, sm) + o.h * hy, -sm, 0.05, 0.06, L, m);
+        rail.rotation.y = Math.atan2(o.x2 - o.x, -(o.s2 - o.s));
+        const sn = mesh(boxGeo, snowM, xm, hAt(xm, sm) + o.h * hy + 0.05, -sm, 0.07, 0.04, L, m); sn.rotation.y = rail.rotation.y;
+      }
+    }
+    if (m && o.k !== 'tree') mergeGroup(m);
+    OBM[o.id] = m;
+  }
+  // 電線
+  const poles = OB.filter(o => o.k === 'pole'), wm = new THREE.LineBasicMaterial({ color: '#3a3438' });
+  for (let i = 0; i < poles.length - 1; i++) for (const dx of [-0.7, 0.7]) {
+    const a = poles[i], b = poles[i + 1], pts = [];
+    for (let k = 0; k <= 12; k++) { const t = k / 12, x = a.x + (b.x - a.x) * t + dx, s = a.s + (b.s - a.s) * t, y = lerp(hAt(a.x, a.s), hAt(b.x, b.s), t) + 8.3 - Math.sin(Math.PI * t) * 0.8; pts.push(new THREE.Vector3(x, y, -s)); }
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wm));
+  }
+  // 村の家（山側）と蔵、広場の家と火の見やぐら
+  for (const [s, dx, w, d, h, rot, kura] of [[-6, 4, 7, 6, 3.4, 0.1], [8, 6, 6, 7, 3.2, -0.15], [21, 5, 7, 6, 3.6, 0.05, false], [34, 7, 4.5, 4.5, 4.2, 0, true], [46, 5, 7.5, 6, 3.4, 0.2], [58, 8, 6, 6, 3.2, -0.1]]) makeHouse(xhAt(s) + dx, s, w, d, h, rot, kura);
+  for (const [s, dx, w, d, h, rot] of [[318, -8, 7, 6, 3.5, 0.3], [326, 5, 8, 6, 3.6, -0.1], [340, -13, 6, 6, 3.2, 0.2], [348, 6, 7, 7, 3.8, 0]]) makeHouse(xcAt(s) + dx, s, w, d, h, rot);
+  {
+    const x = xcAt(336) - 3, s = 336, y0 = hAt(x, s), G = new THREE.Group(); G.position.set(x, y0, -s); scene.add(G);
+    const legM = lam('#4a3a33');
+    for (const [a, b] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) { const l = mesh(cylGeo, legM, a * 1.1, 5, b * 1.1, 0.08, 10.2, 0.08, G); l.rotation.set(b * 0.08, 0, -a * 0.08); }
+    mesh(boxGeo, legM, 0, 9.4, 0, 1.6, 0.1, 1.6, G); mesh(coneGeo, darkWood, 0, 10.6, 0, 1.3, 1.2, 1.3, G).rotation.y = Math.PI / 4; mesh(coneGeo, snowM, 0, 10.75, 0, 1.15, 0.95, 1.15, G).rotation.y = Math.PI / 4;
+    mesh(cylGeo, lam('#8a5a2a'), 0, 9.9, 0, 0.18, 0.4, 0.18, G);
+  }
+  // 広場のほかの雪だるま（村の子どもたちの作品）
+  for (const [s, dx, r] of [[312, -3, 0.35], [314, 3, 0.5], [316, 9, 0.28]]) {
+    const x = xcAt(s) + dx, y = hAt(x, s);
+    mesh(sphGeo, snowM, x, y + r, -s, r); mesh(sphGeo, snowM, x, y + 2 * r + r * 0.6, -s, r * 0.68);
+    mesh(cylGeo, beniM, x, y + 2 * r + r * 1.3, -s, r * 0.35, r * 0.4, r * 0.35).rotation.z = 0.2;
+  }
+  // 山すそと向こう岸の木立
+  for (let i = 0; i < 70; i++) { const s = -20 + prand() * (CRS.S_LEN + 10), right = prand() < 0.6, x = right ? xhAt(s) + 2 + prand() * 22 : xrAt(s) - 17 - prand() * 18; if (right && s < 62 && prand() < 0.6) continue; DECO.push({ x, s, r: 2.2, m: makeTree(x, s, 0.25 + prand() * 0.2, prand() < 0.7) }); }
+  // 田んぼのあぜ（見た目だけの低い盛り上がり）・稲架
+  for (const s0 of RISERS) { const x = xcAt(s0) + 10 + prand() * 2; const G = new THREE.Group(); G.position.set(x, hAt(x, s0 + 2), -(s0 + 2)); scene.add(G); for (const a of [-1.5, 1.5]) mesh(cylGeo, darkWood, a, 0.9, 0, 0.05, 1.8, 0.05, G); mesh(cylGeo, darkWood, 0, 1.55, 0, 0.04, 3.2, 0.04, G).rotation.z = Math.PI / 2; mesh(boxGeo, snowM, 0, 1.62, 0, 3.2, 0.06, 0.08, G); }
+  // 遠くの雪山
+  const yamaM = lam('#9aa0b6', { flatShading: true }), yamaS = lam('#eef0f6', { flatShading: true });
+  for (let i = 0; i < 18; i++) {
+    const a = -Math.PI * 0.98 + i * 0.11 + prand() * 0.05, r = 520 + prand() * 120, hh = 90 + prand() * 110, rr = 120 + prand() * 80;
+    const x = Math.cos(a) * r + 0, z = Math.sin(a) * r - 260, y = -60;
+    const m = mesh(coneGeo, yamaM, x, y + hh / 2, z, rr, hh, rr); m.rotation.y = prand() * 3;
+    const c = mesh(coneGeo, yamaS, x, y + hh * 0.82, z, rr * 0.38, hh * 0.36, rr * 0.38); c.rotation.y = m.rotation.y;
+  }
+}
+buildWorld();
+
+/* 降る雪（カメラのまわりだけ） */
+const FLN = 420, flPos = new Float32Array(FLN * 3), flV = new Float32Array(FLN);
+for (let i = 0; i < FLN; i++) { flPos[i * 3] = (Math.random() - 0.5) * 40; flPos[i * 3 + 1] = Math.random() * 22; flPos[i * 3 + 2] = (Math.random() - 0.5) * 40; flV[i] = 0.6 + Math.random() * 0.7; }
+const flGeo = new THREE.BufferGeometry(); flGeo.setAttribute('position', new THREE.BufferAttribute(flPos, 3));
+const flakeTex = canvasTex(32, 32, g => { const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 32, 32); });
+const flakes = new THREE.Points(flGeo, new THREE.PointsMaterial({ size: 0.13, map: flakeTex, transparent: true, depthWrite: false, opacity: 0.85 }));
+flakes.frustumCulled = false; scene.add(flakes);
+
+/* ---------- 雪玉・転がった跡・押す子ども ---------- */
+const ball = new THREE.Group(); scene.add(ball);          // 位置
+const ballRot = new THREE.Group(); ball.add(ballRot);     // 転がる回転（くっついた葉や石もいっしょに回る）
+const ballGeo = new THREE.SphereGeometry(1, 36, 24);
+const BASE = ballGeo.attributes.position.array.slice(), LUMP = new Float32Array(BASE.length / 3);
+{
+  const col = new Float32Array(BASE.length);
+  for (let i = 0; i < LUMP.length; i++) {
+    const x = BASE[i * 3], y = BASE[i * 3 + 1], z = BASE[i * 3 + 2];
+    LUMP[i] = 0.55 * Math.sin(3.1 * x + 1.2) * Math.sin(2.3 * y + 0.4) + 0.45 * Math.sin(4.7 * z + 2.1 * x) - 0.35 * Math.max(0, x * 0.6 + y * 0.8) ** 3;
+    const n = 0.94 + 0.06 * Math.sin(17 * x + 11 * y) * Math.sin(13 * z - 7 * y);
+    col[i * 3] = n * 0.985; col[i * 3 + 1] = n * 0.985; col[i * 3 + 2] = n;
+  }
+  ballGeo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+}
+const ballMat = new THREE.MeshLambertMaterial({ vertexColors: true, emissive: '#3b3846' });
+const ballMesh = new THREE.Mesh(ballGeo, ballMat); ballRot.add(ballMesh);
+let shownDef = -1;
+function setBallShape(def) {
+  if (Math.abs(def - shownDef) < 0.008) return;
+  shownDef = def;
+  const p = ballGeo.attributes.position.array, k = 0.035 + clamp(def, 0, 1) * 0.2;
+  for (let i = 0; i < LUMP.length; i++) { const f = 1 + k * LUMP[i]; p[i * 3] = BASE[i * 3] * f; p[i * 3 + 1] = BASE[i * 3 + 1] * f; p[i * 3 + 2] = BASE[i * 3 + 2] * f; }
+  ballGeo.attributes.position.needsUpdate = true; ballGeo.computeVertexNormals();
+}
+// くっついた枯れ葉・小石（転がる玉の下側にくっつき、育つと埋もれていく）
+const stuck = [];
+const leafGeo = new THREE.CircleGeometry(1, 5), leafMs = [lam('#9a6a3a', { side: THREE.DoubleSide }), lam('#7d5530', { side: THREE.DoubleSide }), lam('#b0803f', { side: THREE.DoubleSide })];
+const pebM = lam('#77736f', { flatShading: true }), twigM = lam('#4a3628');
+const qInv = new THREE.Quaternion(), DOWN = new THREE.Vector3(0, -1, 0);
+function stickOn(kind, size = 0) {
+  if (stuck.length > 60) { const o = stuck.shift(); ballRot.remove(o.m); }
+  qInv.copy(ballRot.quaternion).invert();
+  const u = DOWN.clone().add(new THREE.Vector3(Math.random() - 0.5, 0, Math.random() - 0.5).multiplyScalar(0.8)).normalize().applyQuaternion(qInv);
+  let m;
+  if (kind === 'leaf') { m = new THREE.Mesh(leafGeo, leafMs[(Math.random() * 3) | 0]); m.scale.set(0.05, 0.03, 1); }
+  else if (kind === 'twig') { m = new THREE.Mesh(cylGeo, twigM); m.scale.set(0.012, 0.22, 0.012); }
+  else { m = new THREE.Mesh(stoneGeo, pebM); const r = size || 0.025 + Math.random() * 0.03; m.scale.set(r, r * 0.8, r); }
+  m.lookAt(u); if (kind === 'leaf') m.rotateZ(Math.random() * 6);
+  ballRot.add(m);
+  stuck.push({ m, u, R: game.R, size: size || 0.04 });
+}
+function updateStuck(R) {
+  for (const o of stuck) { const bury = R - o.R; o.m.visible = bury < 0.05 + o.size * 0.6; o.m.position.copy(o.u).multiplyScalar(R * (1 + 0.035) - Math.min(bury, 0.05) * 0.5); }
+}
+// 転がった跡（溝）: 左はし・まん中（少し暗い）・右はし の帯
+const TR_MAX = 3200, trPos = new Float32Array(TR_MAX * 9), trCol = new Float32Array(TR_MAX * 9);
+const trGeo = new THREE.BufferGeometry();
+trGeo.setAttribute('position', new THREE.BufferAttribute(trPos, 3)); trGeo.setAttribute('color', new THREE.BufferAttribute(trCol, 3));
+{ const idx = []; for (let i = 0; i < TR_MAX - 1; i++) { const a = i * 3, b = a + 3; idx.push(a, b, a + 1, a + 1, b, b + 1, a + 1, b + 1, a + 2, a + 2, b + 1, b + 2); } trGeo.setIndex(idx); }
+const trail = new THREE.Mesh(trGeo, new THREE.MeshBasicMaterial({ vertexColors: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -4 }));
+trail.frustumCulled = false; scene.add(trail);
+let trN = 0, trLast = null;
+const TC_EDGE = new THREE.Color('#efe2df'), TC_MID = new THREE.Color('#a9a8c2');
+function trailReset() { trN = 0; trLast = null; trGeo.setDrawRange(0, 0); }
+function trailAdd(x, s, ux, us, hw) {
+  if (trN >= TR_MAX) return;
+  const lx = us, ls = -ux, pts = [[x + lx * hw, s + ls * hw, 0.03, TC_EDGE], [x, s, 0.008, TC_MID], [x - lx * hw, s - ls * hw, 0.03, TC_EDGE]];
+  for (let k = 0; k < 3; k++) { const [px, ps, dy, c] = pts[k], q = trN * 9 + k * 3; trPos[q] = px; trPos[q + 1] = hAt(px, ps) + dy; trPos[q + 2] = -ps; trCol[q] = c.r; trCol[q + 1] = c.g; trCol[q + 2] = c.b; }
+  trN++;
+  trGeo.attributes.position.needsUpdate = true; trGeo.attributes.color.needsUpdate = true;
+  trGeo.setDrawRange(0, Math.max(0, trN - 1) * 12);
+}
+// 押す子ども（赤いコート・紺の毛糸帽）
+const kid = new THREE.Group(); kid.scale.setScalar(0.9); scene.add(kid);
+const kidParts = {};
+{
+  const coat = lam('#b8432f'), pants = lam('#3b3f55'), skin = lam('#efc3a0'), hat = lam('#2c3d5c'), boot = lam('#4a3a33'), glove = lam('#e8d9b8');
+  const body = new THREE.Group(); body.position.y = 0.55; kid.add(body); kidParts.body = body;
+  mesh(new THREE.CapsuleGeometry(0.19, 0.32, 4, 10), coat, 0, 0.18, 0, 1, 1, 0.85, body);
+  const head = new THREE.Group(); head.position.y = 0.6; body.add(head);
+  mesh(sphGeo, skin, 0, 0, 0, 0.15, head); mesh(capGeo, hat, 0, 0.02, 0, 0.16, 0.16, 0.16, head); mesh(sphGeo, lam('#e8e2d6'), 0, 0.19, 0, 0.05, head);
+  mesh(cylGeo, lam('#d8b25a'), 0, -0.13, 0, 0.13, 0.06, 0.12, head);   // マフラー
+  kidParts.arms = [];
+  for (const sx of [-1, 1]) { const a = new THREE.Group(); a.position.set(sx * 0.18, 0.36, 0); body.add(a); mesh(new THREE.CapsuleGeometry(0.055, 0.3, 3, 8), coat, 0, -0.17, 0, 1, a); mesh(sphGeo, glove, 0, -0.36, 0, 0.065, a); kidParts.arms.push(a); }
+  kidParts.legs = [];
+  for (const sx of [-1, 1]) { const l = new THREE.Group(); l.position.set(sx * 0.09, 0.5, 0); kid.add(l); mesh(new THREE.CapsuleGeometry(0.07, 0.3, 3, 8), pants, 0, -0.24, 0, 1, l); mesh(boxGeo, boot, 0, -0.46, 0.02, 0.1, 0.08, 0.15, l); kidParts.legs.push(l); }
+}
+// かけら（割れたとき）と、雪だるまの頭・顔・バケツ・腕
+const chunks = [];
+for (let i = 0; i < 9; i++) { const m = new THREE.Mesh(ballGeo, ballMat); m.visible = false; scene.add(m); chunks.push({ m, p: new THREE.Vector3(), v: new THREE.Vector3(), r: 0 }); }
+const headG = new THREE.Group(); headG.visible = false; scene.add(headG);
+const headMesh = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 18), new THREE.MeshLambertMaterial({ color: '#f4f2f2', emissive: '#3b3846' })); headG.add(headMesh);
+const faceG = new THREE.Group(); headG.add(faceG);
+{
+  const coal = lam('#262222');
+  for (const sx of [-1, 1]) mesh(sphGeo, coal, sx * 0.33, 0.18, 0.9, 0.11, 0.11, 0.07, faceG);
+  for (let i = 0; i < 5; i++) { const a = (i - 2) * 0.17; mesh(sphGeo, coal, Math.sin(a) * 0.5, -0.28 - Math.cos(a * 2) * 0.06 + 0.06, Math.cos(a) * 0.86, 0.05, faceG); }
+  mesh(coneGeo, lam('#e2762f'), 0, -0.02, 1.08, 0.08, 0.32, 0.08, faceG).rotation.x = Math.PI / 2;   // にんじんの鼻
+  const bucket = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.55, 0.62, 14, 1, true), lam('#c4462f', { side: THREE.DoubleSide }));
+  bucket.position.set(0.08, 0.98, -0.02); bucket.rotation.z = -0.22; faceG.add(bucket);
+  mesh(cylGeo, lam('#a63a27'), 0.0, 0.0, 0, 0.42, 0.03, 0.42, bucket).position.y = 0.31;
+}
+const armsG = new THREE.Group(); armsG.visible = false; scene.add(armsG);
+for (const sx of [-1, 1]) { const a = mesh(cylGeo, twigM, sx * 1.25, 0.25, 0, 0.035, 0.9, 0.035, armsG); a.rotation.z = sx * -1.05; const f = mesh(cylGeo, twigM, sx * 1.55, 0.5, 0, 0.025, 0.3, 0.025, armsG); f.rotation.z = sx * -0.3; }
+
+/* ---------- ゲーム状態 ---------- */
+let game = null, bot = null, state = 'loading';   // loading | title | play | finale | over
+let t0 = 0, overShownAt = 0, tt = 0, pops = [], crossed = 0, newShown = false, endAt = -1, fin = null, demoEnd = -1;
+let drag = null, inq = [], lastEvT = 0, kbOn = { push: false };
+let visQ = new THREE.Quaternion(), kidPos = new THREE.Vector3(), kidPhase = 0, lostAt = -9, chipAt = -9, lastZone = '', lastStepSnd = 0;
+let lagS = 0.05;   // 指の記録が出そろうのを待つぶん、物理は少し遅れて進む（どのフレームの速さでも同じ結果）
+function newGame(botSkill) {
+  game = makeSim(nextSeed());
+  bot = botSkill ? makeBot(game, SKILLS[botSkill], mulberry(nextSeed())) : null;
+  t0 = performance.now(); inq = []; lastEvT = 0; drag = null; kbOn.push = false;
+  pops = []; crossed = 0; newShown = false; endAt = -1; fin = null; demoEnd = -1; lostAt = -9; chipAt = -9; lastZone = '';
+  for (; crossed < SIZES.length && SIZES[crossed].cm <= cmOf(PH.R0); crossed++);
+  // 見た目のリセット
+  for (const o of OB) if (OBM[o.id]) OBM[o.id].visible = true;
+  for (const o of stuck) ballRot.remove(o.m); stuck.length = 0;
+  trailReset(); ballRot.quaternion.identity(); ball.visible = true; ballMesh.visible = true; shownDef = -1;
+  for (const c of chunks) c.m.visible = false;
+  headG.visible = false; armsG.visible = false; kid.visible = true;
+  kidPos.set(game.x, hAt(game.x, game.s - 0.5), -(game.s - 0.5)); kidPhase = 0;
+  camInit = true;
+}
+const simTime = ts => (ts - t0) / 1000;
+
+// 物理を、いまの時刻（少し遅れ）まで進める
+function advance(now) {
+  if (!game || game.phase !== 'play') return;
+  const target = simTime(now) - lagS;
+  let n = 0;
+  while (game.phase === 'play' && game.t + PH.DT <= target && n < 600) { feed(); game.step(); handleEvents(); n++; }
+  if (n >= 600) t0 = now - (game.t + lagS) * 1000;   // 長く止まっていたら、そこから再開
+}
+function feed() {
+  if (bot) { bot.step(); return; }
+  while (inq.length && inq[0].t <= game.t) {
+    const e = inq.shift();
+    if (e.type === 'push') game.on = e.v;
+    else if (e.type === 'steer') game.psiT = clamp(e.v, -PH.PSI_MAX, PH.PSI_MAX);
+    else if (e.type === 'kl') game.kl = e.v ? 1 : 0;
+    else if (e.type === 'kr') game.kr = e.v ? 1 : 0;
+  }
+}
+function queue(type, v, ts) {
+  const t = Math.max(simTime(ts), lastEvT, game ? game.t : 0); lastEvT = t;
+  inq.push({ t, type, v });
+}
+function handleEvents() {
+  const loud = state === 'play';
+  for (const e of game.events) {
+    if (e.type === 'bump') { if (loud) sBump(e.vn, e.k); if (e.k > 0.55 && loud) addPop(e.k > 0.8 ? 'ひびが入った！' : 'ごつん', true); }
+    else if (e.type === 'swallow') { if (OBM[e.id]) OBM[e.id].visible = false; if (state !== 'skip') stickOn('stone', Math.min(0.5, OB[e.id].r * 0.7)); if (loud) { sSwallow(); addPop('石を巻きこんだ', false); } }
+    else if (e.type === 'crush') { if (OBM[e.id]) OBM[e.id].visible = false; if (loud) { sCrash(0.5); addPop('柵をなぎ倒した！', true); } }
+    else if (e.type === 'pebble') { if (state !== 'skip') stickOn(Math.random() < 0.3 ? 'twig' : 'pebble'); if (loud && tt - chipAt > 1.2) { chipAt = tt; addPop('土で欠けた', true); sChip(); } }
+    else if (e.type === 'leaf') { if (state !== 'skip') stickOn('leaf'); }
+    else if (e.type === 'lost') { lostAt = tt; if (loud) addPop('追いつけない！', true); }
+    else if (e.type === 'land') { if (loud && e.vn > 0.5) sThud(e.vn); }
+    else if (e.type === 'end') onEnd(e);
+  }
+  game.events.length = 0;
+  while (crossed < SIZES.length && cmOf(game.R) >= SIZES[crossed].cm) {
+    const m = SIZES[crossed++];
+    if (state === 'play') { addPop(m.pop, m.cm >= 135, false); sCross(m.cm); }
+  }
+  if (state === 'play' && rec.best > 0 && !newShown && cmOf(game.R) > rec.best && rec.plays > 0) { newShown = true; addPop('自己ベスト更新！', true, true); sChime(); }
+}
+function addPop(text, hot, big) { pops = pops.filter(p => p.big); pops.push({ text, hot, big, life: 0, dur: big ? 1.8 : 1.2 }); }
+
+/* ---------- おわり → 雪だるま完成 ---------- */
+function onEnd(e) {
+  endAt = tt;
+  const g = game, R = g.R, Rb = g.finalR;
+  fin = { t: 0, reason: e.reason, Rb, built: false, x: g.x, s: g.s, yaw: 0 };
+  if (state === 'play') { if (e.reason === 'break' || e.reason === 'deform') { sCrash(1); } else if (e.reason === 'river') sSplash(); else sPlop(0.4); }
+  if (e.reason === 'break' || e.reason === 'deform') {
+    // かけらが飛び散る
+    const c0 = ball.position.clone(), vx = g.v.x, vs = g.v.s;
+    chunks.forEach((c, i) => {
+      const a = i / chunks.length * Math.PI * 2, rr = R * (i === 0 ? 0 : 0.28 + Math.random() * 0.2);
+      c.r = rr; c.m.visible = i > 0; c.m.scale.setScalar(rr);
+      c.p.copy(c0).add(new THREE.Vector3(Math.cos(a) * R * 0.5, R * 0.2 * Math.random(), Math.sin(a) * R * 0.5));
+      c.v.set(Math.cos(a) * (1 + R) + vx * 0.4, 1.5 + Math.random() * 2 + R, Math.sin(a) * (1 + R) - vs * 0.4);
+      c.m.position.copy(c.p);
+    });
+  }
+  if (e.reason === 'river') {
+    // 引き上げた所（川岸の上）に作る
+    fin.s = g.s; fin.x = xrAt(g.s) + Rb + 1.4;
+  }
+}
+function finaleStep(dt) {
+  if (!fin) return;
+  fin.t += dt;
+  const T = fin.t, g = game, R = g.R, Rb = fin.Rb;
+  const broken = fin.reason === 'break' || fin.reason === 'deform', river = fin.reason === 'river';
+  const tb = broken ? 0.75 : river ? 0.9 : 0.25;   // 頭をのせはじめる時刻
+  // かけら
+  for (const c of chunks) if (c.m.visible) { c.v.y -= 9.8 * dt; c.p.addScaledVector(c.v, dt); const gy = hAt(c.p.x, -c.p.z) + c.r * 0.6; if (c.p.y < gy) { c.p.y = gy; c.v.multiplyScalar(0.3); } c.m.position.copy(c.p); }
+  // 体（残った玉）
+  const bx = fin.x, bs = fin.s, by = hAt(bx, bs);
+  if (broken) { const k = clamp(T / 0.35, 0, 1); ball.scale.setScalar(lerp(R, Rb, k)); }
+  else if (river) {
+    if (T < 0.6) { ball.position.y -= dt * 2.5; }
+    else { ball.position.set(bx, by + Rb, -bs); ball.scale.setScalar(Rb); ballMesh.visible = T > 0.8; }
+  } else ball.scale.setScalar(Rb);
+  if (!river || T > 0.8) ball.position.set(bx, by + (broken ? lerp(R, Rb, clamp(T / 0.35, 0, 1)) : Rb), -bs);
+  // 頭が上から落ちてきて、ぽすっ
+  if (T > tb) {
+    const Rh = Rb * 0.7, k = clamp((T - tb) / 0.45, 0, 1), drop = (1 - k * k) * (Rb * 2 + 1.5);
+    headG.visible = true; headG.scale.setScalar(Rh);
+    const sq = k >= 1 ? 1 + 0.12 * Math.exp(-(T - tb - 0.45) * 8) * Math.sin((T - tb - 0.45) * 30) : 1;
+    headG.scale.set(Rh * (2 - sq), Rh * sq, Rh * (2 - sq));
+    headG.position.set(bx, by + Rb * 2 + Rh * 0.82 + drop, -bs);
+    headG.rotation.y = fin.yaw;
+    faceG.visible = T > tb + 0.55;
+    armsG.visible = T > tb + 0.7; armsG.scale.setScalar(Rb); armsG.position.set(bx, by + Rb * 1.15, -bs); armsG.rotation.y = fin.yaw;
+    if (!fin.built && k >= 1) { fin.built = true; if (state === 'finale' || state === 'play') sPlop(1); }
+  }
+  // 子どもは雪だるまの横で見上げる
+  if (state === 'finale' && T > tb + 1.1 && !fin.shown) { fin.shown = true; showOver(); }
+}
+
+function step(dt, now) {
+  tt += dt;
+  if (game && game.phase === 'play') advance(now);
+  if (state === 'title') demoStep();
+  if (game && game.phase === 'end') {
+    if (state === 'play') state = 'finale';
+    finaleStep(dt);
+  }
+  for (const p of pops) p.life += dt;
+  pops = pops.filter(p => p.life < p.dur);
+}
+// タイトル背景: ボットが転がしている（音なし）
+function newDemo() {
+  newGame('good');
+  const tw = 12 + (seed % 7);
+  state = 'skip'; while (game.t < tw && game.phase === 'play') { bot.step(); game.step(); handleEvents(); trailFromSim(); } state = 'title';
+  t0 = performance.now() - (game.t + lagS) * 1000;
+}
+function demoStep() {
+  if (game.phase === 'end') { if (demoEnd < 0) demoEnd = tt; if (tt - demoEnd > 3.2) newDemo(); }
+}
+// 物理の位置から、転がった跡をのばす（見た目）
+function trailFromSim() {
+  if (game.air) { trLast = null; return; }
+  const p = { x: game.x, s: game.s };
+  if (!trLast) { trLast = p; return; }
+  const d = Math.hypot(p.x - trLast.x, p.s - trLast.s);
+  if (d < 0.3) return;
+  const ux = (p.x - trLast.x) / d, us = (p.s - trLast.s) / d;
+  trailAdd(p.x, p.s, ux, us, game.R * 0.62);
+  trLast = p;
+}
+
+/* ---------- カメラ: 雪玉のうしろ上から。大きくなるほど引く ---------- */
+const camPos = new THREE.Vector3(), camLook = new THREE.Vector3(), tmpV = new THREE.Vector3(), tmpV2 = new THREE.Vector3();
+let camInit = true, viewShift = 0, camYaw = 0, camR = 0.2;
+function updateCamera(dt) {
+  const g = game;
+  let wantPos = tmpV, wantLook = tmpV2, k = 1 - Math.exp(-dt * 3);
+  if (fin && (state === 'finale' || state === 'over' || state === 'title' && g.phase === 'end')) {
+    // 雪だるまのまわりをゆっくり回る
+    const Rb = fin.Rb, bx = fin.x, bs = fin.s, by = hAt(bx, bs);
+    fin.yaw = fin.yaw0 ?? (fin.yaw0 = Math.PI - camYaw + 0.0);
+    const a = camYaw + Math.PI + 0.55 + Math.min(fin.t, 20) * 0.12, d = 2.2 + Rb * 4.6;
+    // 顔をカメラに向ける
+    fin.yaw = -a - Math.PI / 2 + Math.PI;
+    wantPos.set(bx + Math.sin(a) * d, by + Rb * 2.1 + 0.6, -(bs + Math.cos(a) * d));
+    wantLook.set(bx, by + Rb * 1.6, -bs);
+    fin.yaw = Math.atan2(wantPos.x - bx, wantPos.z + bs);
+    k = 1 - Math.exp(-dt * 2.2);
+  } else {
+    const sp = Math.hypot(g.v.x, g.v.s);
+    let want = g.psi;
+    if (sp > 0.8) want += angDiff(g.psi, Math.atan2(g.v.x, g.v.s)) * ((g.lost || !g.on) ? 1 : clamp(sp / 3, 0, 1) * 0.6);
+    camYaw += angDiff(camYaw, want) * Math.min(1, dt * 2.2);
+    camR = lerp(camR, g.R, Math.min(1, dt * 2));
+    const R = camR, d = 3.1 + R * 3.3, hgt = 2.5 + R * 2.1, side = 0.7 + R * 0.4;
+    const fx_ = Math.sin(camYaw), fs = Math.cos(camYaw);
+    const bx = g.x, bs = g.s, cx = bx - fx_ * d + fs * side, cs = bs - fs * d - fx_ * side;
+    wantPos.set(cx, Math.max(g.y - R + hgt, hAt(cx, cs) + 0.8), -cs);
+    wantLook.set(bx + fx_ * (1.2 + R * 1.2), g.y + R * 0.2, -(bs + fs * (1.2 + R * 1.2)));
+    k = 1 - Math.exp(-dt * 4);
+  }
+  if (camInit) { camPos.copy(wantPos); camLook.copy(wantLook); camInit = false; }
+  camPos.lerp(wantPos, k); camLook.lerp(wantLook, Math.min(1, k * 1.6));
+  occlude(camPos.x, -camPos.z, fin ? fin.x : g.x, fin ? fin.s : g.s);
+  const port = W / H < 0.75;
+  camera.fov = port ? 58 : 46;
+  const wantShift = state === 'play' ? 0 : state === 'title' ? (port ? 0.25 : 0.1) : (port ? 0.18 : 0.08);
+  viewShift = lerp(viewShift, wantShift, Math.min(1, dt * 4));
+  if (viewShift > 0.002) camera.setViewOffset(W, H, 0, H * viewShift, W, H); else camera.clearViewOffset();
+  camera.position.copy(camPos); camera.lookAt(camLook);
+  camera.updateProjectionMatrix();
+  sky.position.copy(camPos);
+  sunSpr.position.copy(camPos).addScaledVector(SUN_DIR, 900);
+  sun.position.copy(camLook).addScaledVector(SUN_DIR, 60); sun.target.position.copy(camLook); sun.target.updateMatrixWorld();
+}
+// カメラと雪玉のあいだ・カメラのすぐ近くにある木や電柱は、見えなくなるので消す（物理には関係ない）
+const camHidden = new Set();
+function occlude(cx, cs, bx, bs) {
+  for (const id of camHidden) { const m = id < 0 ? DECO[-id - 1].m : OBM[id]; if (m && !(id >= 0 && game.gone[id])) m.visible = true; }
+  camHidden.clear();
+  const dx = bx - cx, ds = bs - cs, L2 = dx * dx + ds * ds || 1;
+  const test = (o, id, m, pad) => {
+    const t = clamp(((o.x - cx) * dx + (o.s - cs) * ds) / L2, 0, 1);
+    if (Math.hypot(o.x - cx - dx * t, o.s - cs - ds * t) < o.r + pad || Math.hypot(o.x - cx, o.s - cs) < o.r + 2.2) { if (m.visible) { m.visible = false; camHidden.add(id); } }
+  };
+  const s0 = Math.min(cs, bs) - 4, s1 = Math.max(cs, bs) + 4;
+  for (let b = Math.max(0, Math.floor(s0 / BKS)); b <= Math.floor(s1 / BKS); b++) for (const id of BK[b] || []) {
+    const o = OB[id], m = OBM[id]; if (!m || o.k === 'fence' || o.k === 'stone' || game.gone[id]) continue;
+    test(o, id, m, 1.1);
+  }
+  DECO.forEach((o, i) => { if (o.s > s0 && o.s < s1) test(o, -i - 1, o.m, 1.0); });
+}
+const UPV = new THREE.Vector3(0, 1, 0), axV = new THREE.Vector3(), dq = new THREE.Quaternion();
+function syncMeshes(dt) {
+  const g = game;
+  if (!fin) {
+    ball.position.set(g.x, g.y, -g.s); ball.scale.setScalar(1);
+    ballMesh.scale.setScalar(g.R);
+    // 転がる回転: 軸 = 上 × 速さの向き、角速度 = 速さ / R
+    const sp = Math.hypot(g.v.x, g.v.s);
+    if (sp > 1e-3 && !g.air) { axV.set(-g.v.s, 0, -g.v.x).normalize(); dq.setFromAxisAngle(axV, sp / g.R * dt); ballRot.quaternion.premultiply(dq); }
+    setBallShape(g.def);
+    updateStuck(g.R);
+    if (g.phase === 'play' && state !== 'skip') trailFromSim();
+  } else {
+    ballMesh.scale.setScalar(1); updateStuck(1);
+    if (fin.Rb && ball.scale.x > 0) { /* 体の大きさは finaleStep で */ }
+  }
+  // 子ども: 押しているときは玉のうしろにくっつき、離すとその場で少し遅れてついていく
+  const R = fin ? fin.Rb : g.R;
+  const pushing = g.on && !g.lost && !fin;
+  const ps = Math.hypot(g.v.x, g.v.s);
+  let tx, ts, yaw;
+  if (fin) { const a = (fin.yaw ?? 0) + 1.1; tx = fin.x + Math.sin(a) * (R + 0.7); ts = fin.s + Math.cos(a) * (R + 0.7); yaw = Math.atan2(fin.x - tx, fin.s - ts); }
+  else { const back = R + 0.33 + (pushing ? 0 : 0.5); tx = g.x - Math.sin(g.psi) * back; ts = g.s - Math.cos(g.psi) * back; yaw = g.psi; }
+  const ky = 1 - Math.exp(-dt * (pushing ? 14 : g.lost ? 1.2 : 3));
+  kidPos.x = lerp(kidPos.x, tx, ky); kidPos.z = lerp(kidPos.z, -ts, ky);
+  kidPos.y = hAt(kidPos.x, -kidPos.z);
+  kid.position.copy(kidPos); kid.rotation.y = Math.PI + yaw;
+  kid.rotation.y = -yaw + Math.PI;
+  const walk = fin ? 0 : clamp(ps / 2, 0, 1.4);
+  kidPhase += dt * (2 + ps * 2.6) * (walk > 0.05 ? 1 : 0);
+  const sw = Math.sin(kidPhase * 2) * 0.55 * walk;
+  kidParts.legs[0].rotation.x = sw; kidParts.legs[1].rotation.x = -sw;
+  kidParts.body.rotation.x = pushing ? -0.3 : fin ? 0.15 : -0.08;
+  const reach = pushing ? -1.45 : fin ? -0.2 + Math.sin(tt * 6) * (fin.built ? 1.2 : 0) * 0 : -0.25 + sw * 0.4;
+  kidParts.arms[0].rotation.x = reach; kidParts.arms[1].rotation.x = pushing ? reach : -0.25 - sw * 0.4;
+  if (fin && fin.built) { kidParts.arms[0].rotation.x = Math.PI - 0.3 + Math.sin(tt * 7) * 0.25; kidParts.arms[1].rotation.x = Math.PI - 0.3 - Math.sin(tt * 7) * 0.25; }
+  // 降る雪
+  const p = flGeo.attributes.position.array, cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+  for (let i = 0; i < FLN; i++) {
+    let x = p[i * 3], y = p[i * 3 + 1], z = p[i * 3 + 2];
+    y -= flV[i] * dt; x += Math.sin(tt * 0.7 + i) * 0.15 * dt;
+    if (y < cy - 6) y += 22; if (x < cx - 20) x += 40; if (x > cx + 20) x -= 40; if (z < cz - 20) z += 40; if (z > cz + 20) z -= 40;
+    p[i * 3] = x; p[i * 3 + 1] = y; p[i * 3 + 2] = z;
+  }
+  flGeo.attributes.position.needsUpdate = true;
+  // 日が暮れていく
+  const dusk = clamp(g.t / PH.T_LIMIT, 0, 1);
+  sun.intensity = 1.35 - dusk * 0.55; hemi.intensity = 1.45 - dusk * 0.3;
+}
+
+/* ---------- 2D: 直径・目盛り・のこり時間 ---------- */
+function project(x, y, z) { tmpV.set(x, y, z).project(camera); return { x: (tmpV.x + 1) / 2 * W, y: (1 - tmpV.y) / 2 * H, z: tmpV.z }; }
+function txt(s, x, y, size, fill = '#23283a', stroke = 'rgba(250,246,240,.92)', lw = 6, font = FD) {
+  const wt = /^\d00 /.exec(font);
+  fx.font = wt ? `${wt[0]}${size}px ${font.slice(wt[0].length)}` : `${size}px ${font}`; fx.lineJoin = 'round'; fx.lineWidth = lw; fx.strokeStyle = stroke; fx.strokeText(s, x, y); fx.fillStyle = fill; fx.fillText(s, x, y);
+}
+let rulerTop = 120;
+function drawFx(dt) {
+  fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fx.clearRect(0, 0, W, H);
+  if (!game) return;
+  const sc = Math.min(1, W / 390 + 0.05), g = game;
+  fx.textAlign = 'center';
+  const cm = fin ? cmOf(fin.Rb) : cmOf(g.R);
+  if (state === 'play' || state === 'title' || state === 'finale') {
+    drawRuler(sc, dt, cm);
+    const top = safeT + 62;
+    txt(`${cm}`, W / 2 - 16 * sc, top, 54 * sc);
+    fx.textAlign = 'left'; txt('cm', W / 2 + fx.measureText(`${cm}`).width / 2 - 10 * sc, top, 22 * sc); fx.textAlign = 'center';
+    if (state === 'play' && g.phase === 'play') {
+      const left = Math.max(0, PH.T_LIMIT - g.t), sp = Math.hypot(g.v.x, g.v.s), S = g.strength();
+      txt(`のこり ${Math.ceil(left)} 秒　${zoneAt(g.s)}`, W / 2, top + 26 * sc, 13 * sc, left < 10 ? '#c4462f' : '#23283a', 'rgba(250,246,240,.9)', 4, `700 ${FB}`);
+      // いびつ・速さ（割れる速さとくらべて）
+      const bw = Math.min(200, W - 140), bx = W / 2 - bw / 2, by = top + 40 * sc;
+      fx.fillStyle = 'rgba(35,40,58,.22)'; fx.beginPath(); fx.roundRect(bx, by, bw, 7, 4); fx.fill();
+      fx.fillStyle = g.def > 0.6 ? '#c4462f' : g.def > 0.3 ? '#d08a3a' : '#5d7fa8'; fx.beginPath(); fx.roundRect(bx, by, Math.max(4, bw * clamp(g.def, 0, 1)), 7, 4); fx.fill();
+      fx.textAlign = 'right'; txt('いびつ', bx - 6, by + 8, 11 * sc, '#23283a', 'rgba(250,246,240,.9)', 3, `700 ${FB}`);
+      fx.textAlign = 'left';
+      const danger = sp > S * 0.85;
+      txt(`${sp.toFixed(1)} m/s`, bx + bw + 6, by + 8, 11 * sc, danger ? '#c4462f' : '#23283a', 'rgba(250,246,240,.9)', 3, `700 ${FB}`);
+      fx.textAlign = 'center';
+      if (danger && Math.sin(tt * 12) > -0.3) txt('速すぎ！ぶつかると割れる', W / 2, by + 30 * sc, 14 * sc, '#c4462f', 'rgba(250,246,240,.95)', 5, `700 ${FB}`);
+      else if (g.twist > 0.5) txt('曲げすぎ！いびつになる', W / 2, by + 30 * sc, 14 * sc, '#c4462f', 'rgba(250,246,240,.95)', 5, `700 ${FB}`);
+      else if (g.lost) txt('追いつけない！', W / 2, by + 30 * sc, 14 * sc, '#c4462f', 'rgba(250,246,240,.95)', 5, `700 ${FB}`);
+      // 雪のようす（育っているか）
+      const st = g.air ? '' : g.dEff > 0.17 ? '新雪 ぐんぐん' : g.dEff > 0.06 ? 'うすい雪' : tyAt(g.x, g.s) === 3 ? '土 … 欠ける' : '踏んだ雪 … 育たない';
+      if (st) txt(st, W / 2, H - safeB - 52, 13 * sc, g.dEff > 0.17 ? '#2c3d5c' : '#8a4a2a', 'rgba(250,246,240,.9)', 4, `700 ${FB}`);
+      if (rec.plays < 2 && g.t < 9 || (!g.on && !bot && g.t < 3)) {
+        const yy = H - safeB - 128;
+        txt(g.on ? '左右にずらすと向きが変わる' : '画面に指を置くと押す', W / 2, yy, 16 * sc, '#23283a', 'rgba(250,246,240,.95)', 6, `700 ${FB}`);
+        txt('新雪（まっさら）を通ると大きくなる', W / 2, yy + 26, 15 * sc, '#c4462f', 'rgba(250,246,240,.95)', 6, `700 ${FB}`);
+      }
+    }
+  }
+  for (const p of pops) {
+    const k = clamp(p.life / 0.15, 0, 1), out = clamp((p.dur - p.life) / 0.3, 0, 1);
+    const y = safeT + (p.big ? 200 : 170) - p.life * 10;
+    fx.globalAlpha = Math.min(k, out);
+    const s = (reduceMotion ? 1 : 1 + 0.25 * Math.max(0, 1 - p.life / 0.12)) * (p.big ? 26 : p.hot ? 23 : 20) * sc;
+    txt(p.text, W / 2, y, s, p.hot ? '#c4462f' : '#23283a');
+    fx.globalAlpha = 1;
+  }
+  fx.textAlign = 'start';
+}
+// 右はしの大きさの目盛り（直径。目印つき）。上はだんだん広がる
+function drawRuler(sc, dt, cm) {
+  const want = Math.max(120, cm * 1.35, rec.best * 1.1);
+  rulerTop = lerp(rulerTop, want, Math.min(1, dt * 2.5));
+  const x = W - 22, y0 = H - safeB - 90, y1 = safeT + 128, Y = c => y0 - (y0 - y1) * c / rulerTop;
+  fx.save();
+  fx.strokeStyle = 'rgba(35,40,58,.5)'; fx.lineWidth = 2; fx.beginPath(); fx.moveTo(x, y0); fx.lineTo(x, y1); fx.stroke();
+  const stepC = rulerTop > 700 ? 200 : rulerTop > 350 ? 100 : rulerTop > 160 ? 50 : 20;
+  fx.textAlign = 'right'; fx.font = `700 ${10 * sc}px ${FB}`;
+  for (let c = 0; c <= rulerTop; c += stepC) { const y = Y(c); fx.strokeStyle = 'rgba(35,40,58,.45)'; fx.lineWidth = 1.5; fx.beginPath(); fx.moveTo(x - 5, y); fx.lineTo(x, y); fx.stroke(); if (c > 0) { fx.fillStyle = 'rgba(35,40,58,.7)'; fx.fillText(`${c}`, x + 16, y + 3); } }
+  let lastY = 1e9;
+  for (const m of SIZES) {
+    if (m.cm > rulerTop * 0.98) continue;
+    const y = Y(m.cm), on = cm >= m.cm;
+    if (lastY - y < 13) continue;
+    lastY = y;
+    fx.fillStyle = on ? '#c4462f' : 'rgba(35,40,58,.55)'; fx.beginPath(); fx.arc(x, y, on ? 3.2 : 2.4, 0, 7); fx.fill();
+    txt(m.name, x - 9, y + 4, 11 * sc, on ? '#c4462f' : 'rgba(35,40,58,.8)', 'rgba(250,246,240,.8)', 3, `700 ${FB}`);
+  }
+  if (rec.best > 0 && rec.best < rulerTop) { const y = Y(rec.best); fx.setLineDash([4, 3]); fx.strokeStyle = '#2c3d5c'; fx.lineWidth = 1.5; fx.beginPath(); fx.moveTo(x - 40 * sc, y); fx.lineTo(x, y); fx.stroke(); fx.setLineDash([]); fx.textAlign = 'right'; txt('ベスト', x - 42 * sc, y + 4, 10 * sc, '#2c3d5c', 'rgba(250,246,240,.8)', 3, `700 ${FB}`); }
+  // いまの大きさ（白い玉）
+  const yc = Y(cm); fx.fillStyle = '#fbfaf8'; fx.strokeStyle = '#23283a'; fx.lineWidth = 1.5; fx.beginPath(); fx.arc(x, yc, 6, 0, 7); fx.fill(); fx.stroke();
+  fx.restore();
+}
+function render(dt) {
+  if (game) { syncMeshes(dt); updateCamera(dt); }
+  renderer.render(scene, camera);
+  drawFx(dt);
+}
+
+/* ---------- 結果 ---------- */
+const REASON = {
+  time: '日が暮れた',
+  goal: '下の広場に着いた！',
+  stuck: '重くて動かなくなった',
+  break: '割れた。大きいかけらで',
+  deform: 'いびつで割れた。かけらで',
+  river: '川に落ちた。引き上げたら少しとけた',
+};
+const HIT = { stone: '石', tree: '木', pole: '電柱', jizo: 'お地蔵さん', kakashi: '案山子', fence: '柵', step: '段差の下', land: '段差から落ちて' };
+function advice() {
+  const g = game, r = g.reason;
+  if (r === 'break') return g.hitKind === 'land' ? '速いまま田んぼの段差から落ちて割れた。段差の前は横に押してゆっくり。大きい玉ほど割れやすい。' : `速いまま${HIT[g.hitKind] || '何か'}にぶつかって割れた。大きい玉ほど割れやすい。坂を横切ると速さが落ちる。`;
+  if (r === 'deform') return g.defBy.twist > g.defBy.bare ? '急に曲げすぎて、いびつになって割れた。向きはゆっくり変えよう。' : '土の出た所を転がしすぎて、いびつになって割れた。茶色い所はよけよう。';
+  if (r === 'river') return '左の川へ流された。坂は川のほうへ傾いている。少し右へ押しつづけよう。';
+  if (g.freshDist < g.dist * 0.45) return '踏み固めた道や自分の跡の上が多かった。まっさらな新雪を通るとぐんぐん育つ。';
+  if (r === 'goal') return 'みごと広場まで。もっと新雪を通れば、まだ大きくなる。';
+  if (r === 'stuck') return '大きくなりすぎて押せなくなった。平らな所より坂で育てよう。';
+  return cmOf(g.R) > 200 ? 'みごと。大きい玉は止まらない。坂を横切って速さを落としながら新雪へ。' : 'もっと新雪へ。大きくなるほど育ちが速くなる。';
+}
+function showOver() {
+  if (state !== 'finale' && state !== 'play') return;
+  state = 'over';
+  const cm = cmOf(fin.Rb), title = titleOf(cm);
+  const isNew = cm > rec.best;
+  rec.plays++; rec.total = Math.round(rec.total + cm); rec.last = cm; rec.lastTitle = title; if (isNew) rec.best = cm;
+  save();
+  $('oScore').textContent = cm;
+  $('oPassed').textContent = `${cm}cm の雪だるま（${REASON[game.reason] || ''}）`;
+  $('oMsg').textContent = advice();
+  const nr = $('oNoren'); nr.innerHTML = title.split('').map(c => `<span>${c}</span>`).join(''); nr.classList.toggle('long', title.length > 5);
+  $('oBest').textContent = rec.best; $('oPlays').textContent = rec.plays; $('oDist').textContent = Math.round(game.dist);
+  $('newRec').hidden = !(isNew && rec.plays > 1);
+  $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({ text: `${shareText(cm, title)}${isNew && rec.plays > 1 ? ' 自己ベスト！' : ''}\n`, url: gameUrl(), hashtags: '雪だるま転がし' });
+  $('copyMsg').textContent = '画面タップ・スペースでもう一回';
+  $('over').hidden = false;
+  overShownAt = performance.now();
+  $('retryBtn').focus({ preventScroll: true });
+}
+const shareText = (cm, title) => `⛄雪だるま転がし ${cm}cmの雪だるまができた！『${title}』`;
+
+/* ---------- シェア ---------- */
+// 公開先のURL。ローカルで開いたときもこれをシェアする
+const PUBLIC_URL = 'https://asobi.enludus.com/games/yukidaruma/';
+function gameUrl() {
+  try {
+    if (/^https?:$/.test(location.protocol) && location.hostname !== 'localhost') return location.origin + location.pathname;
+  } catch {}
+  return PUBLIC_URL;
+}
+function fillTitle() { $('tBest').textContent = rec.best ? rec.best : '—'; $('tPlays').textContent = rec.plays; }
+
+/* ---------- 音（雪を踏む・ごろごろ・どさっ。低めでやわらかく、2kHz 以上は使わない） ---------- */
+let ac = null, master = null, noiseBuf = null, roll = null;
+function wakeAudio() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1900; lp.Q.value = 0.5;
+      master = ac.createDynamicsCompressor(); master.threshold.value = -16; master.ratio.value = 5;
+      master.connect(lp).connect(ac.destination);
+      const len = ac.sampleRate * 2; noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0); let b = 0;
+      for (let i = 0; i < len; i++) { b = b * 0.7 + (Math.random() * 2 - 1) * 0.3; d[i] = b * 1.8; }
+      // ごろごろ: 低いノイズ + 低い唸り（大きい玉ほど低く、速いほど大きく）
+      const src = ac.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+      const f1 = ac.createBiquadFilter(); f1.type = 'lowpass'; f1.frequency.value = 260; f1.Q.value = 0.7;
+      const g = ac.createGain(); g.gain.value = 0;
+      const o = ac.createOscillator(); o.type = 'sine'; o.frequency.value = 50;
+      const og = ac.createGain(); og.gain.value = 0;
+      src.connect(f1).connect(g).connect(master); o.connect(og).connect(master); src.start(); o.start();
+      // 雪をかく音（新雪で「ざっ」）
+      const s2 = ac.createBufferSource(); s2.buffer = noiseBuf; s2.loop = true;
+      const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = 520; bp.Q.value = 0.8;
+      const g2 = ac.createGain(); g2.gain.value = 0;
+      s2.connect(bp).connect(g2).connect(master); s2.start(0, 0.7);
+      roll = { f1, g, o, og, bp, g2 };
+    }
+    if (ac.state === 'suspended') ac.resume();
+  } catch {}
+}
+const live = () => ac && state === 'play';
+function setLoops(dt) {
+  try {
+    if (!ac || !roll) return;
+    const n0 = ac.currentTime, on = state === 'play' && game && game.phase === 'play';
+    const sp = on ? Math.hypot(game.v.x, game.v.s) : 0, R = game ? game.R : 0.2, air = on && game.air;
+    const k = air ? 0 : clamp(sp / 4, 0, 1);
+    roll.g.gain.setTargetAtTime(k * (0.18 + clamp(R, 0, 2) * 0.12), n0, 0.06);
+    roll.f1.frequency.setTargetAtTime(clamp(320 - R * 90, 110, 320) + sp * 20, n0, 0.08);
+    roll.o.frequency.setTargetAtTime(clamp(70 - R * 18, 32, 70) + sp * 3, n0, 0.1);
+    roll.og.gain.setTargetAtTime(k * clamp(R, 0.1, 1.6) * 0.07, n0, 0.08);
+    roll.g2.gain.setTargetAtTime(on && !air ? clamp(game.dEff / 0.3, 0, 1) * k * 0.07 : 0, n0, 0.05);
+    // きゅっきゅっ: 子どもの足音（低めの短いノイズ）
+    if (on && game.on && !game.lost && sp > 0.3) {
+      const per = clamp(0.62 - sp * 0.08, 0.26, 0.6);
+      if (tt - lastStepSnd > per) { lastStepSnd = tt; sStep(sp); }
+    }
+  } catch {}
+}
+function tone(freq, at, dur, vol, type = 'sine', f1) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at); if (f1) o.frequency.exponentialRampToValueAtTime(f1, at + dur);
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  o.connect(g).connect(master); o.start(at); o.stop(at + dur + 0.05);
+}
+function noise(at, dur, vol, type, freq, q = 1, attack = 0.01) {
+  const s = ac.createBufferSource(); s.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1400;
+  const g = ac.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + attack); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  s.connect(f).connect(lp).connect(g).connect(master); s.start(at, Math.random()); s.stop(at + dur + 0.05);
+  return f;
+}
+// 雪を踏む「きゅっ」（低めのノイズ2つ。2kHz より下）
+function sStep(sp) { try { if (!live()) return; const n0 = ac.currentTime, k = clamp(sp / 3, 0.4, 1); noise(n0, 0.07, 0.05 * k, 'bandpass', 700 + Math.random() * 200, 3, 0.004); noise(n0 + 0.02, 0.09, 0.035 * k, 'bandpass', 420, 2); } catch {} }
+function sBump(vn, k) { try { if (!live()) return; const n0 = ac.currentTime, a = clamp(k, 0.2, 1); tone(110, n0, 0.16, 0.12 * a, 'sine', 55); noise(n0, 0.14, 0.08 * a, 'lowpass', 500); } catch {} }
+function sThud(vn) { try { if (!live()) return; const n0 = ac.currentTime, a = clamp(vn / 2, 0.2, 1); tone(90, n0, 0.2, 0.12 * a, 'sine', 45); noise(n0, 0.12, 0.07 * a, 'lowpass', 380); } catch {} }
+// 割れる「どさっ」
+function sCrash(a = 1) { try { if (!ac) return; const n0 = ac.currentTime; noise(n0, 0.55, 0.22 * a, 'lowpass', 520, 0.8, 0.008); noise(n0 + 0.05, 0.35, 0.12 * a, 'bandpass', 300, 1); tone(95, n0, 0.35, 0.16 * a, 'sine', 40); for (let i = 0; i < 4; i++) noise(n0 + 0.15 + i * 0.09, 0.12, 0.05 * a, 'lowpass', 450); } catch {} }
+function sSwallow() { try { if (!live()) return; const n0 = ac.currentTime; noise(n0, 0.12, 0.07, 'lowpass', 420); tone(160, n0, 0.1, 0.05, 'triangle', 120); } catch {} }
+function sChip() { try { if (!live()) return; const n0 = ac.currentTime; noise(n0, 0.18, 0.06, 'bandpass', 600, 1.5); } catch {} }
+function sSplash() { try { if (!ac) return; const n0 = ac.currentTime; const f = noise(n0, 0.8, 0.2, 'lowpass', 900, 0.7, 0.02); f.frequency.exponentialRampToValueAtTime(250, n0 + 0.7); tone(70, n0, 0.4, 0.12, 'sine', 40); } catch {} }
+// 頭をのせた「ぽすっ」
+function sPlop(a = 1) { try { if (!ac) return; const n0 = ac.currentTime; noise(n0, 0.2, 0.12 * a, 'lowpass', 600, 0.8, 0.006); tone(180, n0, 0.14, 0.08 * a, 'sine', 90); } catch {} }
+// 目印をこえた「ぽん」（1kHz まで）
+function sCross(cm) { try { if (!live()) return; const n0 = ac.currentTime, f = Math.min(990, 392 * Math.pow(1.1, Math.log2(cm / 30 + 1) * 2.4)); tone(f, n0, 0.35, 0.06); tone(f * 1.5, n0 + 0.06, 0.3, 0.03); } catch {} }
+function sChime() { try { if (!live()) return; const n0 = ac.currentTime + 0.05; [[523, 0], [659, 0.1], [784, 0.2]].forEach(([f, t]) => tone(f, n0 + t, 0.45, 0.06)); } catch {} }
+function sDone() { try { if (!ac) return; const n0 = ac.currentTime + 0.05; [[392, 0], [494, 0.12], [587, 0.24], [784, 0.4]].forEach(([f, t]) => tone(f, n0 + t, 0.5, 0.055)); } catch {} }
+
+/* ---------- ループ ---------- */
+let lastTs = performance.now();
+function frame() {
+  const now = performance.now();
+  const dt = Math.min(0.1, (now - lastTs) / 1000); lastTs = now;
+  lagS += (clamp(dt * 1.6, 0.04, 0.16) - lagS) * 0.1;
+  step(dt, now);
+  render(Math.max(dt, 1 / 240));
+  setLoops(dt);
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 入力: 指を置く = 押す、左右にずらす = 押す向き（時刻つきで記録して物理の時刻で使う） ---------- */
+let sessionPlays = 0;
+function start() {
+  wakeAudio(); state = 'play';
+  if (HASH.has('seed')) seed = ((+HASH.get('seed') >>> 0) + 7919 * sessionPlays) >>> 0;   // #seed=N: 何回目のプレイかまで同じなら、同じボット
+  sessionPlays++;
+  $('title').hidden = true; $('over').hidden = true;
+  const b = HASH.has('debug') && HASH.get('bot') && SKILLS[HASH.get('bot')] ? HASH.get('bot') : null;
+  newGame(b);
+  // #debug&skip=秒: はじめにその秒数だけ一気に進める（OGP 撮影・確認用。bot=good などと組み合わせる）
+  if (HASH.has('debug') && +HASH.get('skip') > 0) skipTo(game.t + +HASH.get('skip'));
+}
+function skipTo(t1) {
+  const quiet = state; state = 'skip';
+  while (game.t < t1 && game.phase === 'play') { feed(); game.step(); handleEvents(); trailFromSim(); }
+  state = quiet === 'skip' ? 'play' : quiet;
+  if (game.phase === 'end' && state === 'play') state = 'finale';
+  t0 = performance.now() - (game.t + lagS) * 1000; camInit = true; camYaw = game.psi; camR = game.R;
+  if (fin) fin.t = 0;
+}
+const evTime = e => (e.timeStamp > 1e3 && Math.abs(e.timeStamp - performance.now()) < 5000 ? e.timeStamp : performance.now());
+fxc.addEventListener('pointerdown', e => {
+  e.preventDefault(); wakeAudio();
+  if (state === 'finale') { if (tt - endAt > 0.35 && fin) { fin.shown = true; showOver(); } return; }
+  if (state !== 'play' || bot || drag || game.phase !== 'play') return;
+  try { fxc.setPointerCapture(e.pointerId); } catch {}
+  const psi0 = inq.length ? [...inq].reverse().find(q => q.type === 'steer')?.v ?? game.psiT : game.psiT;
+  drag = { id: e.pointerId, x0: e.clientX, psi0 };
+  queue('push', true, evTime(e));
+});
+addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id || state !== 'play') return;
+  const list = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+  for (const ce of (list.length ? list : [e])) {
+    let v = drag.psi0 + (ce.clientX - drag.x0) / Upx * (Math.PI / 2);
+    const vc = clamp(v, -PH.PSI_MAX, PH.PSI_MAX);
+    if (vc !== v) { drag.psi0 += vc - v; v = vc; }   // 端で止まったぶんは持ちかえる（戻す向きにはすぐ効く）
+    queue('steer', v, evTime(ce));
+  }
+});
+function endDrag(e) {
+  if (!drag || (e && e.pointerId !== drag.id)) return;
+  drag = null;
+  if (state === 'play' && game.phase === 'play') queue('push', kbOn.push, e ? evTime(e) : performance.now());
+}
+addEventListener('pointerup', endDrag);
+addEventListener('pointercancel', endDrag);
+fxc.addEventListener('contextmenu', e => e.preventDefault());
+for (const id of ['title', 'over']) {
+  $(id).addEventListener('pointerdown', e => {
+    if (e.target.closest('button, a') || state === 'loading') return;
+    if (id === 'over' && performance.now() - overShownAt < 400) return;
+    e.preventDefault(); start();
+  });
+}
+// キーボード: ← → で向き（押している間ずっと回る）、↑ / スペースで押す
+addEventListener('keydown', e => {
+  const c = e.code;
+  if (state === 'finale') { if ((c === 'Space' || c === 'Enter') && tt - endAt > 0.35 && fin) { e.preventDefault(); fin.shown = true; showOver(); } return; }
+  if (state === 'play') {
+    if (bot || game.phase !== 'play') return;
+    if (c === 'ArrowLeft' || c === 'KeyA') { e.preventDefault(); if (!e.repeat) { wakeAudio(); queue('kl', true, evTime(e)); } return; }
+    if (c === 'ArrowRight' || c === 'KeyD') { e.preventDefault(); if (!e.repeat) { wakeAudio(); queue('kr', true, evTime(e)); } return; }
+    if (c === 'Space' || c === 'ArrowUp' || c === 'KeyW' || c === 'Enter') { e.preventDefault(); if (!e.repeat) { wakeAudio(); kbOn.push = true; queue('push', true, evTime(e)); } return; }
+    return;
+  }
+  if (c !== 'Space' && c !== 'Enter') return;
+  if (state === 'loading') return;
+  const el = document.activeElement;
+  if (el && el !== $('retryBtn') && el !== $('startBtn') && el.matches('button, a, input')) return;
+  if (state === 'over' && performance.now() - overShownAt < 400) { e.preventDefault(); return; }
+  e.preventDefault(); if (!e.repeat) start();
+});
+addEventListener('keyup', e => {
+  if (state !== 'play' || !game || game.phase !== 'play' || bot) return;
+  const c = e.code;
+  if (c === 'ArrowLeft' || c === 'KeyA') queue('kl', false, evTime(e));
+  else if (c === 'ArrowRight' || c === 'KeyD') queue('kr', false, evTime(e));
+  else if (c === 'Space' || c === 'ArrowUp' || c === 'KeyW' || c === 'Enter') { kbOn.push = false; if (!drag) queue('push', false, evTime(e)); }
+});
+addEventListener('blur', () => { if (state === 'play' && game && game.phase === 'play' && !bot) { drag = null; kbOn.push = false; queue('push', false, performance.now()); queue('kl', false, performance.now()); queue('kr', false, performance.now()); } });
+$('startBtn').addEventListener('click', start);
+$('retryBtn').addEventListener('click', start);
+$('copyBtn').addEventListener('click', () => {
+  const text = `${shareText(rec.last, rec.lastTitle || titleOf(rec.last))} ${gameUrl()}`;
+  const msg = $('copyMsg');
+  const fallback = () => { msg.textContent = text; const r = document.createRange(); r.selectNodeContents(msg); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.style.userSelect = 'text'; };
+  try { navigator.clipboard.writeText(text).then(() => { msg.textContent = 'コピーしました'; }, fallback); } catch { fallback(); }
+});
+
+/* ---------- 調整・検証用（#debug のときだけ） ---------- */
+if (HASH.has('debug')) {
+  const q = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(p * (s.length - 1))]; };
+  window.__yukidaruma = {
+    info: () => game && ({ state, phase: game.phase, reason: game.reason, t: +game.t.toFixed(3), x: +game.x.toFixed(2), s: +game.s.toFixed(2), y: +game.y.toFixed(2), air: game.air, v: [+game.v.x.toFixed(2), +game.v.s.toFixed(2)], speed: +Math.hypot(game.v.x, game.v.s).toFixed(2), cm: cmOf(game.R), finalCm: fin ? cmOf(fin.Rb) : null, R: +game.R.toFixed(3), def: +game.def.toFixed(3), strength: +game.strength().toFixed(2), on: game.on, psi: +game.psi.toFixed(3), psiT: +game.psiT.toFixed(3), lost: game.lost, dist: +game.dist.toFixed(1), fresh: +game.freshDist.toFixed(1), zone: zoneAt(game.s), rec, seed }),
+    // 物理だけで N 回ぶん: sim('first', 100) → [直径cm...]。opts.rate = ボットが画面を見る回数（Hz）
+    sim: (skill = 'good', N = 50, opts = {}) => Array.from({ length: N }, (_, i) => runBot(SKILLS[skill], (opts.seed0 ?? 1000) + i, opts).cm),
+    stats: (skill = 'good', N = 100, opts = {}) => {
+      const R = Array.from({ length: N }, (_, i) => runBot(SKILLS[skill], (opts.seed0 ?? 1000) + i, opts)), c = R.map(r => r.cm), why = {};
+      for (const r of R) why[r.reason] = (why[r.reason] || 0) + 1;
+      return { skill, N, rate: opts.rate || 'exact', p10: q(c, 0.1), p50: q(c, 0.5), p90: q(c, 0.9), min: Math.min(...c), max: Math.max(...c), over40: R.filter(r => r.cm >= 40).length / N, why, dist50: +q(R.map(r => r.dist), 0.5).toFixed(0), t50: +q(R.map(r => r.t), 0.5).toFixed(1) };
+    },
+    // いまのプレイをボットに任せる
+    autoplay: (skill = 'good') => { if (game && game.phase === 'play') bot = makeBot(game, SKILLS[skill], mulberry(nextSeed())); },
+    skip: s => skipTo(game.t + s),
+    ballScreen: () => project(game.x, game.y, -game.s),
+    gl: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles, geos: renderer.info.memory.geometries }),
+    PH, SKILLS, SIZES, makeSim, runBot, makeBot, game: () => game,
+  };
+}
+
+/* ---------- はじめ ---------- */
+try { await Promise.race([Promise.all([document.fonts.load(`40px "Dela Gothic One"`, '0123456789cm' + SIZES.map(m => m.pop + m.title).join('') + '自己ベスト更新！石を巻きこんだ柵をなぎ倒したひびが入ったごつん追いつけない土で欠けた'), document.fonts.load(`700 16px "Zen Kaku Gothic New"`, 'のこり秒いびつm/s速すぎ！ぶつかると割れる曲げすぎ！いびつになる追いつけない新雪ぐんぐんうすい雪土欠ける踏んだ雪育たない画面に指を置くと押す左右にずらすと向きが変わる新雪（まっさら）を通ると大きくなるベスト' + ZONES.map(z => z[2]).join('') + SIZES.map(m => m.name).join(''))]), new Promise(r => setTimeout(r, 1500))]); } catch {}
+resize();
+newDemo();
+state = 'title';
+fillTitle();
+$('startBtn').disabled = false; $('startBtn').textContent = '雪玉を押す';
+$('startBtn').focus({ preventScroll: true });
+requestAnimationFrame(frame);
+</script>
+<a class="hub-back" id="hubBack" href="/" aria-label="あそび横丁（ゲーム一覧）にもどる">← 横丁</a>
+<script>
+// プレイ中でもゲーム一覧に戻れるボタン。押してもゲームの入力（タップ・ドラッグ）に伝わらないようにする
+for (const ev of ['pointerdown', 'touchstart', 'mousedown']) document.getElementById('hubBack').addEventListener(ev, e => e.stopPropagation(), { passive: true });
+</script>
+</body>
+</html>
