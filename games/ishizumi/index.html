@@ -1,0 +1,1511 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>石積み</title>
+<meta name="description" content="夕方の河原で、形も大きさもばらばらな丸い石を、1個ずつそっと積み上げる。指で石を塔の真上へ運んで、はなすと静かに下ろす。本物の3D物理で、重心がずれれば ぐらり、ころころ。せせらぎと赤とんぼの中、崩さず何個・何cm積めるか。ログイン不要のブラウザゲーム。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="石積み">
+<meta property="og:description" content="河原の丸い石を、そっと1個ずつ。崩さず何個積める？">
+<meta property="og:url" content="https://asobi.enludus.com/games/ishizumi/">
+<meta property="og:image" content="https://asobi.enludus.com/games/ishizumi/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%AA%A8%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+:root { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+/* 全画面 WebGL（夕方の河原・台石の上の石の塔）+ 2D の演出レイヤー + HUD。タイトル/結果は下寄せのカード1枚 */
+:root {
+  --dusk: #3a3340;       /* 夕暮れの影 */
+  --ink: #26211d;        /* 墨 */
+  --paper: #f3ede2;      /* 和紙 */
+  --noren: #3f5c6b;      /* 川の青ねず */
+  --noren-ink: #f4efe4;
+  --noren-dark: #253a45;
+  --gold: #eaa13d;       /* 夕日 */
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--dusk); color: var(--ink);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+#gl, #fx { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#fx { touch-action: none; cursor: grab; }
+
+.hud {
+  position: fixed; right: 0; top: 0; pointer-events: none;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+}
+.pill {
+  background: var(--noren); color: var(--noren-ink);
+  border-radius: 6px; padding: 5px 10px 6px;
+  font-variant-numeric: tabular-nums; line-height: 1.1; text-align: right;
+  box-shadow: 0 2px 0 rgba(0,0,0,.3);
+}
+.pill .lab { font-size: 10px; letter-spacing: .12em; opacity: .8; display: block; }
+.pill .val { font-family: var(--font-display); font-size: 17px; }
+
+.rot {
+  position: fixed; z-index: 30;
+  right: max(14px, env(safe-area-inset-right, 0px)); bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  width: 64px; height: 64px; border-radius: 50%; padding: 0;
+  display: grid; place-items: center; align-content: center; gap: 0;
+  background: rgba(244, 239, 228, .9); color: var(--noren-dark); box-shadow: 0 3px 0 rgba(20, 28, 34, .45);
+  font: 700 10px/1 var(--font-body); letter-spacing: .06em; touch-action: none;
+}
+.rot svg { width: 26px; height: 26px; margin-bottom: 2px; }
+.rot:active { transform: translateY(2px); box-shadow: 0 1px 0 rgba(20, 28, 34, .45); }
+
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: end center; z-index: 40;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: 16px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 48px);
+  background: linear-gradient(to top, rgba(28, 24, 30, .55), rgba(28, 24, 30, 0) 70%);
+  touch-action: none; cursor: pointer; overflow: hidden;
+}
+.card {
+  width: min(360px, 100%); background: var(--paper); color: var(--ink);
+  border-radius: 10px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.45);
+  text-align: center; cursor: default;
+}
+.noren {
+  background: var(--noren); color: var(--noren-ink);
+  display: flex; gap: 3px;
+  padding-top: 14px;
+}
+.noren span {
+  flex: 1; background: var(--noren); border-bottom: 3px solid rgba(255,255,255,.1);
+  font-family: var(--font-display); font-size: 30px; line-height: 1; padding-block: 6px 12px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.2);
+}
+.noren.result { padding-top: 10px; }
+.noren.result span { font-size: 24px; padding-block: 4px 10px; }
+.body { padding: 14px 20px 16px; display: grid; gap: 10px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.7; text-wrap: balance; }
+.score { font-family: var(--font-display); font-size: 46px; line-height: 1; font-variant-numeric: tabular-nums; display: flex; justify-content: center; align-items: baseline; gap: 2px; white-space: nowrap; }
+.score small { font-size: 20px; margin-left: 2px; }
+.score .dot { font-size: 22px; opacity: .5; margin-inline: 2px; }
+.meta { display: flex; justify-content: center; gap: 6px 16px; font-size: 13px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.meta b { font-size: 16px; }
+.badge {
+  justify-self: center; background: var(--gold); color: #3a2410; font-weight: 700;
+  font-size: 12px; letter-spacing: .14em; padding: 3px 10px; border-radius: 99px;
+}
+#over .lead { font-size: 13px; line-height: 1.55; }
+#over .body { gap: 9px; padding-block: 12px 14px; }
+.btns { display: grid; gap: 8px; }
+.btns .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+button {
+  font: inherit; font-weight: 700; font-size: 16px; border: 0; border-radius: 8px;
+  padding: 13px 16px; cursor: pointer;
+  background: var(--noren); color: var(--noren-ink); box-shadow: 0 3px 0 var(--noren-dark);
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--noren-dark); }
+button:disabled { opacity: .6; cursor: progress; }
+a.xbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font-weight: 700; font-size: 16px; border-radius: 8px; padding: 13px 16px;
+  background: #0f1419; color: #fff; box-shadow: 0 3px 0 #000;
+}
+a.xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+a.xbtn:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+a.xbtn svg { width: 16px; height: 16px; fill: currentColor; }
+button.sub { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); padding-inline: 8px; font-size: 15px; }
+button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.how { font-size: 12px; opacity: .72; margin: 0; line-height: 1.6; }
+.err { font-size: 13px; color: #b3361b; margin: 0; font-weight: 700; }
+.back { font-size: 13px; color: var(--ink); opacity: .75; }
+.back:hover { opacity: 1; }
+@media (max-height: 700px) {
+  .score { font-size: 40px; }
+  .body { gap: 8px; padding-block: 12px 14px; }
+  button, a.xbtn { padding-block: 10px; }
+  .noren span { font-size: 26px; }
+  .overlay { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 42px); }
+}
+@media (max-height: 600px) { #over .lead { display: none; } .how { font-size: 11px; } }
+.hub-back {
+  position: fixed; z-index: 60;
+  left: calc(env(safe-area-inset-left, 0px) + 10px); bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  font: 700 12px/1 "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif; letter-spacing: .04em;
+  padding: 7px 11px; border-radius: 99px; text-decoration: none;
+  background: rgba(20, 18, 24, .55); color: #fff; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.hub-back:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<canvas id="gl" aria-hidden="true"></canvas>
+<canvas id="fx" aria-label="石積みのゲーム画面。ドラッグ（または矢印キー）で石を動かし、指をはなす（またはスペース）と、そっと下ろして置く"></canvas>
+
+<div class="hud" id="hud" hidden>
+  <div class="pill"><span class="lab">最高</span><span class="val" id="hBest">—</span></div>
+</div>
+<button class="rot" id="rotBtn" hidden aria-label="石を回す（Q / E キー）"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M19.5 12a7.5 7.5 0 1 1-2.4-5.5"/><path d="M19.6 3.6v4.2h-4.2"/></svg>まわす</button>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="noren" aria-hidden="true"><span>河</span><span>原</span><span>の</span><span>石</span><span>積</span></div>
+    <div class="body">
+      <p class="lead">形も大きさもばらばらな 丸い河原の石を、<br><b>そっと1個ずつ</b>積み上げる。<br>崩さず<b>何個・何cm</b>いけるか。</p>
+      <div class="meta"><span>最高 <b id="tBest">—</b></span><span>遊んだ <b id="tPlays">0</b> 回</span></div>
+      <div class="btns"><button id="startBtn" disabled>よみこみ中…</button></div>
+      <p class="err" id="loadErr" hidden></p>
+      <p class="how"><b>ドラッグ</b>で石を塔の真上へ。<b>指をはなす</b>と、そっと下ろして置く。<br>くさび形の石は <b>まわす</b>（Q/E）で傾きを打ち消せる。<br>1個でも河原に落ちたら おしまい。</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <div class="noren result" aria-hidden="true"><span>ご</span><span>ろ</span><span>ご</span><span>ろ</span><span>…</span></div>
+    <div class="body">
+      <div class="badge" id="newRec" hidden>新記録</div>
+      <div class="score"><span id="oScore">0</span><small>個</small><span class="dot">・</span><span id="oCm">0</span><small>cm</small></div>
+      <p class="lead" id="oMsg"></p>
+      <div class="meta"><span>最高 <b id="oBest">0</b> 個・<b id="oBestCm">0</b>cm</span><span>遊んだ <b id="oPlays">0</b> 回</span></div>
+      <div class="btns">
+        <div class="two"><button id="retryBtn">もう一回</button><button class="sub" id="copyBtn">結果をコピー</button></div>
+        <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Xでシェア</a>
+      </div>
+      <p class="how" id="copyMsg">画面タップ・スペースでもう一回</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+const RAPIER_URL = 'https://cdn.jsdelivr.net/npm/@dimforge/rapier3d-compat@0.12.0/rapier.es.js';
+let THREE, RAPIER;
+try {
+  const [t, r] = await Promise.all([import(THREE_URL), import(RAPIER_URL)]);
+  THREE = t; RAPIER = r.default;
+  await RAPIER.init();
+} catch (e) {
+  $('startBtn').textContent = '読み込めませんでした';
+  $('loadErr').hidden = false;
+  $('loadErr').textContent = '3D/物理エンジンの読み込みに失敗しました。通信状況を確かめて、ページを再読み込みしてください。';
+  throw e;
+}
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FD = getComputedStyle(document.documentElement).getPropertyValue('--font-display');
+const FB = getComputedStyle(document.documentElement).getPropertyValue('--font-body');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const DEG = Math.PI / 180;
+const HASH = new URLSearchParams(location.hash.slice(1));
+
+/*PHYS-BEGIN*/
+/* ---------- 石積みの物理（three には頼らない。Rapier の剛体だけ） ----------
+   長さの単位は 10cm、重力も 10 倍（98.1）で、本物と同じ速さで起きる。
+   河原の大きな台石（上が平らな岩）の上に、丸い河原の石を1個ずつ積む。
+   石は「角を大きく丸めた箱」（roundCuboid）でできていて、上と下に小さな平らな面があり、まわりはぐるっと丸い。
+   丸めの大きさ（＝平らな面の広さ）で、乗せやすさが決まる。上へ行くほど石は小さく・丸く（平らな面がせまく）なる。
+   くさび形の石は、下の箱の上に、少し傾けた箱を重ねた形（上の面がななめ）。乗せた石も傾くので、向きを回して打ち消す。
+   convex hull は Rapier 0.12 で接触が不安定だった（缶つみの報告）ので使わない。
+   Rapier 0.12 の roundCuboid は質量を丸めの内側の箱だけで数える（丸い石ほど軽く・回りやすくなってしまう）ので、質量と回りにくさは自分で入れる。
+   持っている石は物理の世界に入れず、離すと まっすぐ下へ「そっと」下ろす（形ごと下へ shape cast して、当たる直前で手を離す）。
+   下ろしながら、手は石を「すぐ下の石の上の面」と平行に傾ける（置く人の手つき）。指の位置・回す・離すは時刻つきで記録し、物理の時刻で使う。
+   乗ったか・崩れたかは Rapier の結果（位置）だけで決める: どれか1個でも台石より下（河原）へ落ちたら終わり。高さは止まった塔のいちばん上。
+   放置で崩れないように: 摩擦大きめ・ころがりの抵抗・落ち着いたら眠らせる。塔の上から KEEP より下で止まった石は固定（fixed）にし、
+   そのかわり、固定した石とその上ぜんぶの重心が、その石の下の接触点（Rapier の接触から取った）の囲む範囲に入っているかを毎回しらべ、
+   はみ出したら固定をといて物理にまかせる（本物なら崩れる傾き方なら、ちゃんと崩れる）。 */
+const PH = {
+  G: 98.1, DT: 1 / 120, ITERS: 10, PRED: 0.04,
+  BASE: 3.0, BASE_R: 1.5, BASE_B: 0.4, MOUND_R: 2.4, MOUND_Y: -0.6,   // 台石: 上の面の高さ・半径・ふちの丸み / 下の丸いところ
+  MU: 0.9, E: 0.02,                         // 石どうしの摩擦・はね返り
+  LDAMP: 0.15, ADAMP: 1.5,                  // 空気・ころがりの抵抗
+  HOVER: 1.0,                               // 持っている石の底と、塔のいちばん上のすきま
+  FOLLOW: 14,                               // 手が指に追いつく速さ（1/秒）
+  YAW_STEP: Math.PI / 12,                   // 回すボタン1回（15°）
+  V_MAX: 6, V_MIN: 0.6, V_K: 3.5, V_REL: 0.3,  // 下ろす速さ（当たる直前は 6cm/秒）・手を離すときの速さ
+  ENTER: 0.35, LEAN_K: 12,
+  SETTLE_MIN: 0.5, SETTLE_MAX: 4, CALM: 0.003,
+  LOSE: 0.6,                                // 石の重心が 台石の上面 - これ より下 = 河原に落ちた
+  KEEP: 2.2, SUP: 0.9,                      // 固定する深さ / 支えの範囲を何割に縮めて重心をしらべるか
+  AIM_R: 4.5,
+  KN: 7, KR: 5, X0: 1.1, X1: 0.66, TK0: 0.32, TK1: 0.45, RHO0: 0.65, RHO1: 0.9, RHO_MAX: 0.92, W0: 0.05, W1: 0.06, W2: 0.03,   // 石の変わり方（何個目で、どれだけ小さく・丸く）
+};
+function mulberry(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const qAxisO = (ax, ay, az, a) => { const s = Math.sin(a / 2); return { x: ax * s, y: ay * s, z: az * s, w: Math.cos(a / 2) }; };
+const qMulO = (a, b) => ({ w: a.w * b.w - a.x * b.x - a.y * b.y - a.z * b.z, x: a.w * b.x + a.x * b.w + a.y * b.z - a.z * b.y, y: a.w * b.y - a.x * b.z + a.y * b.w + a.z * b.x, z: a.w * b.z + a.x * b.y - a.y * b.x + a.z * b.w });
+const qConjO = q => ({ x: -q.x, y: -q.y, z: -q.z, w: q.w });
+function qRotO(q, v) {
+  const { x, y, z, w } = q;
+  const ix = w * v.x + y * v.z - z * v.y, iy = w * v.y + z * v.x - x * v.z, iz = w * v.z + x * v.y - y * v.x, iw = -x * v.x - y * v.y - z * v.z;
+  return { x: ix * w + iw * -x + iy * -z - iz * -y, y: iy * w + iw * -y + iz * -x - ix * -z, z: iz * w + iw * -z + ix * -y - iy * -x };
+}
+const qFromUp = n => { const l = Math.hypot(n.x, n.y, n.z), x = n.x / l, y = n.y / l, z = n.z / l, w = 1 + y; if (w < 1e-6) return { x: 1, y: 0, z: 0, w: 0 }; const m = Math.hypot(z, w, x); return { x: z / m, y: 0, z: -x / m, w: w / m }; };
+const qNlerp = (a, b, k) => { const d = a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w, s = d < 0 ? -1 : 1; const q = { x: a.x + (b.x * s - a.x) * k, y: a.y + (b.y * s - a.y) * k, z: a.z + (b.z * s - a.z) * k, w: a.w + (b.w * s - a.w) * k }; const l = Math.hypot(q.x, q.y, q.z, q.w); return { x: q.x / l, y: q.y / l, z: q.z / l, w: q.w / l }; };
+const vAdd = (a, b) => ({ x: a.x + b.x, y: a.y + b.y, z: a.z + b.z });
+const lerpO = (a, b, k) => a + (b - a) * k;
+const clampO = (v, a, b) => Math.max(a, Math.min(b, v));
+const GRP = { WORLD: 0x0001, STONE: 0x0002 };
+const groups = (member, filter) => ((member & 0xffff) << 16) | (filter & 0xffff);
+// 何個目（n）のときのカメラの向き（塔のまわりを左右にゆっくり回る）。石が出てくる横の向き・ボットの「奥行きの見えにくさ」にも使う
+const camYawOf = n => 0.72 * Math.sin(n * 1.7 + 0.6);
+
+/* ----- 石の形 -----
+   parts: 角を丸めた箱 { h: 半分の大きさ（丸めの内側）, b: 丸め, p, q, dens }
+   X, Z: 横の半分の長さ（丸めこみ） / T: 厚みの半分 / rho: 丸めの割合（1 で厚みぜんぶが丸い＝平らな面がせまい） */
+function stoneSpec(n, rnd) {
+  const k = 1 - Math.exp(-n / PH.KN);
+  const s = { n, parts: [], bonus: false, wedge: 0, look: Math.floor(rnd() * 1e6) };
+  let X, Z, T, rho;
+  if (n >= 4 && rnd() < Math.min(0.15, 0.05 + 0.005 * n)) {
+    // ボーナス: 平たい石（平らな面が広く、次の土台になる）。大きすぎると頭が重いので、ふつうの石より ひとまわり大きいくらい
+    s.bonus = true;
+    X = lerpO(PH.X0, PH.X1, k) * (1.15 + rnd() * 0.15); Z = X * (0.72 + rnd() * 0.2); T = X * 0.2; rho = 0.75;
+  } else {
+    X = lerpO(PH.X0, PH.X1, k) * (0.9 + rnd() * 0.2);
+    Z = X * (0.6 + rnd() * 0.35);
+    T = Math.min(X * lerpO(PH.TK0, PH.TK1, k) * (0.85 + rnd() * 0.3), Z * 0.95);
+    rho = clampO(lerpO(PH.RHO0, PH.RHO1, 1 - Math.exp(-n / PH.KR)) + (rnd() - 0.5) * 0.2, 0.35, PH.RHO_MAX);
+  }
+  const I = { x: 0, y: 0, z: 0, w: 1 };
+  const box = (X, T, Z, rho, p, q, dens) => { const b = Math.min(rho * T, Z * 0.98, X * 0.98); return { h: { x: Math.max(0.005, X - b), y: Math.max(0.002, T - b), z: Math.max(0.005, Z - b) }, b, p, q, dens }; };
+  s.parts.push(box(X, T, Z, rho, { x: 0, y: 0, z: 0 }, I, 1));
+  s.X = X; s.Z = Z; s.T = T; s.rho = rho;
+  if (!s.bonus && n >= 3 && rnd() < Math.min(0.7, 0.15 + 0.05 * (n - 3))) {
+    // くさび形: 上にななめの箱を重ねる（上の面が th だけ傾く。傾きの向き al）
+    const th = PH.W0 + rnd() * PH.W1 + PH.W2 * k, al = rnd() * Math.PI * 2;
+    const TB = T * 0.75, q = qAxisO(Math.sin(al), 0, -Math.cos(al), th);
+    const dy = T - TB + Math.max(X, Z) * Math.tan(th) * 0.8;
+    s.parts.push(box(X * 0.96, TB, Z * 0.96, rho, { x: 0, y: dy, z: 0 }, q, 0.5));
+    s.wedge = th; s.wal = al;
+  }
+  // 高さを測る（まっすぐ置いたとき）
+  const up = { x: 0, y: 1, z: 0 }, dn = { x: 0, y: -1, z: 0 };
+  s.bottom = Math.min(...s.parts.map(P => partSupport(P, I, dn).y));
+  s.top = Math.max(...s.parts.map(P => partSupport(P, I, up).y));
+  const PT = s.parts[s.parts.length - 1];
+  s.topF = { c: vAdd(PT.p, qRotO(PT.q, { x: 0, y: PT.h.y + PT.b, z: 0 })), hx: PT.h.x, hz: PT.h.z, q: PT.q };
+  s.botF = { c: { x: 0, y: -T, z: 0 }, hx: s.parts[0].h.x, hz: s.parts[0].h.z };
+  return s;
+}
+// 丸めた箱 P を、石の向き q で置いたときの、向き d へのいちばん外の点（石の中心から）
+function partSupport(P, q, d) {
+  const qq = qMulO(q, P.q), dl = qRotO(qConjO(qq), d);
+  const loc = { x: Math.sign(dl.x) * P.h.x, y: Math.sign(dl.y) * P.h.y, z: Math.sign(dl.z) * P.h.z };
+  const w = vAdd(qRotO(q, P.p), qRotO(qq, loc));
+  return { x: w.x + d.x * P.b, y: w.y + d.y * P.b, z: w.z + d.z * P.b };
+}
+function stoneColliders(RAPIER, s) {
+  // Rapier 0.12 の roundCuboid は、質量を丸めの内側の箱だけで数える（丸い石ほど軽くなってしまう）。質量と回りにくさは自分で入れる
+  return s.parts.map(P => {
+    const m = partVol(P) * P.dens, X = P.h.x + P.b, Y = P.h.y + P.b, Z = P.h.z + P.b, k = m / 3 * 0.85;
+    return RAPIER.ColliderDesc.roundCuboid(P.h.x, P.h.y, P.h.z, P.b)
+      .setTranslation(P.p.x, P.p.y, P.p.z).setRotation(P.q).setFriction(PH.MU).setRestitution(PH.E)
+      .setMassProperties(m, { x: 0, y: 0, z: 0 }, { x: k * (Y * Y + Z * Z), y: k * (X * X + Z * Z), z: k * (X * X + Y * Y) }, { x: 0, y: 0, z: 0, w: 1 });
+  });
+}
+// 2D の凸包（x, z）
+function hull2(pts) {
+  const P = pts.map(p => [p.x, p.z]).sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  if (P.length < 3) return P;
+  const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lo = [], hi = [];
+  for (const p of P) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], p) <= 1e-9) lo.pop(); lo.push(p); }
+  for (let i = P.length - 1; i >= 0; i--) { const p = P[i]; while (hi.length >= 2 && cr(hi[hi.length - 2], hi[hi.length - 1], p) <= 1e-9) hi.pop(); hi.push(p); }
+  return lo.slice(0, -1).concat(hi.slice(0, -1));
+}
+function hullArea(H) { let a = 0; for (let i = 0; i < H.length; i++) { const p = H[i], q = H[(i + 1) % H.length]; a += p[0] * q[1] - q[0] * p[1]; } return Math.abs(a) / 2; }
+// 点が、凸包を中心へ k 倍に縮めた範囲の中か
+function inHull(H, x, z, k) {
+  if (H.length < 3) return false;
+  let cx = 0, cz = 0; for (const p of H) { cx += p[0]; cz += p[1]; } cx /= H.length; cz /= H.length;
+  const S = H.map(p => [cx + (p[0] - cx) * k, cz + (p[1] - cz) * k]);
+  let sg = 0;
+  for (let i = 0; i < S.length; i++) {
+    const a = S[i], b = S[(i + 1) % S.length], c = (b[0] - a[0]) * (z - a[1]) - (b[1] - a[1]) * (x - a[0]);
+    if (Math.abs(c) < 1e-12) continue;
+    const s = Math.sign(c); if (!sg) sg = s; else if (s !== sg) return false;
+  }
+  return true;
+}
+
+function makeGame(RAPIER, seed = 1) {
+  const rnd = mulberry(seed);
+  const world = new RAPIER.World({ x: 0, y: -PH.G, z: 0 });
+  world.timestep = PH.DT;
+  const ip = world.integrationParameters;
+  ip.numSolverIterations = PH.ITERS;
+  if (PH.PRED) ip.predictionDistance = PH.PRED;
+  const fixed = world.createRigidBody(RAPIER.RigidBodyDesc.fixed());
+  const wg = groups(GRP.WORLD, GRP.STONE), sg = groups(GRP.STONE, GRP.STONE | GRP.WORLD);
+  world.createCollider(RAPIER.ColliderDesc.cuboid(80, 1, 80).setTranslation(0, -1, 0).setFriction(0.9).setRestitution(0.05).setCollisionGroups(wg), fixed);   // 河原
+  const bh = PH.BASE / 2;
+  world.createCollider(RAPIER.ColliderDesc.roundCylinder(bh - PH.BASE_B, PH.BASE_R - PH.BASE_B, PH.BASE_B).setTranslation(0, bh, 0).setFriction(PH.MU).setRestitution(0.03).setCollisionGroups(wg), fixed);   // 台石
+  world.createCollider(RAPIER.ColliderDesc.ball(PH.MOUND_R).setTranslation(0, PH.MOUND_Y, 0).setFriction(0.5).setRestitution(0.03).setCollisionGroups(wg), fixed);   // 台石の下の丸いところ（半分 砂利に埋まっている。落ちた石は ころがって河原へ）
+
+  const g = { world, rnd, seed, stones: [], cur: null, t: 0, score: 0, phase: 'enter', events: [], inq: [], reason: '', overT: -1, topY: PH.BASE, maxTop: PH.BASE, settleT: 0, calmT: 0, lost: null, falling: null, unfrozen: 0, snap: null, pendingDrop: false };
+  const pos = st => st.body.translation();
+  const toW = (st, p) => vAdd(st.body.translation(), qRotO(st.body.rotation(), p));
+  g.toW = toW;
+  g.topOf = st => { const q = st.body.rotation(), t = pos(st); let m = -1e9; for (const P of st.s.parts) m = Math.max(m, t.y + partSupport(P, q, { x: 0, y: 1, z: 0 }).y); return m; };
+  g.onTower = () => g.stones.filter(st => st.state === 'rest');
+  g.topStone = () => { let b = null, m = -1e9; for (const st of g.stones) if (st.state === 'rest') { const y = g.topOf(st); if (y > m) { m = y; b = st; } } return b; };
+  g.heightCm = () => Math.max(0, Math.round((g.topY - PH.BASE) * 10));
+  g.maxCm = () => Math.max(0, Math.round((g.maxTop - PH.BASE) * 10));
+  g.comOf = st => toW(st, st.com);
+  // いちばん上の石の上の面（世界）: 中心・法線・向き。石がなければ台石
+  g.topFace = () => {
+    const st = g.topStone();
+    if (!st) return { c: { x: 0, y: PH.BASE, z: 0 }, n: { x: 0, y: 1, z: 0 }, hx: PH.BASE_R - PH.BASE_B, hz: PH.BASE_R - PH.BASE_B, yaw: 0, st: null };
+    const q = st.body.rotation(), F = st.s.topF, qf = qMulO(q, F.q);
+    const ax = qRotO(qf, { x: 1, y: 0, z: 0 });
+    return { c: toW(st, F.c), n: qRotO(qf, { x: 0, y: 1, z: 0 }), hx: F.hx, hz: F.hz, yaw: Math.atan2(-ax.z, ax.x), st };
+  };
+
+  function build(st, type, S) {
+    if (st.body) world.removeRigidBody(st.body);
+    const d = (type === 'fixed' ? RAPIER.RigidBodyDesc.fixed() : RAPIER.RigidBodyDesc.dynamic().setLinvel(S.v.x, S.v.y, S.v.z).setAngvel(S.w).setCanSleep(true).setLinearDamping(PH.LDAMP).setAngularDamping(PH.ADAMP))
+      .setTranslation(S.p.x, S.p.y, S.p.z).setRotation(S.q);
+    st.body = world.createRigidBody(d);
+    if (st.cols) for (const c of st.cols) colOwner.delete(c.handle);
+    st.cols = stoneColliders(RAPIER, st.s).map(cd => world.createCollider(cd.setCollisionGroups(sg), st.body));
+    for (const c of st.cols) colOwner.set(c.handle, st);
+    st.frozen = type === 'fixed';
+    if (!st.com) { st.mass = st.body.mass(); const m = st.body.localCom(); st.com = { x: m.x, y: m.y, z: m.z }; }
+    st.lastV = null;
+  }
+  const still = st => ({ p: { ...st.body.translation() }, q: { ...st.body.rotation() }, v: { x: 0, y: 0, z: 0 }, w: { x: 0, y: 0, z: 0 } });
+  // 形を下へ投げて、何かに当たるまでの距離（持っている石の、いまの位置から）
+  const shapes = new Map();
+  function shapeOf(P) { let s = shapes.get(P); if (!s) { s = new RAPIER.RoundCuboid(P.h.x, P.h.y, P.h.z, P.b); shapes.set(P, s); } return s; }
+  function castDown(cur, max = 40) {
+    let best = max, hit = null;
+    for (const P of cur.s.parts) {
+      const p = vAdd({ x: cur.x, y: cur.y, z: cur.z }, qRotO(cur.q, P.p)), q = qMulO(cur.q, P.q);
+      const r = world.castShape(p, q, { x: 0, y: -1, z: 0 }, shapeOf(P), max, true, undefined, sg);
+      if (r && r.toi < best) { best = r.toi; hit = r.collider; }
+    }
+    return { d: best, hit };
+  }
+  g.castDown = cur => castDown(cur || g.cur);
+  const holdQ = cur => qMulO(cur.lean, qMulO(qAxisO(0, 1, 0, cur.yaw), cur.tiltQ));
+  // 下ろすとき、手は石を「下の石の上の面」と平行になるように傾ける（そっと置く人の手つき）
+  const colOwner = new Map();
+  function faceUnder(hit) {
+    const st = hit && colOwner.get(hit.handle);
+    if (!st || !st.body) return { x: 0, y: 1, z: 0 };
+    return qRotO(qMulO(st.body.rotation(), st.s.topF.q), { x: 0, y: 1, z: 0 });
+  }
+
+  function spawn() {
+    const n = g.stones.length, s = stoneSpec(n, rnd);
+    const st = { id: n, s, body: null, cols: null, state: 'hold', frozen: false, lastV: null, cool: 0 };
+    g.stones.push(st);
+    const cy = camYawOf(n), R = { x: Math.cos(cy), z: -Math.sin(cy) }, F = { x: -Math.sin(cy), z: -Math.cos(cy) };
+    const tf = g.topFace();
+    const side = rnd() < 0.5 ? -1 : 1, off = 0.7 + rnd() * 0.4 + s.X * 0.25, dep = (rnd() - 0.5) * 0.6;
+    const x = tf.c.x + R.x * side * off + F.x * dep, z = tf.c.z + R.z * side * off + F.z * dep;
+    const ta = rnd() * Math.PI * 2, tm = rnd() * 0.035;
+    const yaw = rnd() * Math.PI * 2;
+    g.cur = { st, s, x, z, tx: x, tz: z, vx: 0, vz: 0, yaw, tyaw: yaw, tiltQ: qAxisO(Math.cos(ta), 0, Math.sin(ta), tm), lean: { x: 0, y: 0, z: 0, w: 1 }, t0: g.t, y: 0, y0: 0, side, dep, cy };
+    g.cur.y0 = g.topY + PH.HOVER - s.bottom;
+    g.cur.y = g.cur.y0 + 2.5; g.cur.q = holdQ(g.cur);
+    g.phase = 'enter'; g.pendingDrop = false;
+    g.events.push({ type: 'spawn', st });
+  }
+  function holdStep() {
+    const cur = g.cur, k = 1 - Math.exp(-PH.FOLLOW * PH.DT);
+    const nx = cur.x + (cur.tx - cur.x) * k, nz = cur.z + (cur.tz - cur.z) * k;
+    cur.vx = (nx - cur.x) / PH.DT; cur.vz = (nz - cur.z) / PH.DT; cur.x = nx; cur.z = nz;
+    cur.yaw += (cur.tyaw - cur.yaw) * (1 - Math.exp(-12 * PH.DT));
+    cur.q = holdQ(cur);
+    const tt = g.t - cur.t0;
+    if (g.phase === 'enter') {
+      const e = Math.min(1, tt / PH.ENTER), ee = 1 - (1 - e) * (1 - e) * (1 - e);
+      cur.y = cur.y0 + 2.5 * (1 - ee);
+      if (e >= 1) { g.phase = 'hold'; g.events.push({ type: 'ready', st: cur.st }); if (g.pendingDrop) drop(); }
+    } else if (g.phase === 'down') {
+      const { d, hit } = castDown(cur);
+      const n = faceUnder(hit), tl = qFromUp(n), kk = 1 - Math.exp(-PH.LEAN_K * PH.DT);
+      cur.lean = qNlerp(cur.lean, tl, kk);
+      const v = clampO(d * PH.V_K, PH.V_MIN, PH.V_MAX), dy = v * PH.DT;
+      if (d <= dy + 0.003) { cur.y -= Math.max(0, d - 0.003); release(); }
+      else { cur.y -= dy; cur.v = v; }
+    }
+  }
+  function drop() {
+    if (g.phase === 'enter') { g.pendingDrop = true; return; }
+    if (g.phase !== 'hold') return;
+    g.phase = 'down'; g.cur.dropT = g.t;
+    g.events.push({ type: 'down', st: g.cur.st });
+  }
+  function release() {
+    const cur = g.cur, st = cur.st;
+    build(st, 'dynamic', { p: { x: cur.x, y: cur.y, z: cur.z }, q: cur.q, v: { x: cur.vx * 0.5, y: -PH.V_REL, z: cur.vz * 0.5 }, w: { x: 0, y: 0, z: 0 } });
+    st.state = 'settle'; st.relT = g.t; st.relP = { x: cur.x, z: cur.z };
+    g.cur = null; g.phase = 'settle'; g.settleT = 0; g.calmT = 0;
+    for (const o of g.stones) if (o.state === 'rest' && !o.frozen) o.body.wakeUp();
+    g.falling = st;
+    g.events.push({ type: 'place', st });
+  }
+  /* ----- 入力（時刻つき。物理の時刻で使う）
+     { t, type: 'aim', x, z }（持っている石を動かす先・世界の座標） / { t, type: 'rot', d: ±1 } / { t, type: 'drop' } ----- */
+  g.input = q => { g.inq.push({ ...q }); g.inq.sort((a, b) => a.t - b.t); };
+  function feed() {
+    while (g.inq.length && g.inq[0].t <= g.t + 1e-9) {
+      const q = g.inq.shift();
+      if (!g.cur || g.phase === 'over') continue;
+      const cur = g.cur;
+      if (q.type === 'aim' && (g.phase === 'hold' || g.phase === 'enter' || g.phase === 'down')) {
+        const tf0 = { x: 0, z: 0 }, dx = q.x - tf0.x, dz = q.z - tf0.z, r = Math.hypot(dx, dz);
+        const k = r > PH.AIM_R ? PH.AIM_R / r : 1;
+        if (g.phase !== 'down') { cur.tx = tf0.x + dx * k; cur.tz = tf0.z + dz * k; cur.moved = true; }
+      } else if (q.type === 'rot' && (g.phase === 'hold' || g.phase === 'enter')) cur.tyaw += PH.YAW_STEP * Math.sign(q.d || 1);
+      else if (q.type === 'drop') drop();
+    }
+  }
+  // 落ち着いたか: 0.1秒ごとの位置と傾きの変化で見る
+  let calmPrev = null, calmNow = false, calmK = 0;
+  const upOf = st => qRotO(st.body.rotation(), { x: 0, y: 1, z: 0 });
+  function calmSample() {
+    if (++calmK % Math.round(0.1 / PH.DT)) return;
+    const cur = g.stones.map(st => (st.state === 'rest' || st.state === 'settle') && !st.frozen ? { ...pos(st), u: upOf(st) } : null);
+    let m = 0;
+    if (calmPrev) for (let i = 0; i < cur.length; i++) { const a = cur[i], b = calmPrev[i]; if (a && b) m = Math.max(m, Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z), Math.hypot(a.u.x - b.u.x, a.u.z - b.u.z) * 0.6); }
+    calmNow = !!calmPrev && m < PH.CALM;
+    calmPrev = cur;
+  }
+  g.calm = () => calmNow;
+  function lostStone() {
+    const yl = PH.BASE - PH.LOSE;
+    for (const st of g.stones) { if ((st.state !== 'rest' && st.state !== 'settle') || st.frozen) continue; if (g.comOf(st).y < yl) return st; }
+    return null;
+  }
+  function over(st) {
+    g.phase = 'over'; g.reason = 'drop'; g.overT = g.t; g.lost = st;
+    if (g.cur) { g.cur.st.state = 'gone'; g.cur = null; }
+    for (const o of g.stones) if (o.state === 'rest' || o.state === 'settle') { o.state = 'over'; if (o.frozen) build(o, 'dynamic', still(o)); o.body.wakeUp(); }
+    g.events.push({ type: 'fail', st });
+  }
+  // 音・演出: 速さの急な変化（ぶつかった）
+  function bumps() {
+    for (const st of g.stones) {
+      if (!st.body || st.frozen || st.body.isSleeping()) { st.lastV = null; continue; }
+      const v = st.body.linvel();
+      if (st.lastV) {
+        const dv = Math.hypot(v.x - st.lastV.x, v.y - st.lastV.y + PH.G * PH.DT, v.z - st.lastV.z);
+        st.cool -= PH.DT;
+        if (dv > 1.6 && st.cool <= 0) { st.cool = 0.09; g.events.push({ type: 'tok', st, dv, ground: g.comOf(st).y < PH.BASE - 0.3 }); }
+      }
+      st.lastV = { x: v.x, y: v.y, z: v.z };
+    }
+  }
+  /* ----- 支えのしらべ ----- */
+  // 石 st の下側の接触点（Rapier の接触から）を集めて、凸包にする
+  function supportHull(st) {
+    const pts = [], cy = g.comOf(st).y, h = st.body.handle;
+    for (const c of st.cols) {
+      world.contactPairsWith(c, o => {
+        const ob = o.parent(); if (ob && ob.handle === h) return;
+        world.contactPair(c, o, (m, flipped) => {
+          for (let i = 0; i < m.numContacts(); i++) {
+            if (m.contactDist(i) > 0.02) continue;
+            const lp = flipped ? m.localContactPoint2(i) : m.localContactPoint1(i);
+            if (!lp) continue;
+            const w = vAdd(c.translation(), qRotO(c.rotation(), lp));
+            if (w.y < cy) pts.push(w);
+          }
+        });
+      });
+    }
+    return hull2(pts);
+  }
+  g.supportHull = supportHull;
+  // 固定した石 f と、それより後に積んだ上の石ぜんぶの重心が、f の下の支えの範囲に入っているか
+  function frozenOk() {
+    const L = g.stones.filter(st => st.state === 'rest');
+    for (const f of L) {
+      if (!f.frozen) continue;
+      const fy = g.comOf(f).y;
+      let mx = 0, mz = 0, m = 0;
+      for (const st of L) { if (st !== f && (st.id < f.id || g.comOf(st).y < fy)) continue; const p = g.comOf(st); mx += p.x * st.mass; mz += p.z * st.mass; m += st.mass; }
+      mx /= m; mz /= m;
+      if (!inHull(f.hull, mx, mz, PH.SUP)) return { f };
+    }
+    return null;
+  }
+  g.frozenOk = frozenOk;
+  function freezeUpdate() {
+    const bad = frozenOk();
+    if (bad) {
+      for (const st of g.stones) if (st.state === 'rest' && st.frozen) build(st, 'dynamic', still(st));
+      for (const st of g.stones) if (st.state === 'rest') st.body.wakeUp();
+      g.unfrozen++; g.unfrozeT = g.t;
+      g.events.push({ type: 'unfreeze' });
+      return;
+    }
+    // 下から順に（下の石が固定されてから、その上）
+    const L = g.stones.filter(st => st.state === 'rest' && !st.frozen && g.topOf(st) < g.topY - PH.KEEP).sort((a, b) => g.comOf(a).y - g.comOf(b).y);
+    for (const st of L) {
+      const H = supportHull(st);
+      if (H.length < 3 || hullArea(H) < 0.004) break;
+      st.hull = H;
+      build(st, 'fixed', still(st));
+    }
+  }
+  function settled() {
+    const st = g.falling; g.falling = null;
+    st.state = 'rest';
+    g.score = g.stones.filter(o => o.state === 'rest').length;
+    let m = PH.BASE; for (const o of g.stones) if (o.state === 'rest') m = Math.max(m, g.topOf(o));
+    g.topY = m; g.maxTop = Math.max(g.maxTop, m);
+    if (!PH.NOFREEZE) freezeUpdate();
+    for (const o of g.stones) if (o.state === 'rest' && !o.frozen) o.body.sleep();
+    // 結果画面で見せる「いちばん高かった塔」の形
+    if (m >= g.maxTop - 1e-9) g.snap = g.stones.filter(o => o.state === 'rest').map(o => ({ id: o.id, p: { ...o.body.translation() }, q: { ...o.body.rotation() } }));
+    g.events.push({ type: 'ok', n: g.score, st, cm: g.heightCm() });
+    spawn();
+  }
+  /* ----- 1ステップ ----- */
+  g.step = () => {
+    feed();
+    if (g.cur) holdStep();
+    world.step();
+    g.t += PH.DT;
+    bumps(); calmSample();
+    if (g.phase === 'over') return;
+    const L = lostStone();
+    if (L) { over(L); return; }
+    if (g.phase === 'settle') {
+      g.settleT += PH.DT;
+      g.calmT = calmNow ? g.calmT + PH.DT : 0;
+      if ((g.settleT > PH.SETTLE_MIN && g.calmT > 0.25) || g.settleT > PH.SETTLE_MAX) settled();
+    } else {
+      // 待っている間、塔が落ち着いていたら眠らせる（解き方のゆらぎで勝手に動かないように）
+      g.restT = calmNow ? (g.restT || 0) + PH.DT : 0;
+      if (g.restT > 0.5) { g.restT = 0; for (const o of g.stones) if (o.state === 'rest' && !o.frozen && !o.body.isSleeping()) o.body.sleep(); }
+    }
+  };
+  g.setIters = n => { ip.numSolverIterations = n; };
+  g.free = () => world.free();
+  world.step();   // 当たり判定の準備（shape cast のため）
+  spawn();
+  return g;
+}
+
+/* ---------- ボット（物理だけで遊ぶ。sim / stats / autoplay / OGP 用） ----------
+   first: 初めての人。いちばん上の石の「見た目の真ん中」をねらう。横（画面の左右）はそこそこ合うが、奥行きは見えにくくて ずれる。
+          石は回さない。傾きや重心は気にしない。ときどき大きくずれる。
+   good: 上手な人。いちばん上の石の上の面の真ん中に、新しい石の重心が来るように置く（上の面が傾いていれば、その分 上り側へ）。
+         くさび形の石は、厚い側が塔の傾きの下側になるように回す。ふつうの石は下の石と向きをそろえる。 */
+const SKILLS = {
+  first: { sdL: 0.09, sdD: 0.2, fixD: 0.5, wild: 0.08, wildK: 2.5, rot: 0, com: 0, move: [0.4, 0.9], wait: [0.1, 0.5] },
+  good: { sdL: 0.025, sdD: 0.04, fixD: 1, wild: 0.02, wildK: 2, rot: 1, com: 1, move: [0.4, 0.8], wait: [0.3, 0.8] },
+};
+function makeBot(sk, rnd) {
+  const R = a => a[0] + (a[1] - a[0]) * rnd();
+  const gauss = () => { let u = 0; for (let i = 0; i < 6; i++) u += rnd(); return (u - 3) / Math.sqrt(0.5); };
+  const B = { sk, cur: null, plan: null };
+  function plan(g) {
+    const cur = g.cur, tf = g.topFace();
+    const R_ = { x: Math.cos(cur.cy), z: -Math.sin(cur.cy) }, F_ = { x: -Math.sin(cur.cy), z: -Math.cos(cur.cy) };
+    let yawSteps = 0;
+    if (sk.rot) {
+      // 向き: 候補（15°きざみ ぐるっと1周）のうち、置いたあとの上の面の傾きが小さく、下の石と向きがそろうもの
+      let best = null;
+      for (let k = -11; k <= 12; k++) {
+        const yaw = cur.yaw + k * PH.YAW_STEP;
+        let score = 0;
+        const nl = cur.s.parts.length > 1 ? qRotO(qMulO(qAxisO(0, 1, 0, yaw), cur.s.topF.q), { x: 0, y: 1, z: 0 }) : { x: 0, y: 1, z: 0 };
+        score += Math.hypot(tf.n.x + nl.x, tf.n.z + nl.z) * 6;
+        const d = Math.abs(Math.sin(yaw - tf.yaw));   // 長い向きのずれ（0 = そろう）
+        score += d * 0.3 + Math.abs(k) * 0.01;
+        if (!best || score < best.s) best = { s: score, k };
+      }
+      yawSteps = best.k;
+    }
+    let x = tf.c.x, z = tf.c.z;
+    if (sk.com) {
+      // 新しい石の重心（持っている向きで）を、上の面の真ん中の上に
+      const yaw = cur.yaw + yawSteps * PH.YAW_STEP, q = qAxisO(0, 1, 0, yaw);
+      const cl = cur.s.comL || { x: 0, z: 0 };
+      const cw = qRotO(q, { x: cl.x, y: 0, z: cl.z });
+      x -= cw.x; z -= cw.z;
+      // 上の面が傾いていると、乗せた石は下り側へずれて止まる: その分を上り側へ
+      x -= tf.n.x * cur.s.T * 1.0; z -= tf.n.z * cur.s.T * 1.0;
+    }
+    // ねらいのずれ（画面の横 = R_、奥行き = F_）
+    const wild = rnd() < sk.wild ? sk.wildK : 1;
+    const eL = gauss() * sk.sdL * wild, eD = gauss() * sk.sdD * wild - cur.dep * (1 - sk.fixD);
+    x += R_.x * eL + F_.x * eD; z += R_.z * eL + F_.z * eD;
+    const tm = R(sk.move);
+    return { x, z, x0: cur.tx, z0: cur.tz, t0: g.t + 0.05, t1: g.t + 0.05 + tm, td: g.t + 0.05 + tm + R(sk.wait), yawSteps, rotSent: 0, sent: false, lastEmit: -1 };
+  }
+  B.plan = plan;
+  B.tick = (g, emit, rate = 60) => {
+    if ((g.phase !== 'hold' && g.phase !== 'enter') || !g.cur) return;
+    if (B.cur !== g.cur) {
+      if (g.phase !== 'hold') return;
+      B.cur = g.cur;
+      // 新しい石の重心（石の中で）
+      if (!g.cur.s.comL) g.cur.s.comL = comLocal(g.cur.s);
+      B.p = plan(g);
+    }
+    const P = B.p;
+    if (P.sent) return;
+    if (P.rotSent < Math.abs(P.yawSteps) && g.t >= P.t0 + P.rotSent * 0.08) { emit({ type: 'rot', d: Math.sign(P.yawSteps), t: g.t }); P.rotSent++; }
+    // ドラッグ（画面のコマごとに位置を送る）
+    if (g.t >= P.t0 && g.t - P.lastEmit >= 1 / rate - 1e-9) {
+      const k = clampO((g.t - P.t0) / (P.t1 - P.t0), 0, 1), e = k * k * (3 - 2 * k);
+      emit({ type: 'aim', x: lerpO(P.x0, P.x, e), z: lerpO(P.z0, P.z, e), t: g.t });
+      P.lastEmit = g.t;
+    }
+    if (g.t >= P.td && g.t >= P.t1) { P.sent = true; emit({ type: 'aim', x: P.x, z: P.z, t: g.t }); emit({ type: 'drop', t: g.t }); }
+  };
+  return B;
+}
+// 丸めた箱の体積（Rapier の質量と同じ式）
+const partVol = P => { const { x, y, z } = P.h, b = P.b; return 8 * x * y * z + 8 * b * (x * y + y * z + x * z) + 2 * Math.PI * b * b * (x + y + z) + 4 / 3 * Math.PI * b * b * b; };
+// 石の重心（石の中で・まっすぐのとき）。体積の重み（丸めた箱の体積をだいたいで）
+function comLocal(s) {
+  let mx = 0, my = 0, mz = 0, m = 0;
+  for (const P of s.parts) { const v = partVol(P) * P.dens; mx += P.p.x * v; my += P.p.y * v; mz += P.p.z * v; m += v; }
+  return { x: mx / m, y: my / m, z: mz / m };
+}
+// ボットで1回遊ぶ（物理だけ）。opts.rate: 指の動き・押した時刻を画面のコマ（Hz）に丸める。opts.maxN: 打ち切り（個）
+function runBot(RAPIER, sk, seed, opts = {}) {
+  const g = makeGame(RAPIER, seed);
+  if (opts.iters) g.setIters(opts.iters);
+  const bot = makeBot(sk, mulberry(seed * 7 + 3));
+  const rate = opts.rate || 0, maxN = opts.maxN || 200;
+  const emit = q => { let t = q.t; if (rate) t = Math.ceil(t * rate - 1e-9) / rate; g.input({ ...q, t }); };
+  while (g.phase !== 'over' && g.score < maxN && g.t < 3000) {
+    bot.tick(g, emit, rate || 60);
+    g.step();
+    g.events.length = 0;
+  }
+  const r = { n: g.score, cm: g.maxCm(), t: +g.t.toFixed(1), reason: g.phase === 'over' ? g.reason : 'max', unf: g.unfrozen };
+  g.free();
+  return r;
+}
+/*PHYS-END*/
+
+/* ---------- 記録（このブラウザだけ） ---------- */
+const KEY = 'ishizumi:v1';
+const DEF = () => ({ ver: 1, best: 0, bestCm: 0, plays: 0, total: 0, last: 0, lastCm: 0 });
+function load() {
+  try { const d = JSON.parse(localStorage.getItem(KEY) || '{}'); if (d && d.ver === 1) { const r = { ...DEF(), ...d }; for (const k of ['best', 'bestCm', 'plays', 'total', 'last', 'lastCm']) r[k] = +r[k] || 0; return r; } } catch {}
+  return DEF();
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch {} }
+let rec = load();
+let seed = HASH.has('seed') ? (+HASH.get('seed') >>> 0) : (Math.random() * 2 ** 32) >>> 0;
+
+/* ---------- three.js ---------- */
+const glc = $('gl'), fxc = $('fx'), fx = fxc.getContext('2d');
+const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, powerPreference: 'high-performance' });
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, 0.3, 4000);
+let W = 0, H = 0, dpr = 1, safeT = 0, safeB = 0;
+function resize() {
+  W = innerWidth; H = innerHeight; dpr = Math.min(devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(Math.min(dpr, 1.75)); renderer.setSize(W, H, false);
+  fxc.width = Math.round(W * dpr); fxc.height = Math.round(H * dpr);
+  camera.aspect = W / H; camera.fov = W / H < 0.75 ? 42 : 34; camera.updateProjectionMatrix();
+  const cs = getComputedStyle(document.documentElement);
+  safeT = parseFloat(cs.paddingTop) || 0; safeB = parseFloat(cs.paddingBottom) || 0;
+  snapCam = true;
+}
+addEventListener('resize', resize);
+
+function canvasTex(w, h, draw, repeat) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
+  t.anisotropy = 4;
+  return t;
+}
+const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
+const basic = (color, extra = {}) => new THREE.MeshBasicMaterial({ color, ...extra });
+let srnd = 5; const prand = () => (srnd = (srnd * 9301 + 49297) % 233280) / 233280;
+
+// 夕日の向き（左の奥、山のすぐ上）
+const SUN = new THREE.Vector3(-0.55, 0.16, -0.82).normalize();
+scene.background = new THREE.Color('#3a3340');
+scene.fog = new THREE.Fog('#d99c72', 160, 1400);
+scene.add(new THREE.HemisphereLight('#ffd7b0', '#4c4038', 1.0));
+const sun = new THREE.DirectionalLight('#ffb36e', 1.9);
+scene.add(sun, sun.target);
+sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
+Object.assign(sun.shadow.camera, { left: -6, right: 6, top: 6, bottom: -6, near: 5, far: 90 });
+sun.shadow.bias = -0.0008; sun.shadow.normalBias = 0.03;
+const fill = new THREE.DirectionalLight('#c3ccf2', 0.8); fill.position.set(14, 22, 30); scene.add(fill);
+
+/* ---------- 雑音（石の凸凹・色むら） ---------- */
+function hash3(x, y, z) { let h = Math.imul(x | 0, 374761393) ^ Math.imul(y | 0, 668265263) ^ Math.imul(z | 0, 2147483647); h = Math.imul(h ^ (h >>> 13), 1274126177); return ((h ^ (h >>> 16)) >>> 0) / 4294967296; }
+function vnoise(x, y, z) {
+  const xi = Math.floor(x), yi = Math.floor(y), zi = Math.floor(z), xf = x - xi, yf = y - yi, zf = z - zi;
+  const s = t => t * t * (3 - 2 * t), u = s(xf), v = s(yf), w = s(zf);
+  const L = (a, b, k) => a + (b - a) * k;
+  const c = (i, j, k) => hash3(xi + i, yi + j, zi + k);
+  return L(L(L(c(0, 0, 0), c(1, 0, 0), u), L(c(0, 1, 0), c(1, 1, 0), u), v), L(L(c(0, 0, 1), c(1, 0, 1), u), L(c(0, 1, 1), c(1, 1, 1), u), v), w);
+}
+const fbm = (x, y, z) => vnoise(x, y, z) * 0.65 + vnoise(x * 2.1 + 7, y * 2.1, z * 2.1) * 0.35;
+
+/* ---------- 石のメッシュ ----------
+   物理と同じ形（丸めた箱の組み合わせ）の表面を、低ポリの球からまっすぐ外から内へさがして写しとる。そこに小さな凸凹と色むら */
+const ICO = { 3: new THREE.IcosahedronGeometry(1, 3), 2: new THREE.IcosahedronGeometry(1, 2), 1: new THREE.IcosahedronGeometry(1, 1) };
+function sdRoundBox(x, y, z, h, b) {
+  const qx = Math.abs(x) - h.x, qy = Math.abs(y) - h.y, qz = Math.abs(z) - h.z;
+  return Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0) - b;
+}
+const smin = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * 0.25; };
+function stoneSdf(s) {
+  const P = s.parts.map(P => ({ ...P, qi: qConjO(P.q) }));
+  return (x, y, z) => {
+    let d = 1e9;
+    for (const p of P) { const l = qRotO(p.qi, { x: x - p.p.x, y: y - p.p.y, z: z - p.p.z }); d = smin(d, sdRoundBox(l.x, l.y, l.z, p.h, p.b), 0.12); }
+    return d;
+  };
+}
+const STONE_COLS = ['#8f8a83', '#6d6a68', '#b3a18b', '#7c8891', '#9a7464', '#848c78', '#a7a39b', '#5e5b5c', '#c0b4a2'].map(c => new THREE.Color(c));
+const QUARTZ = new THREE.Color('#e9e4da');
+function rockGeometry(sdf, c, R, o) {
+  const src = ICO[o.detail || 3].attributes.position, n = src.count;
+  const pos = new Float32Array(n * 3), col = new Float32Array(n * 3), cache = new Map();
+  const rs = o.seed % 997, base = o.color, vein = o.vein;
+  for (let i = 0; i < n; i++) {
+    const dx = src.getX(i), dy = src.getY(i), dz = src.getZ(i), key = `${dx.toFixed(4)},${dy.toFixed(4)},${dz.toFixed(4)}`;
+    let v = cache.get(key);
+    if (!v) {
+      // 外から内へ: 表面（距離が 0）をさがす
+      let t = R; const step = R / 40;
+      while (t > 0 && sdf(c.x + dx * t, c.y + dy * t, c.z + dz * t) > 0) t -= step;
+      let a = Math.max(0, t), b = t + step;
+      for (let k = 0; k < 10; k++) { const m = (a + b) / 2; if (sdf(c.x + dx * m, c.y + dy * m, c.z + dz * m) > 0) b = m; else a = m; }
+      let r = (a + b) / 2;
+      const px = c.x + dx * r, py = c.y + dy * r, pz = c.z + dz * r;
+      const amp = o.amp ? o.amp(px, py, pz) : 0.012;
+      r -= fbm(px * o.nf + rs, py * o.nf, pz * o.nf) * amp;
+      const qx = c.x + dx * r, qy = c.y + dy * r, qz = c.z + dz * r;
+      // 色: 石ごとの色 × むら（ごま模様）・ときどき白い石英の筋
+      const m = 0.8 + fbm(qx * 5 + rs, qy * 5, qz * 5) * 0.32 + (hash3(qx * 60, qy * 60, qz * 60) - 0.5) * 0.08;
+      let cr = base.r * m, cg = base.g * m, cb = base.b * m;
+      if (vein) { const d = Math.abs(qx * vein.x + qy * vein.y + qz * vein.z - vein.o + (vnoise(qx * 3, qy * 3, qz * 3) - 0.5) * 0.08); if (d < vein.w) { const k = 1 - d / vein.w; cr = lerp(cr, QUARTZ.r, k * 0.85); cg = lerp(cg, QUARTZ.g, k * 0.85); cb = lerp(cb, QUARTZ.b, k * 0.85); } }
+      v = [qx, qy, qz, cr, cg, cb];
+      cache.set(key, v);
+    }
+    pos.set(v.slice(0, 3), i * 3); col.set(v.slice(3), i * 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  return g;
+}
+const stoneMat = lam('#ffffff', { vertexColors: true });
+function makeStoneMesh(s, detail = 3) {
+  const rr = mulberry(s.look + 11);
+  const color = STONE_COLS[Math.floor(rr() * STONE_COLS.length)].clone();
+  if (s.bonus) color.copy(new THREE.Color('#b9ab96'));
+  const vein = rr() < 0.3 ? (() => { const a = rr() * Math.PI, e = (rr() - 0.5) * 0.8; return { x: Math.cos(a) * Math.cos(e), y: Math.sin(e), z: Math.sin(a) * Math.cos(e), o: (rr() - 0.5) * s.X * 0.6, w: 0.025 + rr() * 0.03 }; })() : null;
+  const c = { x: 0, y: (s.top + s.bottom) / 2, z: 0 };
+  const R = Math.hypot(s.X, s.Z, s.top - s.bottom) * 1.1 + 0.1;
+  const g = rockGeometry(stoneSdf(s), c, R, { detail, seed: s.look, color, vein, nf: 2.2 / Math.max(0.4, s.X), amp: () => 0.012 + 0.012 * s.rho });
+  const m = new THREE.Mesh(g, stoneMat);
+  m.castShadow = true; m.receiveShadow = true;
+  return m;
+}
+
+/* ---------- 河原（台石・川・山・すすき・赤とんぼ） ---------- */
+const MARKS = [
+  { cm: 30, label: 'すねの高さ' }, { cm: 50, label: 'ひざの高さ' }, { cm: 100, label: 'こしの高さ' },
+  { cm: 140, label: 'むねの高さ' }, { cm: 170, label: '背たけ' }, { cm: 220, label: '手をのばした高さ' }, { cm: 300, label: '3m' }, { cm: 400, label: '4m' },
+];
+const dragonflies = [];
+let riverTex = null;
+function buildRiverside() {
+  // 空（夕焼けの球。地平線の橙から、上はくすんだ藍。夕日のまわりは明るい）
+  const sg = new THREE.SphereGeometry(3000, 36, 18), sp = sg.attributes.position, sc = new Float32Array(sp.count * 3);
+  const cH = new THREE.Color('#f4b46c'), cL = new THREE.Color('#e3966f'), cM = new THREE.Color('#a68192'), cZ = new THREE.Color('#3c4a6c'), cS = new THREE.Color('#fff0c0'), tmp = new THREE.Color();
+  for (let i = 0; i < sp.count; i++) {
+    const v = new THREE.Vector3(sp.getX(i), sp.getY(i), sp.getZ(i)).normalize(), e = Math.max(0, v.y);
+    if (e < 0.12) tmp.copy(cH).lerp(cL, e / 0.12); else if (e < 0.4) tmp.copy(cL).lerp(cM, (e - 0.12) / 0.28); else tmp.copy(cM).lerp(cZ, Math.min(1, (e - 0.4) / 0.45));
+    const d = Math.max(0, v.dot(SUN)); tmp.lerp(cS, Math.pow(d, 14) * 0.8 + Math.pow(d, 4) * 0.18);
+    sc.set([tmp.r, tmp.g, tmp.b], i * 3);
+  }
+  sg.setAttribute('color', new THREE.BufferAttribute(sc, 3));
+  scene.add(new THREE.Mesh(sg, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false })));
+  // 夕日（山の上、少しかすむ）
+  const glowTex = canvasTex(128, 128, (g, w, h) => { const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,236,190,1)'); gr.addColorStop(0.18, 'rgba(255,214,150,.95)'); gr.addColorStop(0.24, 'rgba(255,190,120,.45)'); gr.addColorStop(1, 'rgba(255,170,110,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+  const sunSp = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, fog: false, depthWrite: false, transparent: true }));
+  sunSp.position.copy(SUN).multiplyScalar(2600); sunSp.scale.set(700, 700, 1); scene.add(sunSp);
+  // 山（3重のシルエット。遠いほど空の色）
+  const ML = [[2400, '#9a819a', 230, 0.6], [1900, '#76678a', 170, 1.3], [1500, '#5a5069', 95, 2.1]];
+  for (const [R, c, amp, ph] of ML) {
+    const N = 160, pos = [], idx = [];
+    for (let i = 0; i <= N; i++) {
+      const a = i / N * Math.PI * 2, h = amp * (0.35 + 0.65 * fbm(Math.cos(a) * 3 + ph, Math.sin(a) * 3, ph)) + amp * 0.5 * Math.pow(Math.max(0, Math.sin(a * 3 + ph)), 3);
+      pos.push(Math.cos(a) * R, -60, Math.sin(a) * R, Math.cos(a) * R, h, Math.sin(a) * R);
+      if (i < N) { const k = i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx);
+    scene.add(new THREE.Mesh(g, basic(c, { fog: false, side: THREE.DoubleSide })));
+  }
+  // 河原の地面（丸い小石の砂利）
+  const gravel = canvasTex(512, 512, (g, w, h) => {
+    g.fillStyle = '#9a8f82'; g.fillRect(0, 0, w, h);
+    const cs = ['#b4aa9c', '#8a8076', '#a49a8c', '#7a736d', '#c2b8a8', '#968a7c', '#6e6863'];
+    for (let i = 0; i < 2600; i++) {
+      const x = prand() * w, y = prand() * h, r = 2 + prand() * 6, a = prand() * Math.PI;
+      for (const [ox, oy] of [[0, 0], [w, 0], [-w, 0], [0, h], [0, -h]]) { g.fillStyle = 'rgba(40,32,28,.25)'; g.beginPath(); g.ellipse(x + ox + 1, y + oy + 1.5, r, r * 0.7, a, 0, Math.PI * 2); g.fill(); g.fillStyle = cs[i % cs.length]; g.beginPath(); g.ellipse(x + ox, y + oy, r, r * 0.7, a, 0, Math.PI * 2); g.fill(); }
+    }
+  }, [300, 300]);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(3000, 3000), lam('#ffffff', { map: gravel }));
+  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+  // 川（奥を左右に流れる。夕日がうつる）
+  riverTex = canvasTex(512, 256, (g, w, h) => {
+    const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#8f8e9c'); gr.addColorStop(1, '#6c7584'); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 260; i++) { const x = prand() * w, y = prand() * h, l = 10 + prand() * 60; g.fillStyle = prand() < 0.55 ? 'rgba(255,214,160,.32)' : 'rgba(50,56,72,.28)'; g.fillRect(x, y, l, 1.5 + prand() * 2); g.fillRect(x - w, y, l, 2); }
+  }, [40, 3]);
+  const river = new THREE.Mesh(new THREE.PlaneGeometry(3000, 110), lam('#ffffff', { map: riverTex, emissive: '#3a2a26' }));
+  river.rotation.x = -Math.PI / 2; river.position.set(0, 0.05, -115); scene.add(river);
+  // 水ぎわの濡れた石の帯
+  const wet = new THREE.Mesh(new THREE.PlaneGeometry(3000, 8), lam('#6f665e')); wet.rotation.x = -Math.PI / 2; wet.position.set(0, 0.03, -58); scene.add(wet);
+  // 向こう岸（草と木）
+  const bank = new THREE.Mesh(new THREE.PlaneGeometry(3000, 800), lam('#5f6447')); bank.rotation.x = -Math.PI / 2; bank.position.set(0, 0.06, -570); scene.add(bank);
+  const treeM = lam('#5a5f4a'), treeM2 = lam('#666650');
+  for (let i = 0; i < 90; i++) {
+    const x = -900 + i * 20 + prand() * 12, s = 7 + prand() * 9, t = new THREE.Mesh(ICO[1], prand() < 0.5 ? treeM : treeM2);
+    t.scale.set(s * 1.5, s, s); t.position.set(x, s * 0.5, -200 - prand() * 50); scene.add(t);
+  }
+  // 台石（上の面は物理と同じ: 高さ PH.BASE、平らなところの半径 PH.BASE_R - PH.BASE_B）
+  const bh = PH.BASE / 2, br = PH.BASE_R - PH.BASE_B, bb = PH.BASE_B;
+  const baseSdf = (x, y, z) => {
+    const dr = Math.hypot(x, z) - br, dy = Math.abs(y - bh) - (bh - bb);
+    const cyl = Math.hypot(Math.max(dr, 0), Math.max(dy, 0)) + Math.min(Math.max(dr, dy), 0) - bb;
+    const ball = Math.hypot(x, y - PH.MOUND_Y, z) - PH.MOUND_R;
+    return smin(cyl, ball, 0.35);
+  };
+  const baseG = rockGeometry(baseSdf, { x: 0, y: 0.9, z: 0 }, 3.6, { detail: 3, seed: 77, color: new THREE.Color('#8f877d'), nf: 1.1, amp: (x, y) => y > PH.BASE - 0.12 ? 0.004 : 0.06 * clamp((PH.BASE - 0.12 - y) / 0.6, 0, 1) });
+  const baseM = new THREE.Mesh(baseG, stoneMat); baseM.castShadow = true; baseM.receiveShadow = true; scene.add(baseM);
+
+  // まわりの大きな石と、ほかの人が積んだ石積み（飾り。物理はない）
+  const r2 = mulberry(4242);
+  const rocks = [[-7, -2.5, 2.2], [6.5, -4, 1.7], [-12, 3, 1.4], [11, 1.5, 2.4], [-4.5, -6, 1.2], [3.5, -9, 1.6], [-16, -8, 2.8], [17, -6, 2.2], [-9, 9, 1.1], [9, 10, 1.3]];
+  for (const [x, z, sz] of rocks) {
+    const s = stoneSpec(2, r2); const m = makeStoneMesh(s, 2);
+    m.scale.setScalar(sz); m.position.set(x, -s.bottom * sz * 0.6, z); m.rotation.set((r2() - 0.5) * 0.3, r2() * 6, (r2() - 0.5) * 0.3); m.castShadow = false; scene.add(m);
+  }
+  for (const [x, z, k] of [[-5.5, -3.8, 6], [5.2, -2.2, 4], [-10.5, 1.2, 5], [12.5, -1, 7]]) {
+    let y = 0;
+    for (let i = 0; i < k; i++) {
+      const s = stoneSpec(Math.round(i * 2.5), r2), m = makeStoneMesh(s, 2);
+      y -= s.bottom * 0.85; m.position.set(x + (r2() - 0.5) * 0.12, y, z + (r2() - 0.5) * 0.12); m.rotation.y = r2() * 6; m.scale.setScalar(0.85); scene.add(m);
+      y += s.top * 0.85;
+    }
+  }
+  // すすき（交差した板に、穂と葉の絵）
+  const susukiTex = canvasTex(256, 512, (g, w, h) => {
+    g.lineCap = 'round';
+    for (let i = 0; i < 34; i++) {   // 葉（細く長く、しなる）
+      const x0 = w / 2 + (prand() - 0.5) * 50, bend = (prand() - 0.5) * 220, top = h * (0.35 + prand() * 0.4);
+      g.strokeStyle = ['#7a7442', '#8a7f4c', '#665f38', '#9a8a56'][i % 4]; g.lineWidth = 1.6 + prand() * 1.4;
+      g.beginPath(); g.moveTo(x0, h); g.quadraticCurveTo(x0 + bend * 0.15, h - (h - top) * 0.7, x0 + bend, top); g.stroke();
+    }
+    for (let i = 0; i < 9; i++) {   // 穂（茎の先に、ふさふさ）
+      const x0 = w / 2 + (prand() - 0.5) * 40, bend = (prand() - 0.4) * 90, top = 30 + prand() * 120;
+      g.strokeStyle = '#8b7d4e'; g.lineWidth = 1.6; g.beginPath(); g.moveTo(x0, h); g.quadraticCurveTo(x0 + bend * 0.2, h * 0.55, x0 + bend, top); g.stroke();
+      for (let k = 0; k < 14; k++) {
+        const t = k / 14, px = x0 + bend + t * 10 * Math.sign(bend || 1), py = top + t * 60;
+        g.strokeStyle = `rgba(${236 - k * 2},${214 - k * 3},${170 - k * 3},.9)`; g.lineWidth = 2;
+        g.beginPath(); g.moveTo(px, py); g.quadraticCurveTo(px + 8 * Math.sign(bend || 1), py + 10, px + 18 * Math.sign(bend || 1) * (0.6 + prand() * 0.6), py + 22 + prand() * 10); g.stroke();
+      }
+    }
+  });
+  const sMat = new THREE.MeshLambertMaterial({ map: susukiTex, transparent: true, alphaTest: 0.4, side: THREE.DoubleSide });
+  for (const [x, z, s] of [[-16, -10, 11], [18, -12, 12], [-26, -24, 14], [30, -22, 13], [-8, -38, 15], [12, -44, 14], [-40, -8, 14], [42, -6, 15], [-24, 12, 10], [26, 14, 10], [-52, -36, 16], [55, -40, 16], [-3, -52, 15], [-70, -20, 16], [72, -24, 16]]) {
+    for (let k = 0; k < 2; k++) { const p = new THREE.Mesh(new THREE.PlaneGeometry(s * 0.6, s * 1.2), sMat); p.position.set(x, s * 0.6, z); p.rotation.y = k * Math.PI / 2 + x; scene.add(p); }
+  }
+  // 赤とんぼ（3匹。塔のてっぺんのあたりを、すいっと飛ぶ）
+  const bodyM = lam('#c4482c'), wingM = new THREE.MeshBasicMaterial({ color: '#f4ead8', transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false });
+  for (let i = 0; i < 3; i++) {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.012, 0.42, 5), bodyM); body.rotation.x = Math.PI / 2; body.position.z = 0.12; g.add(body);
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 4), lam('#7a2a1c')); head.position.z = -0.12; g.add(head);
+    const thx = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 4), bodyM); thx.scale.z = 1.6; thx.position.z = -0.06; g.add(thx);
+    const wings = [];
+    for (const [z, l] of [[-0.07, 0.24], [-0.02, 0.22]]) for (const sd of [-1, 1]) {
+      const wg = new THREE.Group(); wg.position.set(0, 0.012, z); g.add(wg);
+      const wm = new THREE.Mesh(new THREE.PlaneGeometry(l, 0.055), wingM); wm.rotation.x = -Math.PI / 2; wm.position.x = sd * l / 2; wg.add(wm);
+      wings.push({ wg, sd });
+    }
+    g.scale.setScalar(1.15);
+    scene.add(g);
+    dragonflies.push({ g, wings, ph: i * 2.1, r: 2.2 + i * 0.9, sp: 0.35 + i * 0.12, hy: 1.2 + i * 0.5, p: new THREE.Vector3(), last: new THREE.Vector3(), hover: 0 });
+  }
+}
+
+/* ---------- ゲーム状態 ---------- */
+let game = null, bot = null, meshes = new Map(), state = 'loading';     // loading | title | play | over | skip
+let tt = 0, t0 = 0, lagS = 0.05, overShownAt = 0, failAt = -1, pops = [], shake = 0, slowK = 1, slowT = 0, bumpT = 0, newShown = false, frozen = false;
+let sessionPlays = 0, botStart = false, stepMs = 0, lite = false, markIdx = 0, tipT = 0, tipText = '', rewind = null, seenWedge = false;
+function upcomingSeed() { return HASH.has('seed') ? ((+HASH.get('seed') >>> 0) + 7919 * sessionPlays) >>> 0 : seed; }
+function clearMeshes() { for (const m of meshes.values()) { scene.remove(m); m.geometry.dispose(); } meshes.clear(); }
+function newGame(s) {
+  if (game) game.free();
+  clearMeshes();
+  game = makeGame(RAPIER, s >>> 0);
+  if (lite) game.setIters(7);
+  bot = null; t0 = performance.now() - (game.t + lagS) * 1000;
+  pops = []; failAt = -1; shake = 0; slowK = 1; slowT = 0; bumpT = 0; newShown = false; frozen = false; markIdx = 0; tipT = 0; rewind = null; ptr = null;
+  snapCam = true;
+}
+function nextSeed() { const s = seed; seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return s; }
+function meshOf(st) { let m = meshes.get(st); if (!m) { m = makeStoneMesh(st.s); meshes.set(st, m); scene.add(m); } return m; }
+
+/* ---------- 物理を進める（入力は時刻つきで記録して、物理の時刻で使う） ---------- */
+const simTime = ts => (ts - t0) / 1000;
+// 指を動かした瞬間に「見えていた」物理の時刻（画面は lagS だけ遅れて描いている）
+function queue(q, ts) { if (game && !bot) game.input({ ...q, t: Math.max(simTime(ts) - lagS, game.t) }); }
+const botEmit = q => game.input({ ...q });
+function advance(now) {
+  if (!game || frozen) return;
+  const target = simTime(now) - lagS, c0 = performance.now(); let n = 0;
+  while (game.t + PH.DT <= target) {
+    if (bot) bot.tick(game, botEmit);
+    game.step(); n++;
+    if ((n & 3) === 0 && performance.now() - c0 > 22) break;
+  }
+  if (n) stepMs += ((performance.now() - c0) / n - stepMs) * 0.05;
+  if (stepMs > 1.6 && !lite && n > 2) { lite = true; game.setIters(7); }   // 重い端末: 物理の解く回数を減らす
+  handleEvents();
+  const behind = target - game.t;
+  if (behind > 0.12) t0 += (behind - 0.03) * 1000;   // 重い端末で追いつけないときは、ゆっくり進む（止まらない）
+}
+
+/* ---------- 音（河原の石の音。低くこもらせ、2kHz 以上は使わない） ---------- */
+let ac = null, master = null, noiseBuf = null, riverG = null;
+function wakeAudio() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1900; lp.Q.value = 0.5;
+      master = ac.createDynamicsCompressor(); master.threshold.value = -16; master.ratio.value = 5;
+      master.connect(lp).connect(ac.destination);
+      const len = ac.sampleRate * 3; noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0); let b = 0;
+      for (let i = 0; i < len; i++) { b = b * 0.97 + (Math.random() * 2 - 1) * 0.03; d[i] = b * 6; }   // 低い（茶色い）ノイズ
+      // せせらぎ: 低いノイズを、ゆっくり揺らしてずっと流す
+      const src = ac.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+      const f1 = ac.createBiquadFilter(); f1.type = 'lowpass'; f1.frequency.value = 420; f1.Q.value = 0.4;
+      const f2 = ac.createBiquadFilter(); f2.type = 'peaking'; f2.frequency.value = 260; f2.gain.value = 5; f2.Q.value = 0.8;
+      riverG = ac.createGain(); riverG.gain.value = 0;
+      const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = 0.17; lg.gain.value = 0.012; lfo.connect(lg).connect(riverG.gain); lfo.start();
+      const lfo2 = ac.createOscillator(), lg2 = ac.createGain(); lfo2.frequency.value = 1.3; lg2.gain.value = 40; lfo2.connect(lg2).connect(f2.frequency); lfo2.start();
+      src.connect(f1).connect(f2).connect(riverG).connect(master); src.start();
+    }
+    if (ac.state === 'suspended') ac.resume();
+    riverG.gain.setTargetAtTime(0.05, ac.currentTime, 0.8);
+  } catch {}
+}
+const live = () => ac && (state === 'play');
+function tone(freq, at, dur, vol, type = 'sine', f1) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at); if (f1) o.frequency.exponentialRampToValueAtTime(f1, at + dur);
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  o.connect(g).connect(master); o.start(at); o.stop(at + dur + 0.05);
+}
+function noise(at, dur, vol, type, freq, q = 1) {
+  const s = ac.createBufferSource(); s.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1100;
+  const g = ac.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  s.connect(f).connect(lp).connect(g).connect(master); s.start(at, Math.random() * 2); s.stop(at + dur + 0.05);
+}
+// 石と石の「こつ」: 短い低い音（大きい石ほど低い）と、こもった当たりの雑音
+function knock(at, k, size = 1) {
+  const f = (170 + Math.random() * 80) / Math.sqrt(size);
+  tone(f, at, 0.07, 0.16 * k, 'sine', f * 0.78);
+  tone(f * 2.4, at, 0.035, 0.04 * k, 'triangle');
+  noise(at, 0.03, 0.22 * k, 'lowpass', 700, 0.7);
+}
+let lastTok = 0;
+function sTok(e) { try { if (!live()) return; const n0 = ac.currentTime; if (n0 - lastTok < 0.035) return; lastTok = n0; const k = clamp(e.dv / 12, 0.1, 1), sz = Math.max(0.6, e.st.s.X * 1.3); if (e.ground) { noise(n0, 0.09, 0.3 * k, 'bandpass', 480, 0.8); tone(110, n0, 0.08, 0.1 * k, 'sine', 80); } else knock(n0, k, sz); } catch {} }
+// 手を離した「ことん」
+function sPlace() { try { if (!live()) return; knock(ac.currentTime + 0.01, 0.35, 1.2); } catch {} }
+function sOk(n) { try { if (!live()) return; const n0 = ac.currentTime + 0.05; tone(294, n0, 0.25, 0.035); tone(392, n0 + 0.08, 0.25, 0.028); if (n % 5 === 0) tone(494, n0 + 0.16, 0.32, 0.026); } catch {} }
+// 崩れた「ごろごろ…」: 低いころがる音がつづく
+function sCrash() {
+  try {
+    if (!live()) return; const n0 = ac.currentTime;
+    noise(n0 + 0.05, 1.6, 0.35, 'lowpass', 220, 0.6);
+    for (let i = 0; i < 12; i++) { const t = n0 + 0.08 + i * (0.07 + Math.random() * 0.08) + i * i * 0.005; knock(t, 0.9 - i / 16, 1.4 + Math.random()); }
+  } catch {}
+}
+function sMark() { try { if (!live()) return; const n0 = ac.currentTime + 0.05; [[330, 0], [415, 0.09], [494, 0.18]].forEach(([f, t]) => tone(f, n0 + t, 0.4, 0.035)); } catch {} }
+function sChime() { try { if (!live()) return; const n0 = ac.currentTime + 0.1; [[392, 0], [494, 0.1], [587, 0.2]].forEach(([f, t]) => tone(f, n0 + t, 0.45, 0.045)); } catch {} }
+
+/* ---------- できごと（音・演出） ---------- */
+function addPop(text, opt = {}) { pops = pops.filter(p => p.keep); pops.push({ text, life: 0, dur: opt.dur || 1.2, size: opt.size || 24, hot: !!opt.hot, keep: !!opt.keep }); }
+function handleEvents() {
+  const loud = state === 'play';
+  for (const e of game.events) {
+    if (e.type === 'tok') { if (loud) sTok(e); }
+    else if (e.type === 'place') { if (loud) sPlace(); }
+    else if (e.type === 'spawn' && loud) {
+      if (e.st.s.bonus) addPop('平たい石！ ひと休み', { size: 20, hot: true, dur: 1.6 });
+      else if (e.st.s.wedge && !seenWedge) { seenWedge = true; tipText = 'くさび形の石 —「まわす」で傾きを打ち消せる'; tipT = 3; }
+    }
+    else if (e.type === 'ok' && loud) {
+      bumpT = 0.3;
+      const cm = game.heightCm();
+      let mk = null;
+      while (markIdx < MARKS.length && cm >= MARKS[markIdx].cm) { mk = MARKS[markIdx]; markIdx++; }
+      if (mk) { addPop(`${mk.label}をこえた！`, { size: 22, hot: true, dur: 1.8 }); sMark(); }
+      else if (e.n % 5 === 0) addPop(`${e.n}個！ ${cm}cm`, { size: 24 });
+      if (e.n > rec.best && rec.best > 0 && !newShown) { newShown = true; addPop('自己ベスト更新！', { size: 20, hot: true, keep: true, dur: 1.8 }); sChime(); }
+      else if (!mk) sOk(e.n);
+      if (navigator.vibrate) try { navigator.vibrate(8); } catch {}
+    }
+    else if (e.type === 'fail') {
+      if (failAt < 0) failAt = tt;
+      ptr = null;
+      if (loud) { sCrash(); if (!reduceMotion) { shake = 0.3; slowK = 0.55; slowT = 0.8; } if (navigator.vibrate) try { navigator.vibrate([20, 40, 30]); } catch {} }
+    }
+  }
+  game.events.length = 0;
+}
+
+/* ---------- カメラ ---------- */
+let camYaw = camYawOf(0), camD = 16, snapCam = true, lookY = 5, lookX = 0, lookZ = 0, camE = 0.3, orbit = 0;
+const VIEW = HASH.has('debug') ? HASH.get('view') : null;   // #debug&view=tower: 撮影用に塔ぜんぶを映す
+const ELEV = 0.36;
+const camLook = new THREE.Vector3();
+// 世界の高さ y0..y1 を、画面の縦 s0..s1（0=上、1=下）に入れる距離と、見る高さ
+function frameY(y0, y1, s0, s1, minD) {
+  const t = Math.tan(camera.fov * DEG / 2);
+  let D = (y1 - y0) / ((s0 - s1) * 2 * t);
+  D = Math.max(D, minD);
+  const yc = y1 - (0.5 - s1) * 2 * D * t;
+  return { D, yc };
+}
+function updateCamera(dt) {
+  if (!game) return;
+  const overView = state === 'over' || (game.phase === 'over' && game.t - game.overT > 0.9);
+  let F, yaw, E = ELEV, lx = 0, lz = 0;
+  const tf = game.topFace();
+  if (state === 'title') { F = frameY(-0.3, PH.BASE + 4.6, 0.5, 0.16, 15); yaw = camYawOf(0) + 0.25; E = 0.14; }
+  else if (overView && state === 'over') {
+    // 結果: いちばん高かった塔を、ゆっくり回して見せる（カードの上に見えるように）
+    F = frameY(Math.min(0.6, PH.BASE - 1), Math.max(game.maxTop + 0.8, PH.BASE + 3), 0.44, 0.1, 12);
+    orbit += dt * 0.42; yaw = camYawOf(Math.max(0, game.stones.length - 1)) + orbit; E = 0.2;
+  } else if (overView) { F = frameY(0, Math.max(game.maxTop + 0.8, PH.BASE + 3), 0.8, 0.2, 13); yaw = camYaw; E = 0.25; }
+  else if (VIEW === 'tower') {
+    // 撮影用: 塔ぜんぶと、持っている石と、夕日の空
+    const cur = game.cur, h = cur ? cur.s.top - cur.s.bottom : 0.6;
+    F = frameY(0, game.topY + PH.HOVER + h + 1.2, 0.86, 0.3, 12); yaw = camYawOf(cur ? cur.st.id : game.stones.length) + (+HASH.get('yaw') || 0); E = +HASH.get('elev') || 0.1;
+    lx = tf.c.x * 0.5; lz = tf.c.z * 0.5;
+  } else {
+    const top = game.topY, cur = game.cur;
+    const h = cur ? cur.s.top - cur.s.bottom : 0.6;
+    F = frameY(Math.max(-0.5, top - 3.2), top + PH.HOVER + h + 0.9, 0.8, 0.22, 11);
+    yaw = camYawOf(cur ? cur.st.id : game.stones.length);
+    lx = tf.c.x; lz = tf.c.z;   // 塔が少しずれていっても、てっぺんを見る
+  }
+  const k = snapCam ? 1 : Math.min(1, dt * (state === 'over' ? 1.6 : 2.2));
+  camD = lerp(camD, F.D, k); lookY = lerp(lookY, F.yc, k); camE = lerp(camE, E, k); lookX = lerp(lookX, lx, k); lookZ = lerp(lookZ, lz, k);
+  let dy = yaw - camYaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); camYaw += dy * (snapCam ? 1 : Math.min(1, dt * (state === 'over' ? 6 : 1.8)));
+  snapCam = false;
+  camLook.set(lookX, lookY, lookZ);
+  const ce = Math.cos(camE), se = Math.sin(camE);
+  camera.position.set(lookX + Math.sin(camYaw) * camD * ce, lookY + camD * se, lookZ + Math.cos(camYaw) * camD * ce);
+  if (shake > 0 && !reduceMotion) { const s = shake / 0.3; camera.position.x += Math.sin(tt * 61) * 0.15 * s; camera.position.y += Math.cos(tt * 53) * 0.12 * s; }
+  camera.lookAt(camLook);
+  // 影は塔のてっぺんのあたりだけ（軽く）
+  const big = state === 'over' || VIEW === 'tower';
+  const sy = clamp(big ? (PH.BASE + game.maxTop) / 2 : lookY, 2, 400);
+  const sh = big ? Math.max(6, (game.maxTop - PH.BASE) * 0.6 + 3) : 6;
+  if (sun.shadow.camera.top !== sh) { Object.assign(sun.shadow.camera, { left: -sh, right: sh, top: sh, bottom: -sh }); sun.shadow.camera.updateProjectionMatrix(); }
+  sun.target.position.set(lookX, sy, lookZ); sun.position.set(lookX + SUN.x * 40, sy + SUN.y * 40 + 14, lookZ + SUN.z * 40);
+}
+// いまの画面の左右・奥行き（地面に平行）
+const camRight = () => ({ x: Math.cos(camYaw), z: -Math.sin(camYaw) });
+const camFwd = () => ({ x: -Math.sin(camYaw), z: -Math.cos(camYaw) });
+const tmpV = new THREE.Vector3();
+function project(x, y, z) { tmpV.set(x, y, z).project(camera); return { x: (tmpV.x + 1) / 2 * W, y: (1 - tmpV.y) / 2 * H, front: tmpV.z < 1 }; }
+
+/* ---------- 描画 ---------- */
+// 持っている石の真下の影（下の石の上に落ちる）
+const blobTex = canvasTex(64, 64, (c, w, h) => { const gr = c.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(24,16,12,.6)'); gr.addColorStop(0.65, 'rgba(24,16,12,.4)'); gr.addColorStop(1, 'rgba(24,16,12,0)'); c.fillStyle = gr; c.fillRect(0, 0, w, h); });
+const aimBlob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false, opacity: 0.75, polygonOffset: true, polygonOffsetFactor: -2 }));
+aimBlob.renderOrder = 2;
+const tiltQ0 = new THREE.Quaternion();
+function syncMeshes() {
+  if (!game) return;
+  const rw = rewind && state === 'over' ? clamp((performance.now() - rewind.at) / 1000, 0, 1) : -1, e = rw < 0 ? 0 : 1 - Math.pow(1 - rw, 3);
+  for (const st of game.stones) {
+    if (st.state === 'gone') { const m = meshes.get(st); if (m) m.visible = false; continue; }
+    const m = meshOf(st);
+    if (st.state === 'hold') {
+      const cur = game.cur && game.cur.st === st ? game.cur : null;
+      if (!cur) { m.visible = false; continue; }
+      m.visible = true; m.position.set(cur.x, cur.y, cur.z); m.quaternion.set(cur.q.x, cur.q.y, cur.q.z, cur.q.w);
+      if (state === 'title') m.position.set(0, cur.y + Math.sin(tt * 1.6) * 0.06, 0);   // タイトル: 台石の真上で、そっと持っている
+    } else if (st.body) {
+      const t = st.body.translation(), r = st.body.rotation();
+      m.position.set(t.x, t.y, t.z); m.quaternion.set(r.x, r.y, r.z, r.w);
+      // 結果画面: いちばん高かったときの塔へ、するすると戻る
+      const S = rw >= 0 && rewind.map.get(st.id);
+      if (S) { m.position.lerp(tmpV.set(S.p.x, S.p.y, S.p.z), e); m.quaternion.slerp(tiltQ0.set(S.q.x, S.q.y, S.q.z, S.q.w), e); }
+    }
+  }
+  // 影
+  const cur = game.cur, show = !!cur && (game.phase === 'hold' || game.phase === 'down' || game.phase === 'enter') && state !== 'over' && state !== 'title';
+  aimBlob.visible = show;
+  if (show) {
+    const c = game.castDown(cur);
+    const y = cur.y + cur.s.bottom - c.d;
+    aimBlob.visible = y > PH.BASE - 0.4;   // 下に塔（台石）があるときだけ
+    aimBlob.position.set(cur.x, y + 0.015, cur.z);
+    aimBlob.rotation.set(-Math.PI / 2, 0, cur.yaw);
+    const near = clamp(1 - (cur.y + cur.s.bottom - y) / 4, 0.4, 1);
+    aimBlob.scale.set(cur.s.X * 2 * (1.25 - near * 0.3), cur.s.Z * 2 * (1.25 - near * 0.3), 1);
+    aimBlob.material.opacity = 0.35 + near * 0.45;
+  }
+  // 赤とんぼ
+  const ty = Math.max(game.topY, PH.BASE + 1);
+  for (const d of dragonflies) {
+    const a = tt * d.sp + d.ph, wob = Math.sin(tt * 0.37 + d.ph * 3);
+    d.hover = Math.max(0, Math.sin(tt * 0.23 + d.ph * 1.7)) ** 6;   // ときどき空中で止まる
+    const tgt = tmpV.set(Math.cos(a) * d.r + wob * 1.2, ty + d.hy + Math.sin(a * 1.7) * 0.5, Math.sin(a) * d.r * 0.8 - 1.5 + Math.cos(a * 0.5) * 1.5);
+    d.p.lerp(tgt, 0.04 * (1 - d.hover * 0.9));
+    d.g.position.copy(d.p);
+    if (d.p.distanceToSquared(d.last) > 1e-5) { d.g.lookAt(d.last); d.last.lerp(d.p, 0.3); }
+    for (const w of d.wings) w.wg.rotation.z = w.sd * (Math.sin(tt * 70 + d.ph) * 0.45 + 0.1);
+  }
+}
+function render(dt) {
+  if (riverTex) riverTex.offset.x -= dt * 0.012;
+  updateCamera(dt);
+  syncMeshes();
+  renderer.render(scene, camera);
+  drawFx();
+}
+function txt(s, x, y, size, fill = '#f6efe2', stroke = 'rgba(30,24,26,.88)', lw = 6, font = FD) {
+  const wt = /^\d00 /.exec(font);
+  fx.font = wt ? `${wt[0]}${size}px ${font.slice(wt[0].length)}` : `${size}px ${font}`; fx.lineJoin = 'round'; fx.lineWidth = lw; fx.strokeStyle = stroke; fx.strokeText(s, x, y); fx.fillStyle = fill; fx.fillText(s, x, y);
+}
+function drawFx() {
+  fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fx.clearRect(0, 0, W, H);
+  if (!game) return;
+  const sc = Math.min(1, W / 390 + 0.05);
+  if (state === 'play' || state === 'skip') drawRuler(sc);
+  fx.textAlign = 'center';
+  if (state === 'play' || state === 'skip') {
+    const bump = reduceMotion ? 0 : Math.max(0, bumpT) * 2;
+    fx.save(); fx.translate(W / 2, safeT + 58); fx.scale(1 + bump * 0.4, 1 + bump * 0.4);
+    txt(`${game.score}個`, 0, 0, 44 * sc, bumpT > 0 ? '#ffd98e' : '#f6efe2');
+    fx.restore();
+    txt(`高さ ${game.heightCm()}cm`, W / 2, safeT + 84, 14 * sc, '#f6efe2', 'rgba(30,24,26,.85)', 4, `700 ${FB}`);
+  }
+  if (state === 'play' && game.phase !== 'over') drawHelp(sc);
+  for (const p of pops) {
+    const k = clamp(p.life / 0.16, 0, 1), out = clamp((p.dur - p.life) / 0.25, 0, 1);
+    const y = safeT + (p.hot ? 140 : 116) - p.life * 10;
+    fx.globalAlpha = Math.min(k, out);
+    txt(p.text, W / 2, y, p.size * sc, p.hot ? '#ffd98e' : '#f6efe2', 'rgba(30,24,26,.9)', 6);
+    fx.globalAlpha = 1;
+  }
+  fx.textAlign = 'start';
+}
+// 右はしのものさし（台石の上からの高さ。10cm ごとの目盛り、50cm ごとに数字）
+function drawRuler(sc) {
+  const x = W - 30, top = project(lookX, game.maxTop + 4, lookZ).y, base = project(lookX, PH.BASE, lookZ);
+  const y0 = clamp(base.y, -20, H + 20), y1 = clamp(top, -20, H + 20);
+  if (y0 - y1 < 4) return;
+  fx.fillStyle = 'rgba(232,214,176,.88)'; fx.fillRect(x, y1, 18, y0 - y1);
+  fx.fillStyle = 'rgba(60,44,20,.35)'; fx.fillRect(x, y1, 1.5, y0 - y1);
+  const maxCm = Math.ceil((game.maxTop + 4 - PH.BASE) * 10);
+  fx.textAlign = 'right'; fx.textBaseline = 'middle';
+  for (let cm = 0; cm <= maxCm; cm += 10) {
+    const y = project(lookX, PH.BASE + cm / 10, lookZ).y;
+    if (y < -10 || y > H + 10) continue;
+    const big = cm % 50 === 0;
+    fx.fillStyle = '#3a2c18'; fx.fillRect(x, y - 0.75, big ? 10 : 5, 1.5);
+    if (big && cm > 0) { fx.font = `700 ${10 * sc}px ${FB}`; fx.fillText(`${cm}`, x + 17, y + 6); }
+  }
+  const yt = project(lookX, game.topY, lookZ).y;
+  if (game.topY > PH.BASE + 0.05 && yt > 0 && yt < H) {
+    fx.fillStyle = '#c0472c'; fx.beginPath(); fx.moveTo(x - 2, yt); fx.lineTo(x - 11, yt - 6); fx.lineTo(x - 11, yt + 6); fx.closePath(); fx.fill();
+  }
+  fx.textBaseline = 'alphabetic'; fx.textAlign = 'start';
+}
+function drawHelp(sc) {
+  const help = rec.plays < 2 && game.score < 3;
+  const y = H - safeB - 104;
+  const cur = game.cur;
+  if (cur && (cur.s.bonus || cur.s.wedge) && game.phase !== 'down') {
+    const p = project(cur.x, cur.y + cur.s.top + 0.35, cur.z);
+    fx.textAlign = 'center'; txt(cur.s.bonus ? '平たい石' : 'くさび形', p.x, p.y, 12 * sc, '#ffd98e', 'rgba(30,24,26,.85)', 4, `700 ${FB}`);
+  }
+  if (tipT > 0) { fx.globalAlpha = clamp(tipT / 0.3, 0, 1); txt(tipText, W / 2, y + 34, 13 * sc, '#ffd2b8', 'rgba(30,24,26,.9)', 5, `700 ${FB}`); fx.globalAlpha = 1; }
+  if (help && (game.phase === 'hold' || game.phase === 'enter') && !(ptr && ptr.moved > 8)) {
+    txt('ドラッグで、石を塔の真上へ', W / 2, y - 6, 16 * sc, '#ffd98e', 'rgba(30,24,26,.9)', 6, `700 ${FB}`);
+    txt('影が上の石に乗ったら、指をはなして置く', W / 2, y + 16, 12 * sc, '#f6efe2', 'rgba(30,24,26,.8)', 4, `700 ${FB}`);
+  }
+}
+
+/* ---------- 結果 ---------- */
+function advice() {
+  const L = game.lost, last = game.stones.filter(s => s.relT != null).pop();
+  if (game.score === 0) return '1個目から ころん。台石の平らなところの真ん中に、影を合わせて。';
+  if (game.unfrozeT != null && game.overT - game.unfrozeT < 8) return '塔が少しずつ傾いて、重さを支えきれなくなった。くさび形の石を回して、傾きを打ち消そう。';
+  if (L && last && L === last) {
+    const tf = game.snap && game.snap.length ? game.snap[game.snap.length - 1] : null;
+    const off = tf && last.relP ? Math.hypot(last.relP.x - tf.p.x, last.relP.z - tf.p.z) : 0;
+    if (off > 0.6) return '下の石から はずれて落ちた。影がちゃんと上の石に乗るところで、指をはなそう。';
+    return '重心が、下の石の平らなところから はみ出して ころがった。真ん中に、そっと。';
+  }
+  return game.score >= 15 ? '上へ行くほど石は小さく丸くなる。よくここまで積んだ！' : '置いた重みで、下の石ごと ぐらりと崩れた。重い石ほど真ん中に。';
+}
+function showOver() {
+  if (state !== 'play') return;
+  state = 'over';
+  const n = game.score, cm = game.maxCm();
+  const isNew = n > rec.best || (n === rec.best && cm > rec.bestCm);
+  if (!botStart) { rec.plays++; rec.total += n; rec.last = n; rec.lastCm = cm; if (isNew) { rec.best = n; rec.bestCm = cm; } save(); }
+  $('oScore').textContent = n; $('oCm').textContent = cm;
+  $('oMsg').textContent = advice();
+  $('oBest').textContent = rec.best; $('oBestCm').textContent = rec.bestCm; $('oPlays').textContent = rec.plays;
+  $('newRec').hidden = !(isNew && n > 0 && rec.plays > 1);
+  $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({ text: `${shareText(n, cm)}${isNew && rec.plays > 1 && n > 0 ? ' 自己ベスト！' : ''}\n`, url: gameUrl(), hashtags: '石積み' });
+  $('copyMsg').textContent = '画面タップ・スペースでもう一回';
+  $('over').hidden = false; $('hud').hidden = true; $('rotBtn').hidden = true;
+  overShownAt = performance.now(); orbit = 0;
+  rewind = game.snap ? { at: performance.now() + 150, map: new Map(game.snap.map(S => [S.id, S])) } : null;
+  $('retryBtn').focus({ preventScroll: true });
+}
+const shareText = (n, cm) => n > 0 ? `🪨石積み ${n}個・${cm}cm 積んだ！` : '🪨石積み 1個目の石が、ころんと落ちた…';
+
+/* ---------- シェア ---------- */
+// 公開先のURL。ローカルで開いたときもこれをシェアする
+const PUBLIC_URL = 'https://asobi.enludus.com/games/ishizumi/';
+function gameUrl() {
+  try {
+    if (/^https?:$/.test(location.protocol) && location.hostname !== 'localhost') return location.origin + location.pathname;
+  } catch {}
+  return PUBLIC_URL;
+}
+
+/* ---------- HUD ---------- */
+function updateHud() { $('hBest').textContent = rec.best ? `${rec.best}個・${rec.bestCm}cm` : '—'; }
+function fillTitle() { $('tBest').textContent = rec.best ? `${rec.best}個・${rec.bestCm}cm` : '—'; $('tPlays').textContent = rec.plays; }
+
+/* ---------- ループ ---------- */
+let lastTs = performance.now();
+const keys = new Set();
+function step(dt, now) {
+  tt += dt;
+  if (slowT > 0) { slowT -= dt; } else slowK += (1 - slowK) * Math.min(1, dt * 3);
+  if (game && slowK < 0.999) t0 += dt * (1 - slowK) * 1000;   // スローモーション（物理の時刻を遅らせる）
+  if (state === 'play') keyMove(dt, now);
+  if (state === 'play' || state === 'title' || state === 'over') advance(now);
+  if (state === 'play' && failAt >= 0 && tt - failAt > 2.2) showOver();
+  $('rotBtn').hidden = !(state === 'play' && game && game.cur && !bot && (game.phase === 'hold' || game.phase === 'enter'));
+  if (shake > 0) shake -= dt;
+  if (bumpT > 0) bumpT -= dt;
+  if (tipT > 0) tipT -= dt;
+  for (const p of pops) p.life += dt;
+  pops = pops.filter(p => p.life < p.dur);
+}
+function frame() {
+  const now = performance.now();
+  const dt = Math.min(0.1, (now - lastTs) / 1000); lastTs = now;
+  lagS += (clamp(dt * 1.6, 0.04, 0.16) - lagS) * 0.1;
+  step(dt, now);
+  render(Math.max(dt, 1 / 240));
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 入力 ---------- */
+function start() {
+  wakeAudio(); state = 'play';
+  seed = upcomingSeed();   // #seed=N: 何回目のプレイかまで同じなら、同じ石・同じボット
+  sessionPlays++;
+  $('title').hidden = true; $('over').hidden = true; $('hud').hidden = false;
+  const s = nextSeed();
+  newGame(s);
+  updateHud();
+  const bn = HASH.has('debug') && HASH.get('bot') && SKILLS[HASH.get('bot')] ? HASH.get('bot') : null;
+  botStart = !!bn;   // #bot=… で始めたプレイは記録しない（撮影・確認用）
+  if (bn) bot = makeBot(SKILLS[bn], mulberry(s * 7 + 3));
+  // #debug&skip=秒: はじめにその秒数だけ一気に進める（OGP 撮影・確認用。bot=good などと組み合わせる）
+  if (HASH.has('debug') && +HASH.get('skip') > 0) skipTo(game.t + +HASH.get('skip'), HASH.get('pose') || 'hold');
+}
+// pose=hold: 指定の秒数のあと、次の石を持って塔の上へ運んでいる見栄えのいい瞬間まで進めて止める（freeze=1 で止めたまま）
+function skipTo(t1, pose) {
+  const quiet = state; state = 'skip';
+  const lim = t1 + 60;
+  while (game.phase !== 'over' && game.t < lim) {
+    if (bot) bot.tick(game, botEmit);
+    game.step(); game.events.length = 0;
+    if (game.t >= t1 && (pose !== 'hold' || (game.phase === 'hold' && game.cur && game.t - game.cur.t0 > 0.5 && (() => { const tf = game.topFace(); const d = Math.hypot(game.cur.x - tf.c.x, game.cur.z - tf.c.z); return d > (+HASH.get('off') || 0.35) && d < 1.2; })()))) break;
+  }
+  state = quiet;
+  pops = []; snapCam = true; failAt = game.phase === 'over' ? tt : -1;
+  for (let i = 0; i < MARKS.length && game.heightCm() >= MARKS[i].cm; i++) markIdx = i + 1;
+  t0 = performance.now() - (game.t + lagS) * 1000;
+  if (HASH.get('freeze') === '1') frozen = true;
+}
+const evTime = e => (e.timeStamp > 1e3 && Math.abs(e.timeStamp - performance.now()) < 5000 ? e.timeStamp : performance.now());
+function toResult() { if (failAt >= 0 && tt - failAt > 0.6) showOver(); }
+const canHold = () => game && !bot && game.cur && (game.phase === 'hold' || game.phase === 'enter');
+// ドラッグ: 指の動き（画面の左右・上下）を、石の動き（地面の左右・奥行き）に。石の見えている大きさに合わせて 1:1 くらい
+const DEPTH_GAIN = 1.25;
+function pxPerUnit() { if (!game || !game.cur) return 60; const c = game.cur, d = camera.position.distanceTo(tmpV.set(c.x, c.y, c.z)); return H / (2 * d * Math.tan(camera.fov * DEG / 2)); }
+let ptr = null;
+fxc.addEventListener('pointerdown', e => {
+  e.preventDefault(); wakeAudio();
+  if (state !== 'play' || !game) return;
+  if (game.phase === 'over') { toResult(); return; }
+  if (ptr || !canHold()) return;
+  try { fxc.setPointerCapture(e.pointerId); } catch {}
+  ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY, tx0: game.cur.tx, tz0: game.cur.tz, moved: 0, cur: game.cur, ppu: pxPerUnit(), R: camRight(), F: camFwd() };
+});
+addEventListener('pointermove', e => {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  if (!game || game.cur !== ptr.cur) { ptr = null; return; }
+  const list = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+  const ce = list.length ? list[list.length - 1] : e;
+  const dx = ce.clientX - ptr.x0, dy = ce.clientY - ptr.y0;
+  ptr.moved = Math.max(ptr.moved, Math.hypot(dx, dy));
+  const u = dx / ptr.ppu, v = -dy / ptr.ppu * DEPTH_GAIN;
+  queue({ type: 'aim', x: ptr.tx0 + ptr.R.x * u + ptr.F.x * v, z: ptr.tz0 + ptr.R.z * u + ptr.F.z * v }, evTime(ce));
+});
+function endPtr(e) {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  const P = ptr; ptr = null;
+  if (state !== 'play' || !game || game.cur !== P.cur) return;
+  if (P.moved > 8 || P.cur.moved) queue({ type: 'drop' }, evTime(e));
+  else { tipText = 'ドラッグで石を動かして、指をはなすと置く'; tipT = 1.6; }
+}
+addEventListener('pointerup', endPtr);
+addEventListener('pointercancel', e => { if (ptr && e.pointerId === ptr.id) ptr = null; });
+fxc.addEventListener('contextmenu', e => e.preventDefault());
+// まわすボタン（押してもドラッグにならない）
+const rotBtn = $('rotBtn');
+for (const ev of ['pointerdown', 'touchstart', 'mousedown']) rotBtn.addEventListener(ev, e => e.stopPropagation(), { passive: true });
+rotBtn.addEventListener('pointerdown', e => { wakeAudio(); if (state === 'play' && canHold()) queue({ type: 'rot', d: -1 }, evTime(e)); });
+rotBtn.addEventListener('click', e => e.preventDefault());
+for (const id of ['title', 'over']) {
+  $(id).addEventListener('pointerdown', e => {
+    if (e.target.closest('button, a') || state === 'loading') return;
+    if (id === 'over' && performance.now() - overShownAt < 400) return;
+    e.preventDefault(); start();
+  });
+}
+// キーボード: 矢印で動かす（画面の左右・奥行き）、スペース/Enter で下ろす、Q/E で回す
+function keyMove(dt, now) {
+  if (!canHold()) return;
+  let u = 0, v = 0;
+  if (keys.has('ArrowLeft') || keys.has('KeyA')) u -= 1; if (keys.has('ArrowRight') || keys.has('KeyD')) u += 1;
+  if (keys.has('ArrowUp') || keys.has('KeyW')) v += 1; if (keys.has('ArrowDown') || keys.has('KeyS')) v -= 1;
+  if (!u && !v) return;
+  const sp = (keys.has('ShiftLeft') || keys.has('ShiftRight') ? 0.35 : 1.1) * dt, R = camRight(), F = camFwd(), c = game.cur;
+  c.kx = (c.kx ?? c.tx) + (R.x * u + F.x * v) * sp; c.kz = (c.kz ?? c.tz) + (R.z * u + F.z * v) * sp;
+  queue({ type: 'aim', x: c.kx, z: c.kz }, now);
+}
+const MOVE_KEYS = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'KeyA', 'KeyD', 'KeyW', 'KeyS'];
+addEventListener('keydown', e => {
+  const c = e.code;
+  if (state === 'play') {
+    if (MOVE_KEYS.includes(c) || c === 'ShiftLeft' || c === 'ShiftRight') { e.preventDefault(); if (game && game.cur && !MOVE_KEYS.some(k => keys.has(k))) { game.cur.kx = game.cur.tx; game.cur.kz = game.cur.tz; } keys.add(c); return; }
+    if ((c === 'KeyQ' || c === 'KeyE') && canHold()) { e.preventDefault(); wakeAudio(); queue({ type: 'rot', d: c === 'KeyQ' ? 1 : -1 }, evTime(e)); return; }
+    if ((c === 'Space' || c === 'Enter') && !e.repeat) { e.preventDefault(); wakeAudio(); if (game.phase === 'over') toResult(); else if (canHold()) queue({ type: 'drop' }, evTime(e)); }
+    return;
+  }
+  if (c !== 'Space' && c !== 'Enter') return;
+  if (state === 'loading' || state === 'skip') return;
+  const el = document.activeElement;
+  if (el && el !== $('retryBtn') && el !== $('startBtn') && el.matches('button, a, input')) return;
+  if (state === 'over' && performance.now() - overShownAt < 400) { e.preventDefault(); return; }
+  e.preventDefault(); if (!e.repeat) start();
+});
+addEventListener('keyup', e => keys.delete(e.code));
+addEventListener('blur', () => keys.clear());
+$('startBtn').addEventListener('click', start);
+$('retryBtn').addEventListener('click', start);
+$('copyBtn').addEventListener('click', () => {
+  const text = `${shareText(rec.last, rec.lastCm)} ${gameUrl()}`;
+  const msg = $('copyMsg');
+  const fallback = () => { msg.textContent = text; const r = document.createRange(); r.selectNodeContents(msg); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.style.userSelect = 'text'; };
+  try { navigator.clipboard.writeText(text).then(() => { msg.textContent = 'コピーしました'; }, fallback); } catch { fallback(); }
+});
+
+/* ---------- 調整・検証用（#debug のときだけ） ---------- */
+if (HASH.has('debug')) {
+  const q = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(p * (s.length - 1))]; };
+  const topPt = () => { const tf = game.topFace(); return tf.c; };
+  window.__ishizumi = {
+    info: () => game && ({ state, phase: game.phase, reason: game.reason, t: +game.t.toFixed(3), score: game.score, cm: game.heightCm(), maxCm: game.maxCm(), topY: +game.topY.toFixed(3),
+      stones: game.stones.length, frozen: game.stones.filter(s => s.frozen).length, unfrozen: game.unfrozen,
+      cur: game.cur && { id: game.cur.st.id, x: +game.cur.x.toFixed(3), z: +game.cur.z.toFixed(3), tx: +game.cur.tx.toFixed(3), tz: +game.cur.tz.toFixed(3), yaw: +game.cur.yaw.toFixed(3), wedge: +game.cur.s.wedge.toFixed(3), bonus: game.cur.s.bonus },
+      top: (() => { const c = topPt(); return { x: +c.x.toFixed(3), y: +c.y.toFixed(3), z: +c.z.toFixed(3) }; })(),
+      // 画面の座標（Playwright で操作するため）: 持っている石・塔のてっぺん（上の面の真ん中）
+      stoneScreen: game.cur && project(game.cur.x, game.cur.y, game.cur.z),
+      topScreen: (() => { const c = topPt(); return project(c.x, c.y, c.z); })(),
+      inq: game.inq.length, stepMs: +stepMs.toFixed(3), lite, frozenView: frozen, bot: !!bot, lagS: +lagS.toFixed(3), rec, seed }),
+    // 持っている石を、塔のてっぺんの真上へ運ぶには、画面でどれだけドラッグすればいいか（px）
+    dragTo: (ox = 0, oz = 0) => { if (!game.cur) return null; const c = topPt(), dx = c.x + ox - game.cur.tx, dz = c.z + oz - game.cur.tz, R = camRight(), F = camFwd(), ppu = pxPerUnit(); return { dx: (dx * R.x + dz * R.z) * ppu, dy: -(dx * F.x + dz * F.z) * ppu / DEPTH_GAIN }; },
+    // 物理だけで N 回ぶん: sim('first', 20) → [個数...]。opts.rate = 指の動き・離した時刻をコマ（Hz）に丸める、opts.seed0
+    sim: (skill = 'good', N = 10, opts = {}) => Array.from({ length: N }, (_, i) => runBot(RAPIER, SKILLS[skill], (opts.seed0 ?? 1000) + i, opts).n),
+    stats: (skill = 'good', N = 10, opts = {}) => {
+      const R = Array.from({ length: N }, (_, i) => runBot(RAPIER, SKILLS[skill], (opts.seed0 ?? 1000) + i, opts)), n = R.map(r => r.n), cm = R.map(r => r.cm);
+      return { skill, N, rate: opts.rate || 'exact', p10: q(n, 0.1), p25: q(n, 0.25), p50: q(n, 0.5), p75: q(n, 0.75), p90: q(n, 0.9), min: Math.min(...n), max: Math.max(...n), ge2: R.filter(r => r.n >= 2).length / N, mean: +(n.reduce((a, b) => a + b, 0) / N).toFixed(1), cm50: q(cm, 0.5) };
+    },
+    // 何もしないで sec 秒（物理だけ）: いまの塔がどれだけ動くか・落ちないか
+    idle: (sec = 30) => { const T = game.onTower(), p0 = T.map(s => ({ ...s.body.translation() })); const t1 = game.t + sec; while (game.t < t1 && game.phase !== 'over') { game.step(); game.events.length = 0; } t0 = performance.now() - (game.t + lagS) * 1000; return { phase: game.phase, score: game.score, maxMove: +Math.max(0, ...T.map((s, i) => { const p = s.body.translation(); return Math.hypot(p.x - p0[i].x, p.y - p0[i].y, p.z - p0[i].z); })).toFixed(5) }; },
+    // いまのプレイをボットに任せる
+    autoplay: (skill = 'good') => { if (game && state === 'play' && game.phase !== 'over') bot = makeBot(SKILLS[skill], mulberry(nextSeed())); },
+    skip: s => skipTo(game.t + s, 'none'),
+    gl: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles }),
+    freeze: (on = true) => { frozen = on; if (!on) t0 = performance.now() - (game.t + lagS) * 1000; },
+    PH, SKILLS, makeGame, runBot, makeBot, game: () => game,
+  };
+}
+
+/* ---------- はじめ ---------- */
+try { await Promise.race([Promise.all([document.fonts.load(`40px "Dela Gothic One"`, '0123456789個！自己ベスト更新をこえた平たい石ひと休みすねひざこしむね背たけ手をのばした高さm'), document.fonts.load(`700 16px "Zen Kaku Gothic New"`, '高さドラッグで石を塔の真上へ影が上の石に乗ったら指をはなして置くくさび形まわすと傾きを打ち消せる動かして平たい')]), new Promise(r => setTimeout(r, 1500))]); } catch {}
+buildRiverside();
+scene.add(aimBlob);
+resize();
+newGame(7);
+state = 'title';
+fillTitle(); updateHud();
+$('startBtn').disabled = false; $('startBtn').textContent = '石を積む';
+$('startBtn').focus({ preventScroll: true });
+requestAnimationFrame(frame);
+</script>
+<a class="hub-back" id="hubBack" href="/" aria-label="あそび横丁（ゲーム一覧）にもどる">← 横丁</a>
+<script>
+// プレイ中でもゲーム一覧に戻れるボタン。押してもゲームの入力（タップ）に伝わらないようにする
+for (const ev of ['pointerdown', 'touchstart', 'mousedown']) document.getElementById('hubBack').addEventListener(ev, e => e.stopPropagation(), { passive: true });
+</script>
+</body>
+</html>
