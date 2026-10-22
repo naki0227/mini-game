@@ -1,0 +1,1523 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>羽根つき</title>
+<meta name="description" content="お正月の門の前で、振袖のおねえさんと羽根つき。落ちてくる羽根の下へ指を動かして、タップでこーん。ムクロジの玉と羽の空気抵抗まで計算した本物みたいな羽根で、落とさず何回つづくか。ログイン不要のブラウザゲーム。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="羽根つき">
+<meta property="og:description" content="落ちてくる羽根の下へ、タップでこーん。おねえさんと何回つづく？ 落としたら顔に墨。">
+<meta property="og:url" content="https://asobi.enludus.com/games/hanetsuki/">
+<meta property="og:image" content="https://asobi.enludus.com/games/hanetsuki/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%8D%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+:root { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+/* 全画面 WebGL（お正月の晴れた昼、家の門の前で羽根つき）+ 2D の演出レイヤー + HUD。タイトル/結果は下の札1枚 */
+:root {
+  --sky: #a9d6f2;        /* 冬の青空 */
+  --ink: #2a1a16;        /* 墨 */
+  --paper: #fcf6e9;
+  --noren: #b3312b;      /* 朱ののれん */
+  --noren-ink: #fdf3e4;
+  --gold: #e3ad38;
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--sky); color: var(--ink);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+#gl, #fx { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#fx { touch-action: none; cursor: pointer; }
+
+.hud {
+  position: fixed; right: 0; top: 0; pointer-events: none;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+}
+.pill {
+  background: var(--noren); color: var(--noren-ink);
+  border-radius: 6px; padding: 5px 10px 6px;
+  font-variant-numeric: tabular-nums; line-height: 1.1; text-align: right;
+  box-shadow: 0 2px 0 rgba(0,0,0,.25);
+}
+.pill .lab { font-size: 10px; letter-spacing: .12em; opacity: .85; display: block; }
+.pill .val { font-family: var(--font-display); font-size: 18px; }
+
+.overlay {
+  position: fixed; inset: 0; display: grid; z-index: 40;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px;
+  touch-action: none; cursor: pointer; overflow: hidden;
+}
+#title { place-items: end center; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); background: linear-gradient(to top, rgba(30, 22, 18, .45), rgba(30, 22, 18, 0) 60%); }
+#over { place-items: end center; background: linear-gradient(to top, rgba(30, 22, 18, .5), rgba(30, 22, 18, 0) 66%); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); }
+.card {
+  width: min(360px, 100%); background: var(--paper); color: var(--ink);
+  border-radius: 10px; overflow: hidden; box-shadow: 0 10px 40px rgba(30,20,10,.4);
+  text-align: center; cursor: default;
+}
+.noren {
+  background: var(--noren); color: var(--noren-ink);
+  display: flex; gap: 3px;
+  padding-top: 16px;
+}
+.noren span {
+  flex: 1; background: var(--noren); border-bottom: 3px solid rgba(255,255,255,.1);
+  font-family: var(--font-display); font-size: 32px; line-height: 1; padding-block: 6px 14px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.2); white-space: nowrap;
+}
+.noren.result { padding-top: 10px; }
+.noren.result span { font-size: 26px; padding-block: 4px 10px; }
+.body { padding: 16px 20px 18px; display: grid; gap: 11px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.7; text-wrap: balance; }
+.score { font-family: var(--font-display); font-size: 58px; line-height: 1; font-variant-numeric: tabular-nums; }
+.score { white-space: nowrap; }
+.score small { display: block; font-size: 17px; margin-top: 6px; letter-spacing: .06em; }
+.scorerow { display: flex; align-items: center; justify-content: center; gap: 14px; }
+.face { width: 84px; height: 76px; flex: none; }
+.ink { font-size: 11px; opacity: .75; margin-top: 2px; }
+.meta { display: flex; justify-content: center; gap: 6px 16px; font-size: 13px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.meta b { font-size: 16px; }
+.badge {
+  justify-self: center; background: var(--gold); color: #3a2410; font-weight: 700;
+  font-size: 12px; letter-spacing: .14em; padding: 3px 10px; border-radius: 99px;
+}
+#over .lead { font-size: 13px; line-height: 1.55; }
+#over .body { gap: 9px; padding-block: 12px 14px; }
+.btns { display: grid; gap: 8px; }
+.btns .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+button {
+  font: inherit; font-weight: 700; font-size: 16px; border: 0; border-radius: 8px;
+  padding: 13px 16px; cursor: pointer;
+  background: var(--noren); color: var(--noren-ink); box-shadow: 0 3px 0 #6e1a15;
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 #6e1a15; }
+button:disabled { opacity: .6; cursor: progress; }
+a.xbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font-weight: 700; font-size: 16px; border-radius: 8px; padding: 13px 16px;
+  background: #0f1419; color: #fff; box-shadow: 0 3px 0 #000;
+}
+a.xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+a.xbtn:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+a.xbtn svg { width: 16px; height: 16px; fill: currentColor; }
+button.sub { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); padding-inline: 8px; font-size: 15px; }
+button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.how { font-size: 12px; opacity: .72; margin: 0; line-height: 1.6; }
+.err { font-size: 13px; color: #b3361b; margin: 0; font-weight: 700; }
+.back { font-size: 13px; color: var(--ink); opacity: .75; }
+.back:hover { opacity: 1; }
+@media (max-height: 700px) {
+  .score { font-size: 46px; }
+  .face { width: 70px; height: 63px; }
+  .body { gap: 8px; padding-block: 12px 14px; }
+  button, a.xbtn { padding-block: 10px; }
+  .noren span { font-size: 28px; }
+}
+@media (max-height: 600px) { #over .lead, #title .how { display: none; } }
+.hub-back {
+  position: fixed; z-index: 60;
+  left: calc(env(safe-area-inset-left, 0px) + 10px); bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  font: 700 12px/1 "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif; letter-spacing: .04em;
+  padding: 7px 11px; border-radius: 99px; text-decoration: none;
+  background: rgba(20, 18, 24, .55); color: #fff; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.hub-back:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<canvas id="gl" aria-hidden="true"></canvas>
+<canvas id="fx" aria-label="羽根つきのゲーム画面。指を左右に動かして羽根の下へ。落ちてきたらタップで打ち返す"></canvas>
+
+<div class="hud" id="hud" hidden>
+  <div class="pill"><span class="lab">最高</span><span class="val" id="hBest">—</span></div>
+</div>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="noren" aria-hidden="true"><span>羽</span><span>根</span><span>つ</span><span>き</span></div>
+    <div class="body">
+      <p class="lead">指を左右に動かして<b>羽根の下へ</b>。<br>落ちてきたら<b>タップ</b>で こーん。<br>おねえさんと<b>何回つづくか</b>。</p>
+      <div class="meta"><span>最高 <b id="tBest">—</b> 回</span><span>総回数 <b id="tTotal">0</b> 回</span></div>
+      <div class="btns"><button id="startBtn" disabled>よみこみ中…</button></div>
+      <p class="err" id="loadErr" hidden></p>
+      <p class="how">胸の高さで打つと まっすぐ届く。<br>上へスワイプで強く（強すぎると越える）。<br>（キー: ←→ 動く・スペース 打つ・Shift 強く）</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <div class="noren result" aria-hidden="true" id="oNoren"><span>ぽ</span><span>と</span><span>っ</span></div>
+    <div class="body">
+      <div class="badge" id="newRec" hidden>新記録</div>
+      <div class="scorerow">
+        <div><canvas class="face" id="oFace" width="168" height="152" aria-hidden="true"></canvas><div class="ink" id="oInk"></div></div>
+        <div class="score"><span id="oScore">0</span><small>回 つづいた</small></div>
+      </div>
+      <p class="lead" id="oMsg"></p>
+      <div class="meta"><span>最高 <b id="oBest">0</b> 回</span><span>総回数 <b id="oTotal">0</b> 回</span><span>遊んだ <b id="oPlays">0</b> 回</span></div>
+      <div class="btns">
+        <div class="two"><button id="retryBtn">もう一回</button><button class="sub" id="copyBtn">結果をコピー</button></div>
+        <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Xでシェア</a>
+      </div>
+      <p class="how" id="copyMsg">画面タップ・スペースでもう一回</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+let THREE;
+try { THREE = await import(THREE_URL); } catch (e) {
+  $('startBtn').textContent = '読み込めませんでした';
+  $('loadErr').hidden = false;
+  $('loadErr').textContent = '3Dの読み込みに失敗しました。通信状況を確かめて、ページを再読み込みしてください。';
+  throw e;
+}
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FD = getComputedStyle(document.documentElement).getPropertyValue('--font-display');
+const FB = getComputedStyle(document.documentElement).getPropertyValue('--font-body');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const DEG = Math.PI / 180;
+const HASH = new URLSearchParams(location.hash.slice(1));
+
+/*PHYS-BEGIN*/
+/* ---------- 羽根つきの物理（three には頼らない） ----------
+   長さは m、時間は秒。y が上、自分は手前（z = +1.8）、相手（振袖のおねえさん）は奥（z = −1.8）。
+   羽根: 「玉（ムクロジの種・重い）」と「羽の抗力の中心（軽い・空気をよく受ける）」の2点を、長さ LEN の棒でつないだ剛体。
+     それぞれに 重力 と 空気抵抗 −k|v−風|(v−風)。羽の抗力が大きく、玉より後ろにあるので、どう打っても すぐ玉が前を向き、
+     速度が落ちて 玉を下にして ほぼまっすぐ落ちてくる（シャトルコックと同じ）。終端速度 √(G/(KH+KT)) ≒ 5.8 m/s。
+     1/1000 秒きざみ。位置は棒の長さを保つように直し、速度も棒の伸び縮みの分だけ取り除く（運動量は保つ）。
+   羽子板: 面の法線 n・板の上向き a・横向き b の長方形（半幅 PW、半高 PHh）。振ると 下から上へ、
+     面の向きを「前むき → 上むき」に起こしながら 速く動く（SW_T 秒。上へ速くスワイプすると速く振れる）。
+     手は 体（指の横位置へ走る。奥行きは落ちてくるところへ自動）から ARM まで、羽根の真下へ のびる。
+     板の面を玉が横切ったら衝突: 板と羽根の相対速度の 法線成分を 反発係数 E で返し、接線成分は MU だけ残す。
+     板の端に当たると 面の向きがそちらへ ねじれる（変な方向へ飛ぶ）。
+   相手: 羽根の落ちてくるところへ（反応 O_REACT のあと O_RUN m/s で）走り、手の届く範囲（O_REACH）に入れば打ち返す。
+     返す球は「自分の近く＋ずれ」へ、同じ物理で（粗い刻みで）狙って打つ。回数が増えるほど ずれ・低さ（速さ）・風が強くなる。
+   地面に玉が着いたらおしまい。 */
+const PH = {
+  G: 9.8, DT: 1 / 1000,
+  LEN: 0.075, MH: 0.82, MT: 0.18, KH: 0.02, KT: 0.27, RB: 0.022,
+  ME_Z: 1.8, OP_Z: -1.8,
+  HIT_Y: 1.15,                       // 打ちごろの高さ（振りの真ん中で板がここを通る）
+  SW_T: 0.27, SW_Y0: 0.45, SW_Y1: 1.85, SW_FWD: 0.46, SW_E0: 30, SW_E1: 80, SW_ON0: 0.04, SW_ON1: 0.97, SW_REC: 0.4,
+  P_MAX: 1.7,                       // 速く振ったときの速さの倍率の上限
+  PW: 0.12, PHh: 0.17,              // 羽子板の当たり（半幅・半高）
+  E: 0.5, MU: 0.55, EDGE: 2.2,
+  ARM: 0.54, ARMV: 5, REACH_F: 0.25, // 手の届く距離・手の速さ・体の前への出
+  RUN: 4.2, RUN_A: 28, MX: 1.15, MZ0: 1.0, MZ1: 2.9,
+  O_RUN: 2.35, O_A: 16, O_REACT: 0.28, O_REACH: 0.62, O_HMAX: 1.55, O_HMIN: 0.35, OX: 2.2, OZ0: -3.4, OZ1: -0.5,
+  SERVE_AT: 1.1, KEY_V: 2.6,
+};
+const DEGR = Math.PI / 180;
+function mulberry(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+const clampP = (v, a, b) => Math.max(a, Math.min(b, v));
+// 回数による難しさ: 返球のずれ（m）・打ち出しの角度（低いほど速く来る）・風の強さ（m/s）。上限は決めず、ゆっくり上がりつづける
+function diffOf(n) {
+  const k = 1 - Math.exp(-n / 30);
+  return { off: 0.12 + 1.05 * k + 0.003 * n, ang: (63 - 20 * k - 0.025 * n) * DEGR, wind: 0.15 + 1.25 * k + 0.005 * n };
+}
+// 入力は時刻つきで入れる（画面のコマとは関係なく、物理はその時刻で効く）
+function gInput(g, t, type, a = 0, b = 0) { const q = g.queue; let i = q.length; while (i > 0 && q[i - 1].t > t) i--; q.splice(i, 0, { t, type, a, b }); }
+function makeShuttle(x, y, z) { return { hx: x, hy: y, hz: z, tx: x, ty: y + PH.LEN, tz: z, hvx: 0, hvy: 0, hvz: 0, tvx: 0, tvy: 0, tvz: 0 }; }
+function makeGame(seed = 1) {
+  const r = mulberry((seed * 2654435761) >>> 0);
+  const g = {
+    seed, rnd: r, t: 0, queue: [], events: [], kdir: 0, lastSwingT: -9, recFrom: null,
+    phase: 'serve', last: 'op', n: 0, opN: 0, fail: null, land: null,
+    s: null,
+    wPh1: r() * 6.283, wPh2: r() * 6.283, wPh3: r() * 6.283, wDir: r() < 0.5 ? -1 : 1, wAmp: diffOf(0).wind,
+    bx: 0, bz: PH.ME_Z, bvx: 0, bvz: 0, fx: 0,
+    sw: null, swEnd: -9, swingsThis: 0, nearThis: 9,
+    hcx: 0.18, hcz: PH.ME_Z - PH.REACH_F, px: 0.18, py: PH.SW_Y0, pz: PH.ME_Z - PH.REACH_F, ppx: 0.18, ppy: PH.SW_Y0, ppz: PH.ME_Z - PH.REACH_F,
+    nx: 0, ny: 0.4, nz: -0.9, ax: 0, ay: 1, az: 0, bxv: 1, byv: 0, bzv: 0, pvx: 0, pvy: 0, pvz: 0, active: false, sPrev: 1,
+    dirx: 0, dirz: -1,
+    ox: 0, oz: PH.OP_Z, ovx: 0, ovz: 0, oGo: 0, otx: 0, otz: PH.OP_Z,
+    pred: null, opPred: null, lastHit: null, hitT: -9, opHitT: -9,
+  };
+  g.s = makeShuttle(g.ox + 0.25, 1.05, g.oz + 0.25);
+  return g;
+}
+// 風（横向きが主。時間でゆっくり強弱）
+let WX = 0, WZ = 0;
+function windAt(g, t, k = 1) {
+  const f = 0.55 + 0.3 * Math.sin(0.61 * t + g.wPh1) + 0.15 * Math.sin(1.73 * t + g.wPh2);
+  // 横風の向きは ゆっくり入れかわる（およそ 2 分で ひとまわり）
+  const ang = 0.45 * Math.sin(0.13 * t + g.wPh3), side = Math.sin(0.05 * t + g.wPh1 * 0.5 + 0.9) * 1.15;
+  const a = g.wAmp * f * k;
+  WX = a * Math.cos(ang) * g.wDir * clampP(side, -1, 1); WZ = a * Math.sin(ang) * 0.6;
+}
+// 羽根を dt だけ進める（本番も先読みも同じ関数）
+function shStep(S, dt, g, t, wk) {
+  windAt(g, t, wk);
+  const G = PH.G, mh = PH.MH, mt = PH.MT, M = mh + mt;
+  // 玉
+  let rx = S.hvx - WX, ry = S.hvy, rz = S.hvz - WZ, sp = Math.sqrt(rx * rx + ry * ry + rz * rz), c = PH.KH / mh * sp;
+  S.hvx -= c * rx * dt; S.hvy -= (G + c * ry) * dt; S.hvz -= c * rz * dt;
+  // 羽
+  rx = S.tvx - WX; ry = S.tvy; rz = S.tvz - WZ; sp = Math.sqrt(rx * rx + ry * ry + rz * rz); c = PH.KT / mt * sp;
+  const lim = Math.min(1, c * dt);   // 粗い刻みでも発散しない
+  S.tvx -= lim / dt * rx * dt; S.tvy -= (G + lim / dt * ry) * dt; S.tvz -= lim / dt * rz * dt;
+  S.hx += S.hvx * dt; S.hy += S.hvy * dt; S.hz += S.hvz * dt;
+  S.tx += S.tvx * dt; S.ty += S.tvy * dt; S.tz += S.tvz * dt;
+  // 棒の長さ
+  let dx = S.hx - S.tx, dy = S.hy - S.ty, dz = S.hz - S.tz, L = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1e-6;
+  const k = (L - PH.LEN) / L;
+  S.hx -= dx * k * mt / M; S.hy -= dy * k * mt / M; S.hz -= dz * k * mt / M;
+  S.tx += dx * k * mh / M; S.ty += dy * k * mh / M; S.tz += dz * k * mh / M;
+  dx /= L; dy /= L; dz /= L;
+  const along = (S.hvx - S.tvx) * dx + (S.hvy - S.tvy) * dy + (S.hvz - S.tvz) * dz;
+  S.hvx -= along * dx * mt / M; S.hvy -= along * dy * mt / M; S.hvz -= along * dz * mt / M;
+  S.tvx += along * dx * mh / M; S.tvy += along * dy * mh / M; S.tvz += along * dz * mh / M;
+}
+const cloneS = S => ({ ...S });
+// 先読み: 羽根が「下りながら高さ y を切る」ところ（または地面）まで進める
+function predictCross(g, y, dt = 0.002, wk = 1, maxT = 5) {
+  const S = cloneS(g.s); let t = g.t, py = S.hy;
+  while (t - g.t < maxT) {
+    shStep(S, dt, g, t, wk); t += dt;
+    if (S.hvy < 0 && S.hy <= y && py > y) { const k = (py - y) / Math.max(1e-6, py - S.hy); return { x: S.hx - S.hvx * dt * k, z: S.hz - S.hvz * dt * k, t: t - dt * k, ok: true }; }
+    if (S.hy <= PH.RB) return { x: S.hx, z: S.hz, t, ok: false };
+    py = S.hy;
+  }
+  return { x: S.hx, z: S.hz, t, ok: false };
+}
+// 相手の狙い: 角度 ang で、(tx,tz) の上で打ちごろの高さを切る速さを、粗い刻みの同じ物理で探す（風は半分だけ読む）
+function solveLaunch(g, tx, tz, ang) {
+  const S0 = g.s, dx = tx - S0.hx, dz = tz - S0.hz, D = Math.hypot(dx, dz) || 1e-3, ux = dx / D, uz = dz / D;
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  const range = sp => {
+    const S = cloneS(S0); S.hvx = S.tvx = ux * ca * sp; S.hvz = S.tvz = uz * ca * sp; S.hvy = S.tvy = sa * sp;
+    let t = g.t, py = S.hy; const dt = 0.004;
+    while (t - g.t < 6) { shStep(S, dt, g, t, 0.5); t += dt; if (S.hvy < 0 && S.hy <= PH.HIT_Y && py > PH.HIT_Y) break; if (S.hy < 0) break; py = S.hy; }
+    return (S.hx - S0.hx) * ux + (S.hz - S0.hz) * uz;
+  };
+  let lo = 2, hi = 40;
+  for (let i = 0; i < 12; i++) { const m = (lo + hi) / 2; if (range(m) < D) lo = m; else hi = m; }
+  const sp = (lo + hi) / 2;
+  return [ux * ca * sp, sa * sp, uz * ca * sp];
+}
+function launch(g, v) { const S = g.s; S.hvx = S.tvx = v[0]; S.hvy = S.tvy = v[1]; S.hvz = S.tvz = v[2]; }
+// 相手が打つ（サーブも同じ）
+function opHit(g) {
+  const d = diffOf(g.n), r = g.rnd;
+  const off = (r() * 2 - 1) * d.off, offz = (r() * 2 - 1) * d.off * 0.45;
+  const tx = clampP(0.4 * g.bx + off, -PH.MX, PH.MX), tz = clampP(PH.ME_Z - PH.REACH_F + offz, PH.MZ0, PH.MZ1 - 0.3);
+  const ang = d.ang + (r() * 2 - 1) * 3 * DEGR;
+  launch(g, solveLaunch(g, tx, tz, ang));
+  g.last = 'op'; g.opN++; g.opHitT = g.t; g.swingsThis = 0; g.nearThis = 9; g.opPred = null;
+  g.pred = predictCross(g, PH.HIT_Y);
+  g.events.push({ type: 'ophit', n: g.n, tx, tz, serve: g.phase === 'serve' });
+  g.phase = 'rally';
+}
+function applyInput(g, e) {
+  if (g.phase === 'over') return;
+  if (e.type === 'move') g.fx = clampP(e.a, -PH.MX - 0.3, PH.MX + 0.3);
+  else if (e.type === 'kdir') g.kdir = e.a;
+  else if (e.type === 'swing') {
+    if (g.sw || g.t < g.swEnd) return;
+    const p = clampP(e.a || 1, 1, PH.P_MAX);
+    // 振る向き: 板の面を 相手のほうへ
+    let dx = 0.5 * g.ox - g.hcx, dz = Math.min(g.oz, PH.OP_Z) - g.hcz; const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
+    g.sw = { t0: g.t, u: 0, p, dirx: dx, dirz: dz, hit: false };
+    g.swingsThis++; g.lastSwingT = g.t;
+    g.events.push({ type: 'swing', p });
+  } else if (e.type === 'boost') {
+    if (g.sw && g.sw.u < 0.35) { const p = clampP(e.a, 1, PH.P_MAX); if (p > g.sw.p) { g.sw.p = p; g.events.push({ type: 'boost', p }); } }
+  }
+}
+function setNormal(g, el, dx, dz) {
+  const ce = Math.cos(el), se = Math.sin(el);
+  g.nx = dx * ce; g.ny = se; g.nz = dz * ce;
+  // 板の上向き a: 「上と右手のほう」の向きから n の成分を除く（右手で持って、板の先が右上を向く）。横 b = a × n
+  let ax = -dz * 0.8, ay = 1, az = dx * 0.8; const an = ax * g.nx + ay * g.ny + az * g.nz;
+  ax -= an * g.nx; ay -= an * g.ny; az -= an * g.nz; const L = Math.hypot(ax, ay, az) || 1; ax /= L; ay /= L; az /= L;
+  g.ax = ax; g.ay = ay; g.az = az;
+  g.bxv = ay * g.nz - az * g.ny; g.byv = az * g.nx - ax * g.nz; g.bzv = ax * g.ny - ay * g.nx;
+}
+function stepGame(g) {
+  const dt = PH.DT; g.t += dt;
+  const q = g.queue; while (q.length && q[0].t <= g.t) applyInput(g, q.shift());
+  const S = g.s;
+  if (g.kdir && g.phase !== 'over') g.fx = clampP(g.fx + g.kdir * PH.KEY_V * dt, -PH.MX, PH.MX);
+  // ---- 相手 ----
+  if (g.phase === 'serve') {
+    S.hx = g.ox + 0.25; S.hy = 1.05; S.hz = g.oz + 0.25; S.tx = S.hx; S.ty = S.hy + PH.LEN; S.tz = S.hz;
+    if (g.t >= PH.SERVE_AT) opHit(g);
+  }
+  {
+    let tx = 0, tz = PH.OP_Z;
+    if (g.last === 'me' && g.opPred && g.t >= g.oGo) { tx = g.opPred.x; tz = g.opPred.z - 0.22; }
+    else if (g.last === 'op') { tx = g.ox * 0.98; tz = g.oz + (PH.OP_Z - g.oz) * 0.02; }
+    else { tx = g.ox; tz = g.oz; }
+    tx = clampP(tx, -PH.OX, PH.OX); tz = clampP(tz, PH.OZ0, PH.OZ1);
+    // はじめのうちは おねえさんが やさしく、よく走って拾ってくれる
+    const kind = Math.exp(-g.n / 5), run = PH.O_RUN * (1 + 0.5 * kind);
+    const wvx = clampP((tx - g.ox) * 6, -run, run), wvz = clampP((tz - g.oz) * 6, -run, run);
+    const ma = PH.O_A * (1 + 0.3 * kind) * dt;
+    g.ovx += clampP(wvx - g.ovx, -ma, ma); g.ovz += clampP(wvz - g.ovz, -ma, ma);
+    const sp = Math.hypot(g.ovx, g.ovz); if (sp > run) { g.ovx *= run / sp; g.ovz *= run / sp; }
+    g.ox += g.ovx * dt; g.oz += g.ovz * dt;
+  }
+  // ---- 自分の体: 指の横位置へ走る。奥行きは落ちてくるところへ自動 ----
+  {
+    const tx = clampP(g.fx, -PH.MX, PH.MX);
+    let tz = PH.ME_Z;
+    if (g.last === 'op' && g.pred && g.phase === 'rally') tz = clampP(g.pred.z + PH.REACH_F, PH.MZ0, PH.MZ1);
+    const wvx = clampP((tx - g.bx) * 14, -PH.RUN, PH.RUN), wvz = clampP((tz - g.bz) * 8, -PH.RUN, PH.RUN);
+    const ma = PH.RUN_A * dt;
+    g.bvx += clampP(wvx - g.bvx, -ma, ma); g.bvz += clampP(wvz - g.bvz, -ma, ma);
+    g.bx += g.bvx * dt; g.bz += g.bvz * dt;
+  }
+  // ---- 手（羽子板の中心の水平位置）: 来る羽根の真下へ、届く範囲で ----
+  {
+    const basex = g.bx, basez = g.bz - PH.REACH_F;
+    let wx = basex + 0.18, wz = basez + 0.05;
+    if (g.last === 'op' && g.phase === 'rally') {
+      let dx = S.hx - basex, dz = S.hz - basez; const L = Math.hypot(dx, dz);
+      if (L > PH.ARM) { dx *= PH.ARM / L; dz *= PH.ARM / L; }
+      wx = basex + dx; wz = basez + dz;
+      if (g.sw) g.nearThis = Math.min(g.nearThis, L);
+    }
+    const mv = PH.ARMV * dt;
+    // 体といっしょに動き、そこからの手の動きだけ速さに上限
+    g.hcx += g.bvx * dt + clampP(wx - g.hcx - g.bvx * dt, -mv, mv);
+    g.hcz += g.bvz * dt + clampP(wz - g.hcz - g.bvz * dt, -mv, mv);
+  }
+  // ---- 羽子板の姿勢 ----
+  g.ppx = g.px; g.ppy = g.py; g.ppz = g.pz;
+  const sw = g.sw;
+  let active = false;
+  let fvx = 0, fvz = 0, fvy = 0;   // 振りの速さ（手が羽根を追う動きとは別に、板そのものを振る速さ）
+  if (sw) {
+    const rate = 1 / (PH.SW_T / sw.p);
+    sw.u += dt * rate;
+    const u = Math.min(1, sw.u), s = (1 - Math.cos(Math.PI * u)) / 2;
+    const vUp = (PH.SW_Y1 - PH.SW_Y0) * Math.PI / 2 * Math.sin(Math.PI * u) * rate;
+    fvy = vUp; fvx = sw.dirx * vUp * PH.SW_FWD; fvz = sw.dirz * vUp * PH.SW_FWD;
+    g.px = g.hcx; g.pz = g.hcz;
+    g.py = PH.SW_Y0 + (PH.SW_Y1 - PH.SW_Y0) * s;
+    setNormal(g, (PH.SW_E0 + (PH.SW_E1 - PH.SW_E0) * u) * DEGR, sw.dirx, sw.dirz);
+    active = u >= PH.SW_ON0 && u <= PH.SW_ON1;
+    if (sw.u >= 1) { g.swEnd = g.t + PH.SW_REC; g.recFrom = { y: g.py, el: PH.SW_E1 }; g.sw = null; }
+  } else {
+    // 振り終わり → 構えに戻る。構え: 低く、面は前むき
+    // 振り切ったら 少し止めて（フォロースルー）、それから下ろす
+    const k = g.t < g.swEnd ? clampP((1 - (g.swEnd - g.t) / PH.SW_REC - 0.35) / 0.65, 0, 1) : 1, e = k * k * (3 - 2 * k);
+    const fr = g.recFrom || { y: PH.SW_Y0, el: PH.SW_E0 };
+    g.px = g.hcx; g.pz = g.hcz; g.py = fr.y + (PH.SW_Y0 - fr.y) * e;
+    let dx = g.ox - g.hcx, dz = g.oz - g.hcz; const L = Math.hypot(dx, dz) || 1;
+    // 振り切ったあとは 面を前へ起こす（当たらない。見た目のフォロースルー）
+    const el0 = g.t < g.swEnd ? fr.el + (48 - fr.el) * clampP((PH.SW_REC - (g.swEnd - g.t)) / 0.12, 0, 1) : PH.SW_E0;
+    setNormal(g, (el0 + (PH.SW_E0 - el0) * e) * DEGR, dx / L, dz / L);
+  }
+  // 板の速さ = 手が動いた分（体・腕）＋ 振り
+  g.pvx = (g.px - g.ppx) / dt; g.pvz = (g.pz - g.ppz) / dt; g.pvy = sw ? fvy : (g.py - g.ppy) / dt;
+  if (sw) { g.pvx += fvx; g.pvz += fvz; }
+  if (g.t < 2 * dt) { g.pvx = g.pvy = g.pvz = 0; }
+  g.active = active;
+  // ---- 羽根 ----
+  if (g.phase === 'over') {
+    // 落ちたあと: 地面の上で止まる（羽は倒れる）
+    if (S.hy > PH.RB || S.ty > 0.02) { shStep(S, dt, g, g.t, 0.3); }
+    if (S.hy < PH.RB) { S.hy = PH.RB; S.hvx *= 0.5; S.hvy = 0; S.hvz *= 0.5; }
+    if (S.ty < 0.02) { S.ty = 0.02; S.tvy = Math.max(0, S.tvy); S.tvx *= 0.9; S.tvz *= 0.9; }
+  } else if (g.phase !== 'serve') {
+    shStep(S, dt, g, g.t, 1);
+    // 板との衝突（玉が板の面を前から横切ったら）
+    const qx = S.hx - g.px, qy = S.hy - g.py, qz = S.hz - g.pz;
+    const sd = qx * g.nx + qy * g.ny + qz * g.nz;
+    if (active && g.last === 'op' && g.phase === 'rally' && g.sPrev >= PH.RB && sd < PH.RB) {
+      const sa = qx * g.ax + qy * g.ay + qz * g.az, sb = qx * g.bxv + qy * g.byv + qz * g.bzv;
+      if (Math.abs(sb) <= PH.PW + PH.RB && Math.abs(sa) <= PH.PHh + PH.RB) paddleHit(g, sa, sb, sd);
+    }
+    g.sPrev = sd;
+    // 相手が打ち返す
+    if (g.last === 'me' && g.phase === 'rally' && S.hvy < 0 && S.hy <= PH.O_HMAX && S.hy >= PH.O_HMIN) {
+      const d = Math.hypot(S.hx - g.ox, S.hz - (g.oz + 0.22));
+      if (d <= PH.O_REACH + 0.15 * Math.exp(-g.n / 5)) opHit(g);
+    }
+    if (S.hy <= PH.RB && g.phase === 'rally') landed(g);
+  }
+}
+function paddleHit(g, sa, sb, sd) {
+  const S = g.s;
+  // 板の端ほど、面の向きがそちらへねじれる
+  const f = x => Math.sign(x) * Math.max(0, Math.abs(x) - 0.5) ** 2;
+  const eb = f(sb / PH.PW) * PH.EDGE, ea = f(sa / PH.PHh) * PH.EDGE;
+  let nx = g.nx + eb * g.bxv + ea * g.ax, ny = g.ny + eb * g.byv + ea * g.ay, nz = g.nz + eb * g.bzv + ea * g.az;
+  const L = Math.hypot(nx, ny, nz); nx /= L; ny /= L; nz /= L;
+  const rx = S.hvx - g.pvx, ry = S.hvy - g.pvy, rz = S.hvz - g.pvz;
+  const vn = rx * nx + ry * ny + rz * nz;
+  if (vn >= 0) return;
+  const tx = rx - vn * nx, ty = ry - vn * ny, tz = rz - vn * nz;
+  const ox = g.pvx + tx * PH.MU - PH.E * vn * nx, oy = g.pvy + ty * PH.MU - PH.E * vn * ny, oz = g.pvz + tz * PH.MU - PH.E * vn * nz;
+  const dx = ox - S.hvx, dy = oy - S.hvy, dz = oz - S.hvz;
+  S.hvx += dx; S.hvy += dy; S.hvz += dz; S.tvx += dx; S.tvy += dy; S.tvz += dz;
+  // 板の面の外へ出す
+  const push = PH.RB - sd + 0.002; S.hx += g.nx * push; S.hy += g.ny * push; S.hz += g.nz * push; S.tx += g.nx * push; S.ty += g.ny * push; S.tz += g.nz * push;
+  g.n++; g.last = 'me'; g.hitT = g.t; g.sw.hit = true;
+  const u = g.sw.u, sp = Math.hypot(ox, oy, oz), edge = Math.max(Math.abs(sb) / PH.PW, Math.abs(sa) / PH.PHh);
+  g.lastHit = { u, sp, edge, sb, sa, p: g.sw.p, vy: oy };
+  g.wAmp = diffOf(g.n).wind;
+  g.pred = null;
+  g.opPred = predictCross(g, 1.15);
+  g.oGo = g.t + PH.O_REACT;
+  g.events.push({ type: 'hit', n: g.n, u, sp, edge, p: g.sw.p });
+}
+function landed(g) {
+  const S = g.s;
+  g.phase = 'over'; g.land = { x: S.hx, z: S.hz, t: g.t };
+  let kind;
+  if (g.last === 'op') {
+    if (!g.swingsThis) kind = 'noswing';
+    else if (g.nearThis > PH.ARM + PH.PW + 0.05) kind = 'far';
+    else {
+      // 振った時刻と、打ちごろ（振りの真ん中で羽根が打ちごろの高さ）とのずれ
+      const ideal = g.pred ? g.pred.t - PH.SW_T / 2 : g.t;
+      kind = g.lastSwingT < ideal ? 'early' : 'late';
+    }
+  } else {
+    const dz = S.hz - g.oz, dx = S.hx - g.ox;
+    kind = Math.abs(dx) > Math.abs(dz) && Math.abs(dx) > 0.7 ? 'wide' : dz > 0 ? 'short' : 'long';
+  }
+  g.fail = kind;
+  g.events.push({ type: 'land', kind, x: S.hx, z: S.hz });
+}
+/*PHYS-END*/
+
+/*BOT-BEGIN*/
+/* ---------- ボット（調整・タイトルのデモ用）: 人と同じ「指の横位置」「振る」の入力だけを、時刻つきで入れる ----------
+   相手が打ったのを見て react 秒後に、落ちてきそうな横位置（ずれ posSd）へ指を動かす。落ちてくる途中 look2 秒前に見なおす（ずれ posSd2）。
+   打ちごろ（振りの真ん中で羽根が打ちごろの高さ）に、ずれ tSd（かたより tBias）で振る。boostP の割合で、思わず強く振る。
+   はじめの CUE_N 回は 画面に「せーの…いま！」が出るので、それに合わせて振る人は ずれが cueSd に小さくなる。 */
+const CUE_N = 3;
+const SKILLS = {
+  first: { cueSd: 0.075, react: 0.42, reactSd: 0.12, posSd: 0.32, look2: 0.5, posSd2: 0.2, see2: 0.7, tBias: 0.03, tSd: 0.11, boostP: 0.25, boost: [1.15, 1.6], wobble: 0.05 },
+  good: { cueSd: 0.03, react: 0.16, reactSd: 0.04, posSd: 0.1, look2: 0.42, posSd2: 0.035, see2: 1, tBias: 0, tSd: 0.03, boostP: 0, boost: [1, 1], wobble: 0 },
+};
+function gaussR(r) { let u = r(); while (u < 1e-9) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+function makeBot(g, sk, rnd) {
+  const b = { id: -1, plan: null };
+  b.step = () => {
+    if (g.phase !== 'rally' || g.last !== 'op' || !g.pred) return;
+    if (b.id !== g.opN) {
+      b.id = g.opN;
+      const P = g.pred, ideal = P.t - PH.SW_T / 2;
+      const boost = rnd() < sk.boostP;
+      const p = boost ? sk.boost[0] + (sk.boost[1] - sk.boost[0]) * rnd() : 1;
+      b.plan = {
+        seeAt: g.t + Math.max(0.08, sk.react + gaussR(rnd) * sk.reactSd), x1: P.x + gaussR(rnd) * sk.posSd,
+        lookAt: Math.max(g.t + 0.1, P.t - sk.look2), x2: rnd() < sk.see2 ? P.x + gaussR(rnd) * sk.posSd2 : null,
+        swingAt: ideal - (p > 1 ? (PH.SW_T / 2) * (1 - 1 / p) : 0) * 0.5 + (g.n < CUE_N ? gaussR(rnd) * sk.cueSd : sk.tBias + gaussR(rnd) * sk.tSd), p,
+        st: 0,
+      };
+    }
+    const pl = b.plan;
+    if (pl.st === 0 && g.t >= pl.seeAt) { gInput(g, g.t, 'move', pl.x1); pl.st = 1; }
+    if (pl.st === 1 && g.t >= pl.lookAt) { if (pl.x2 != null) gInput(g, g.t, 'move', pl.x2); pl.st = 2; }
+    if (pl.st <= 2 && g.t >= pl.swingAt) { gInput(g, g.t, 'swing', pl.p); pl.st = 3; }
+  };
+  return b;
+}
+function runBot(sk, seed, opts = {}) {
+  const g = makeGame(seed), bot = makeBot(g, sk, mulberry((seed * 7919 + 13) >>> 0)), maxN = opts.maxN || 400;
+  const log = opts.log ? [] : null;
+  const hits = opts.hits ? [] : null;
+  while (g.phase !== 'over' && g.n < maxN && g.t < 3000) {
+    const n0 = g.queue.length; bot.step();
+    if (log) for (let i = n0; i < g.queue.length; i++) log.push({ ...g.queue[i] });
+    stepGame(g);
+    if (hits) for (const e of g.events) if (e.type === 'hit') hits.push(e);
+    g.events.length = 0;
+  }
+  return { n: g.n, fail: g.n >= maxN ? 'max' : g.fail, t: g.t, log, hits, land: g.land };
+}
+/*BOT-END*/
+
+/* ---------- 記録（このブラウザだけ） ---------- */
+const KEY = 'hanetsuki:v1';
+const DEF = () => ({ ver: 1, best: 0, plays: 0, total: 0, last: 0 });
+function load() {
+  try { const d = JSON.parse(localStorage.getItem(KEY) || '{}'); if (d && d.ver === 1) { const r = { ...DEF(), ...d }; r.best = +r.best || 0; r.total = +r.total || 0; r.plays = +r.plays || 0; r.last = +r.last || 0; return r; } } catch {}
+  return DEF();
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch {} }
+let rec = load();
+let seed = HASH.has('seed') ? (+HASH.get('seed') >>> 0) : (Math.random() * 2 ** 32) >>> 0;
+function nextSeed() { const s = seed; seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return s; }
+
+/* ---------- three.js ---------- */
+const glc = $('gl'), fxc = $('fx'), fx = fxc.getContext('2d');
+const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, powerPreference: 'high-performance' });
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#a9d6f2');
+scene.fog = new THREE.Fog('#cfe5f2', 22, 70);
+const camera = new THREE.PerspectiveCamera(52, 1, 0.05, 200);
+let W = 0, H = 0, dpr = 1, safeT = 0, safeB = 0;
+function resize() {
+  W = innerWidth; H = innerHeight; dpr = Math.min(devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(Math.min(dpr, 1.75)); renderer.setSize(W, H, false);
+  fxc.width = Math.round(W * dpr); fxc.height = Math.round(H * dpr);
+  camera.aspect = W / H;
+  // 横長の画面では縦の画角を少しせまく（左右が広く見えすぎないように）
+  camera.fov = W > H ? 48 : 52;
+  camera.updateProjectionMatrix();
+  const cs = getComputedStyle(document.documentElement);
+  safeT = parseFloat(cs.paddingTop) || 0; safeB = parseFloat(cs.paddingBottom) || 0;
+}
+addEventListener('resize', resize);
+
+function canvasTex(w, h, draw, repeat) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
+  t.anisotropy = 4;
+  return t;
+}
+const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
+const basic = (color, extra = {}) => new THREE.MeshBasicMaterial({ color, ...extra });
+let srnd = 11; const prand = () => (srnd = (srnd * 9301 + 49297) % 233280) / 233280;
+const box = (w, h, d, mat, x, y, z, parent = scene) => { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat); m.position.set(x, y, z); parent.add(m); return m; };
+const cyl = (rt, rb, h, seg, mat, x, y, z, parent = scene) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), mat); m.position.set(x, y, z); parent.add(m); return m; };
+// 三角の屋根（切妻）: 幅 w、奥行き d、高さ h
+function gable(w, d, h, mat, x, y, z, parent = scene) {
+  const s = new THREE.Shape(); s.moveTo(-d / 2, 0); s.lineTo(d / 2, 0); s.lineTo(0, h); s.closePath();
+  const g = new THREE.ExtrudeGeometry(s, { depth: w, bevelEnabled: false }); g.translate(0, 0, -w / 2); g.rotateY(Math.PI / 2);
+  const m = new THREE.Mesh(g, mat); m.position.set(x, y, z); parent.add(m); return m;
+}
+
+// 光: 冬の昼の日ざし（右手前の上から）と空の光
+scene.add(new THREE.HemisphereLight('#eef7ff', '#b49a72', 1.55));
+const sun = new THREE.DirectionalLight('#fff4de', 1.35); sun.position.set(3, 7, 5); scene.add(sun);
+
+/* ---------- 背景: お正月の家の門の前 ---------- */
+const kites = [];
+let skyGlow = null;
+function buildWorld() {
+  // 空
+  const skyTex = canvasTex(64, 256, (g, w, h) => {
+    const gr = g.createLinearGradient(0, 0, 0, h);
+    gr.addColorStop(0, '#3f8fd0'); gr.addColorStop(0.45, '#7fbde8'); gr.addColorStop(0.8, '#c4e3f5'); gr.addColorStop(1, '#e8f3f7');
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  });
+  const sky = new THREE.Mesh(new THREE.PlaneGeometry(260, 110), new THREE.MeshBasicMaterial({ map: skyTex, fog: false }));
+  sky.position.set(0, 26, -95); scene.add(sky);
+  // 初日の出のような光（100回で）
+  const glowTex = canvasTex(128, 128, g => { const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,236,170,1)'); gr.addColorStop(0.35, 'rgba(255,214,120,.55)'); gr.addColorStop(1, 'rgba(255,200,110,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); });
+  skyGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, depthWrite: false, opacity: 0, fog: false }));
+  skyGlow.scale.set(40, 40, 1); skyGlow.position.set(12, 8, -90); scene.add(skyGlow);
+  // 雲
+  const cloudTex = canvasTex(128, 64, (g, w, h) => {
+    g.fillStyle = 'rgba(255,255,255,.9)';
+    for (const [x, y, r] of [[34, 40, 18], [56, 30, 22], [80, 36, 18], [98, 42, 13], [20, 46, 11]]) { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); }
+    g.fillRect(18, 42, 90, 14);
+  });
+  for (const [x, y, z, s] of [[-14, 15, -70, 16], [18, 19, -80, 20], [3, 23, -88, 14]]) { const c = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTex, transparent: true, depthWrite: false, fog: false, opacity: 0.9 })); c.scale.set(s, s / 2, 1); c.position.set(x, y, z); scene.add(c); }
+  // 富士山（遠く）
+  const fujiTex = canvasTex(512, 256, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = '#7d9cc0'; g.beginPath(); g.moveTo(0, h); g.lineTo(w * 0.42, h * 0.12); g.quadraticCurveTo(w * 0.5, h * 0.06, w * 0.58, h * 0.12); g.lineTo(w, h); g.closePath(); g.fill();
+    g.fillStyle = '#f6f8fb'; g.beginPath(); g.moveTo(w * 0.42, h * 0.12); g.quadraticCurveTo(w * 0.5, h * 0.06, w * 0.58, h * 0.12);
+    g.lineTo(w * 0.66, h * 0.32); g.lineTo(w * 0.61, h * 0.28); g.lineTo(w * 0.57, h * 0.36); g.lineTo(w * 0.52, h * 0.29); g.lineTo(w * 0.47, h * 0.37); g.lineTo(w * 0.43, h * 0.28); g.lineTo(w * 0.38, h * 0.33); g.closePath(); g.fill();
+  });
+  const fuji = new THREE.Mesh(new THREE.PlaneGeometry(70, 35), new THREE.MeshBasicMaterial({ map: fujiTex, transparent: true, fog: false, depthWrite: false }));
+  fuji.position.set(-10, 2, -85); scene.add(fuji);
+  // 地面（よく踏まれた土）
+  const dirt = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#e2d2b0'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 1500; i++) { g.fillStyle = prand() < 0.5 ? 'rgba(150,120,80,.16)' : 'rgba(255,248,230,.22)'; const s = 1 + prand() * 3; g.fillRect(prand() * w, prand() * h, s, s); }
+  }, [14, 14]);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), lam('#ffffff', { map: dirt }));
+  ground.rotation.x = -Math.PI / 2; ground.position.set(0, 0, -10); scene.add(ground);
+  // 飛び石（門から）
+  const stoneM = lam('#b9b4aa');
+  for (let i = 0; i < 5; i++) { const s = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.34, 0.04, 10), stoneM); s.scale.z = 0.7; s.position.set((i % 2 ? 0.18 : -0.15), 0.02, -4.7 + i * 0.75 + (i > 2 ? 0.2 : 0)); if (i < 3) scene.add(s); }
+
+  // 土塀（白い漆喰に瓦）と門
+  const wallM = lam('#f4efe3'), baseM = lam('#8a6a4a'), tileM = lam('#50545e'), woodM = lam('#5c3f2a'), darkM = lam('#3a2a20');
+  const WZ = -5.6;
+  for (const s of [-1, 1]) {
+    const x0 = 1.45, x1 = 14, cx = s * (x0 + x1) / 2, w = x1 - x0;
+    box(w, 1.55, 0.3, wallM, cx, 0.78 + 0.3, WZ);
+    box(w, 0.3, 0.32, baseM, cx, 0.15, WZ);
+    gable(w + 0.1, 0.62, 0.22, tileM, cx, 1.85, WZ);
+    box(w + 0.1, 0.06, 0.62, tileM, cx, 1.85, WZ);
+  }
+  // 冠木門
+  for (const s of [-1, 1]) box(0.2, 2.5, 0.22, woodM, s * 1.3, 1.25, WZ);
+  box(3.2, 0.2, 0.26, woodM, 0, 2.3, WZ);
+  gable(3.7, 0.95, 0.42, tileM, 0, 2.42, WZ);
+  box(3.7, 0.08, 0.95, tileM, 0, 2.42, WZ);
+  // 門の奥（暗がり）と開いた扉、奥の玄関の明かり
+  box(2.4, 2.2, 0.05, lam('#4a3a2e'), 0, 1.1, WZ - 1.3);
+  box(0.7, 0.9, 0.04, lam('#f2e4c4'), 0.2, 0.95, WZ - 1.26);
+  for (const s of [-1, 1]) { const d = box(0.05, 2.0, 1.0, darkM, s * 1.15, 1.0, WZ - 0.5); d.rotation.y = s * 0.2; }
+  // しめ飾り（門の上）
+  const strawM = lam('#d8c27a');
+  const rope = new THREE.Mesh(new THREE.TorusGeometry(0.3, 0.035, 6, 16, Math.PI), strawM); rope.rotation.z = Math.PI; rope.position.set(0, 2.18, WZ + 0.17); scene.add(rope);
+  const orange = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 8), lam('#f08a1f')); orange.position.set(0, 1.86, WZ + 0.2); scene.add(orange);
+  const shideTex = canvasTex(32, 64, (g, w, h) => { g.clearRect(0, 0, w, h); g.fillStyle = '#ffffff'; g.beginPath(); g.moveTo(4, 0); g.lineTo(20, 0); g.lineTo(28, 16); g.lineTo(12, 16); g.lineTo(28, 36); g.lineTo(12, 36); g.lineTo(26, 62); g.lineTo(6, 40); g.lineTo(18, 40); g.lineTo(4, 20); g.lineTo(16, 20); g.closePath(); g.fill(); });
+  for (const x of [-0.22, 0.22]) { const p = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 0.26), new THREE.MeshLambertMaterial({ map: shideTex, transparent: true, side: THREE.DoubleSide })); p.position.set(x, 1.98, WZ + 0.19); scene.add(p); }
+  // 門松（門の両側）
+  const bambooM = lam('#5f9e4a'), cutM = lam('#e4ecb4'), pineM = lam('#2f5b35'), plumM = lam('#d33a3a');
+  const strawTex = canvasTex(64, 64, (g, w, h) => { g.fillStyle = '#c9a868'; g.fillRect(0, 0, w, h); g.strokeStyle = 'rgba(110,80,40,.5)'; g.lineWidth = 2; for (let x = 0; x < w; x += 4) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x + 2, h); g.stroke(); } g.fillStyle = '#4b3420'; g.fillRect(0, 14, w, 5); g.fillRect(0, 44, w, 5); }, [3, 1]);
+  for (const s of [-1, 1]) {
+    const k = new THREE.Group(); k.position.set(s * 1.95, 0, WZ + 0.55); scene.add(k);
+    cyl(0.3, 0.34, 0.55, 12, lam('#ffffff', { map: strawTex }), 0, 0.275, 0, k);
+    for (const [dx, dz, h] of [[0, -0.05, 1.45], [-0.09, 0.06, 1.15], [0.09, 0.06, 1.0]]) {
+      cyl(0.06, 0.06, h, 10, bambooM, dx, h / 2, dz, k);
+      const c = new THREE.Mesh(new THREE.CircleGeometry(0.075, 12), cutM); c.position.set(dx, h + 0.01, dz + 0.01); c.rotation.x = -Math.PI / 2 + 0.75; k.add(c);
+    }
+    for (let i = 0; i < 7; i++) { const a = i / 7 * Math.PI * 2, r = 0.22; const p = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.32, 6), pineM); p.position.set(Math.cos(a) * r, 0.68, Math.sin(a) * r); p.rotation.set(Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5); k.add(p); }
+    for (let i = 0; i < 5; i++) { const p = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 4), plumM); p.position.set((prand() - 0.5) * 0.4, 0.7 + prand() * 0.25, 0.15 + prand() * 0.1); k.add(p); }
+  }
+  // 塀の向こうの松
+  const trunkM = lam('#6b4a30'), leafM = lam('#2c5a33');
+  for (const [x, z, sc] of [[-4.3, WZ - 1.2, 1.1], [5.2, WZ - 1.6, 0.9]]) {
+    const t = new THREE.Group(); t.position.set(x, 0, z); t.scale.setScalar(sc); scene.add(t);
+    const tr = cyl(0.14, 0.2, 3.2, 7, trunkM, 0, 1.6, 0, t); tr.rotation.z = 0.12 * Math.sign(x);
+    for (const [dx, dy, r] of [[0.1, 3.3, 1.0], [-0.9, 2.7, 0.8], [0.9, 2.5, 0.75], [-0.2, 3.9, 0.6]]) { const f = new THREE.Mesh(new THREE.SphereGeometry(r, 9, 6), leafM); f.scale.y = 0.38; f.position.set(dx - Math.sign(x) * 0.2, dy, 0); t.add(f); }
+  }
+  // 凧（はじめは1つ。回数で増える）
+  addKite(-3.6, 6.4, -17, 0, true);
+}
+function kiteTex(kind) {
+  return canvasTex(128, 160, (g, w, h) => {
+    if (kind === 0) {
+      g.fillStyle = '#f6ecd6'; g.fillRect(0, 0, w, h); g.strokeStyle = '#b3312b'; g.lineWidth = 10; g.strokeRect(5, 5, w - 10, h - 10);
+      g.fillStyle = '#b3312b'; g.font = `92px ${FD}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('寿', w / 2, h / 2 + 4);
+    } else if (kind === 1) {
+      g.fillStyle = '#24406a'; g.fillRect(0, 0, w, h); g.fillStyle = '#f6ecd6'; g.beginPath(); g.arc(w / 2, h / 2, 44, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#c23a2a'; g.font = `70px ${FD}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('福', w / 2, h / 2 + 4);
+    } else if (kind === 2) {
+      g.fillStyle = '#e8b33a'; g.fillRect(0, 0, w, h); g.fillStyle = '#2b1c14'; g.font = `84px ${FD}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('龍', w / 2, h / 2 + 4);
+      g.strokeStyle = '#2b1c14'; g.lineWidth = 8; g.strokeRect(4, 4, w - 8, h - 8);
+    } else {
+      g.fillStyle = '#f6ecd6'; g.fillRect(0, 0, w, h); g.fillStyle = '#d0352b'; g.beginPath(); g.arc(w / 2, h / 2, 40, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#2b1c14'; g.lineWidth = 6; g.strokeRect(3, 3, w - 6, h - 6);
+    }
+  });
+}
+function addKite(x, y, z, kind, on = false) {
+  const gr = new THREE.Group(); gr.position.set(x, y, z); scene.add(gr);
+  const body = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 1.25), new THREE.MeshLambertMaterial({ map: kiteTex(kind), side: THREE.DoubleSide, transparent: true }));
+  gr.add(body);
+  const tailM = new THREE.MeshLambertMaterial({ color: kind === 1 ? '#e8b33a' : '#c23a2a', side: THREE.DoubleSide, transparent: true });
+  const tails = [];
+  for (const s of [-1, 1]) { const t = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 1.6), tailM); t.geometry.translate(0, -0.8, 0); t.position.set(s * 0.32, -0.6, 0.01); gr.add(t); tails.push(t); }
+  const lineG = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, -0.4, 0), new THREE.Vector3(Math.sign(x) * 7, -y, 6)]);   // 糸は画面の外（横）へ
+  const line = new THREE.Line(lineG, new THREE.LineBasicMaterial({ color: '#5b5048', transparent: true, opacity: 0.5 }));
+  gr.add(line);
+  const k = { gr, tails, ph: prand() * 6, on: on ? 1 : 0, want: on ? 1 : 0, mats: [body.material, tailM, line.material], y0: y };
+  kites.push(k);
+  setKiteOpacity(k);
+  return k;
+}
+function setKiteOpacity(k) { for (const m of k.mats) m.opacity = (m === k.mats[2] ? 0.5 : 1) * k.on; k.gr.visible = k.on > 0.01; }
+
+/* ---------- 羽子板・人・羽根 ---------- */
+function oshieTex(kind) {
+  return canvasTex(128, 192, (g, w, h) => {
+    if (kind === 'oshie') {
+      // 押絵（裏の飾り）: 金の縁、赤地に美人の顔と着物の襟
+      g.fillStyle = '#c8302a'; g.fillRect(0, 0, w, h);
+      g.fillStyle = '#e6b13a'; g.fillRect(0, 0, w, 8); g.fillRect(0, h - 8, w, 8); g.fillRect(0, 0, 8, h); g.fillRect(w - 8, 0, 8, h);
+      // 着物（襟の重ね）
+      g.fillStyle = '#2f5d9a'; g.beginPath(); g.moveTo(16, h - 8); g.lineTo(64, 110); g.lineTo(112, h - 8); g.closePath(); g.fill();
+      g.fillStyle = '#f6efe2'; g.beginPath(); g.moveTo(40, h - 8); g.lineTo(64, 116); g.lineTo(88, h - 8); g.closePath(); g.fill();
+      g.fillStyle = '#e6b13a'; g.beginPath(); g.moveTo(52, h - 8); g.lineTo(64, 128); g.lineTo(76, h - 8); g.closePath(); g.fill();
+      // 日本髪と顔
+      g.fillStyle = '#1b1310'; g.beginPath(); g.ellipse(64, 62, 40, 34, 0, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.ellipse(64, 30, 26, 18, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#fbf3ea'; g.beginPath(); g.ellipse(64, 82, 22, 27, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#1b1310'; g.fillRect(52, 78, 8, 2); g.fillRect(68, 78, 8, 2);
+      g.fillStyle = '#c8302a'; g.beginPath(); g.ellipse(64, 96, 4, 2.5, 0, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#e6b13a'; for (const [x, y] of [[30, 36], [98, 36], [64, 14]]) { g.beginPath(); g.arc(x, y, 6, 0, Math.PI * 2); g.fill(); }
+      g.fillStyle = '#f2a0b0'; g.beginPath(); g.arc(100, 46, 8, 0, Math.PI * 2); g.fill();
+    } else {
+      // 表（打つ面）: 白木に 松と日の出
+      g.fillStyle = '#efe0c2'; g.fillRect(0, 0, w, h);
+      g.fillStyle = 'rgba(160,120,70,.15)'; for (let y = 0; y < h; y += 6) g.fillRect(0, y, w, 2);
+      g.fillStyle = '#d0352b'; g.beginPath(); g.arc(80, 54, 26, 0, Math.PI * 2); g.fill();
+      g.strokeStyle = '#3d2a1e'; g.lineWidth = 6; g.beginPath(); g.moveTo(20, 170); g.quadraticCurveTo(46, 120, 30, 90); g.stroke();
+      g.fillStyle = '#2f5b35'; for (const [x, y, r] of [[30, 92, 20], [52, 112, 16], [22, 128, 14]]) { g.beginPath(); g.ellipse(x, y, r, r * 0.5, 0, 0, Math.PI * 2); g.fill(); }
+    }
+  });
+}
+// 羽子板: 原点が板の中心。y が板の上、z が打つ面の向き。柄は −y へ
+function makeHagoita(frontKind) {
+  const gr = new THREE.Group();
+  const s = new THREE.Shape();
+  s.moveTo(-0.095, -0.17); s.lineTo(0.095, -0.17); s.lineTo(0.12, 0.13); s.quadraticCurveTo(0.12, 0.175, 0.07, 0.175); s.lineTo(-0.07, 0.175); s.quadraticCurveTo(-0.12, 0.175, -0.12, 0.13); s.closePath();
+  const geo = new THREE.ExtrudeGeometry(s, { depth: 0.014, bevelEnabled: false }); geo.translate(0, 0, -0.007);
+  gr.add(new THREE.Mesh(geo, lam('#c99a5e')));
+  const face = (kind, z, ry) => {
+    const sg = new THREE.ShapeGeometry(s);
+    // ShapeGeometry の uv を 板の大きさに合わせる
+    const pos = sg.attributes.position, uv = sg.attributes.uv;
+    for (let i = 0; i < pos.count; i++) uv.setXY(i, (pos.getX(i) + 0.12) / 0.24, (pos.getY(i) + 0.17) / 0.345);
+    const m = new THREE.Mesh(sg, new THREE.MeshLambertMaterial({ map: oshieTex(kind) }));
+    m.position.z = z; m.rotation.y = ry; if (ry) m.scale.x = -1;
+    gr.add(m);
+  };
+  face(frontKind, 0.0075, 0);
+  face('oshie', -0.0075, Math.PI);
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.016, 0.02, 0.15, 8), lam('#b5844c')); handle.position.y = -0.245; gr.add(handle);
+  return gr;
+}
+const _m4 = new THREE.Matrix4(), _v = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _q = new THREE.Quaternion(), UPV = new THREE.Vector3(0, 1, 0);
+function setPose(obj, cx, cy, cz, ax, ay, az, nx, ny, nz) {
+  // 基底 (b, a, n): b = a × n
+  const bx = ay * nz - az * ny, by = az * nx - ax * nz, bz = ax * ny - ay * nx;
+  _m4.set(bx, ax, nx, cx, by, ay, ny, cy, bz, az, nz, cz, 0, 0, 0, 1);
+  obj.matrix.copy(_m4); obj.matrixWorldNeedsUpdate = true;
+}
+// 2点をつなぐ円柱（腕）
+function limb(mesh, a, b) {
+  _v.subVectors(b, a); const L = _v.length() || 1e-4; _v.multiplyScalar(1 / L);
+  _q.setFromUnitVectors(UPV, _v); mesh.quaternion.copy(_q); mesh.position.copy(a).add(b).multiplyScalar(0.5); mesh.scale.set(1, L, 1);
+}
+function patternTex(base, dots, kind) {
+  return canvasTex(128, 128, (g, w, h) => {
+    g.fillStyle = base; g.fillRect(0, 0, w, h);
+    if (kind === 'ume') {
+      for (let i = 0; i < 10; i++) {
+        const x = prand() * w, y = prand() * h, r = 6 + prand() * 5;
+        g.fillStyle = dots[i % dots.length];
+        for (let k = 0; k < 5; k++) { const a = k / 5 * Math.PI * 2; g.beginPath(); g.arc(x + Math.cos(a) * r * 0.6, y + Math.sin(a) * r * 0.6, r * 0.5, 0, Math.PI * 2); g.fill(); }
+        g.fillStyle = '#e6b13a'; g.beginPath(); g.arc(x, y, r * 0.25, 0, Math.PI * 2); g.fill();
+      }
+    } else {
+      // 矢絣
+      g.fillStyle = dots[0];
+      for (let x = 0; x < w; x += 32) for (let y = (x / 32 % 2) * 16; y < h + 32; y += 32) { g.beginPath(); g.moveTo(x + 4, y); g.lineTo(x + 16, y + 8); g.lineTo(x + 28, y); g.lineTo(x + 28, y + 14); g.lineTo(x + 16, y + 22); g.lineTo(x + 4, y + 14); g.closePath(); g.fill(); }
+    }
+  }, [2, 2]);
+}
+const skinM = lam('#f3cfae'), hairM = new THREE.MeshPhongMaterial({ color: '#1a1412', shininess: 40, specular: '#4a4a55' });
+// 相手: 赤い振袖のおねえさん（こちら向き）
+const opp = new THREE.Group(); scene.add(opp);
+const oppParts = {};
+{
+  const kimonoM = lam('#ffffff', { map: patternTex('#c5303a', ['#f6efe2', '#f2a0b0', '#e6b13a'], 'ume') });
+  cyl(0.13, 0.22, 0.98, 12, kimonoM, 0, 0.49, 0, opp);
+  cyl(0.115, 0.135, 0.3, 12, kimonoM, 0, 1.12, 0, opp);
+  cyl(0.142, 0.142, 0.17, 12, lam('#e3ad38'), 0, 0.92, 0, opp);
+  cyl(0.146, 0.146, 0.03, 12, lam('#2f5d9a'), 0, 0.92, 0, opp);
+  // 襟
+  const collar = box(0.1, 0.12, 0.02, lam('#f6efe2'), 0, 1.2, 0.115, opp); collar.rotation.z = Math.PI / 4;
+  // 振袖（左は垂れたまま）
+  const sleeveL = box(0.07, 0.5, 0.24, kimonoM, 0.2, 0.93, 0.02, opp); void sleeveL;
+  oppParts.sleeveR = box(0.07, 0.46, 0.22, kimonoM, -0.2, 0.95, 0.02, opp);
+  // 頭
+  cyl(0.04, 0.045, 0.07, 8, skinM, 0, 1.29, 0, opp);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 12), skinM); head.position.set(0, 1.4, 0.0); opp.add(head);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.108, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.62), hairM); hair.position.set(0, 1.41, -0.012); hair.rotation.x = -0.35; opp.add(hair);
+  const bun = new THREE.Mesh(new THREE.SphereGeometry(0.07, 12, 8), hairM); bun.position.set(0, 1.53, -0.04); opp.add(bun);
+  const bang = box(0.17, 0.035, 0.03, hairM, 0, 1.465, 0.085, opp); bang.rotation.x = 0.4;
+  for (const s of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.011, 6, 4), basic('#1a1412')); e.position.set(s * 0.035, 1.405, 0.092); opp.add(e); const c = new THREE.Mesh(new THREE.CircleGeometry(0.016, 10), basic('#f2a7a0')); c.position.set(s * 0.055, 1.375, 0.088); c.rotation.y = s * 0.5; opp.add(c); }
+  const mouth = new THREE.Mesh(new THREE.CircleGeometry(0.009, 8), basic('#c8302a')); mouth.position.set(0, 1.355, 0.099); opp.add(mouth);
+  // かんざし（つまみ細工の花）
+  for (const [x, y, z, c] of [[0.07, 1.5, 0.03, '#e8475a'], [0.09, 1.47, 0.0, '#f6efe2'], [0.06, 1.53, -0.02, '#e6b13a']]) { const f = new THREE.Mesh(new THREE.SphereGeometry(0.022, 8, 6), lam(c)); f.position.set(x, y, z); opp.add(f); }
+  oppParts.arm = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1, 8), skinM); scene.add(oppParts.arm);
+  oppParts.paddle = makeHagoita('front'); oppParts.paddle.matrixAutoUpdate = false; scene.add(oppParts.paddle);
+  const sh = new THREE.Mesh(new THREE.CircleGeometry(0.3, 16), basic('#3a2a18', { transparent: true, opacity: 0.18, depthWrite: false })); sh.rotation.x = -Math.PI / 2; sh.position.y = 0.006; opp.add(sh);
+}
+// 自分: 藍の着物の子（うしろ姿）
+const me = new THREE.Group(); me.scale.setScalar(1.1); scene.add(me);
+const meParts = {};
+{
+  const kimonoM = lam('#ffffff', { map: patternTex('#2f5d8a', ['#dfe9f2'], 'yagasuri') });
+  cyl(0.12, 0.19, 0.86, 12, kimonoM, 0, 0.43, 0, me);
+  cyl(0.105, 0.125, 0.28, 12, kimonoM, 0, 0.99, 0, me);
+  cyl(0.13, 0.13, 0.15, 12, lam('#e8b33a'), 0, 0.8, 0, me);
+  // 帯の結び（背中）
+  const bow = box(0.22, 0.1, 0.06, lam('#d0352b'), 0, 0.83, 0.13, me); void bow;
+  box(0.07, 0.38, 0.18, kimonoM, -0.18, 0.86, 0, me);
+  cyl(0.038, 0.042, 0.06, 8, skinM, 0, 1.15, 0, me);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.095, 16, 12), skinM); head.position.set(0, 1.25, 0); me.add(head);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.1, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.7), hairM); hair.position.set(0, 1.255, 0.008); hair.rotation.x = 0.25; me.add(hair);
+  const knot = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.012, 6, 12), lam('#d0352b')); knot.position.set(0.05, 1.32, 0.06); me.add(knot);
+  meParts.arm = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.052, 1, 8), kimonoM); scene.add(meParts.arm);
+  meParts.hand = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 6), skinM); scene.add(meParts.hand);
+  meParts.paddle = makeHagoita('front'); meParts.paddle.matrixAutoUpdate = false; scene.add(meParts.paddle);
+  const sh = new THREE.Mesh(new THREE.CircleGeometry(0.28, 16), basic('#3a2a18', { transparent: true, opacity: 0.2, depthWrite: false })); sh.rotation.x = -Math.PI / 2; sh.position.y = 0.006; me.add(sh);
+}
+// 羽根: 黒いムクロジの玉と、色とりどりの羽（玉から羽の向きが +y）
+const shuttle = new THREE.Group(); scene.add(shuttle);
+{
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.026, 14, 10), new THREE.MeshPhongMaterial({ color: '#141010', shininess: 90, specular: '#8a8a95' }));
+  shuttle.add(ball);
+  const cols = ['#d0352b', '#3c8a52', '#e8b33a', '#f6efe2', '#2f5d9a'];
+  const fg = new THREE.PlaneGeometry(0.034, 0.12); fg.translate(0, 0.07, 0);
+  cols.forEach((c, i) => { const f = new THREE.Mesh(fg, new THREE.MeshLambertMaterial({ color: c, side: THREE.DoubleSide })); f.rotation.y = i / cols.length * Math.PI; f.rotation.order = 'YXZ'; const p = new THREE.Group(); p.rotation.y = i / cols.length * Math.PI * 2; f.rotation.set(0.28, 0, 0); p.add(f); shuttle.add(p); });
+  shuttle.scale.setScalar(1.6);
+}
+const shadowTex = canvasTex(64, 64, g => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(40,28,16,.55)'); gr.addColorStop(1, 'rgba(40,28,16,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); });
+const shShadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, depthWrite: false }));
+shShadow.rotation.x = -Math.PI / 2; scene.add(shShadow);
+// 落ちてくるところの目安（金の輪）と、手の届く範囲（白い輪）
+const predRing = new THREE.Mesh(new THREE.RingGeometry(0.15, 0.2, 32), new THREE.MeshBasicMaterial({ color: '#f0b437', transparent: true, opacity: 0, depthWrite: false }));
+predRing.rotation.x = -Math.PI / 2; scene.add(predRing);
+const reachRing = new THREE.Mesh(new THREE.RingGeometry(PH.ARM - 0.014, PH.ARM + 0.014, 48), new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0, depthWrite: false }));
+reachRing.rotation.x = -Math.PI / 2; scene.add(reachRing);
+
+/* ---------- ゲーム状態 ---------- */
+let game = null, bot = null, botStart = false, state = 'loading';   // loading | title | play | over | skip
+let tt = 0, overShownAt = 0, failAt = -1, pops = [], frozen = false, ff = false, newShown = false, base = 0, demoEnd = -1;
+let ptr = null, hitFx = null, shake = 0, milestone = 0, mileLevel = 0, oppSwing = null, trail = [], petals = [], landPop = null, keyDir = { l: false, r: false };
+const FF = 4;
+const evTime = e => (e.timeStamp > 1e3 && Math.abs(e.timeStamp - performance.now()) < 5000 ? e.timeStamp : performance.now());
+function newGame(s, botSkill) {
+  game = makeGame(s);
+  bot = botSkill ? makeBot(game, SKILLS[botSkill], mulberry((s * 7 + 3) >>> 0)) : null;
+  pops = []; failAt = -1; newShown = false; ptr = null; hitFx = null; shake = 0; milestone = 0; oppSwing = null; trail = []; landPop = null;
+  base = performance.now() / 1000;
+}
+
+/* ---------- 1ステップ（物理は 1/1000 秒きざみ。描画のコマ数によらない。入力は押した時刻で物理に入る） ---------- */
+let lastNow = performance.now() / 1000;
+function advancePhys() {
+  if (!game) return;
+  const now = performance.now() / 1000, el = now - lastNow; lastNow = now;
+  if (frozen) { base = now - game.t; return; }
+  if (ff) base -= el * (FF - 1);      // 早送り（時間が速く進むだけ。入力の時刻も物理の時刻なので結果は同じ）
+  let target = now - base;
+  if (target - game.t > 0.25) { base += target - game.t - 0.25; target = now - base; }   // タブを離れていた・重かった: 置いていかない
+  let k = 0;
+  while (game.t + PH.DT <= target && k < 4000) { if (bot) bot.step(); stepGame(game); if (game.events.length) handleEvents(); k++; }
+}
+// 押した時刻（ms）→ 物理の時刻
+function gameTimeOf(ms) { return Math.max(game.t, ms / 1000 - base); }
+function input(type, ms, a = 0, b = 0) { if (!game || bot || state !== 'play') return; gInput(game, gameTimeOf(ms), type, a, b); }
+function step(dt) {
+  tt += dt;
+  advancePhys();
+  if (state === 'title') demoStep();
+  if (state === 'play' && game.phase === 'over' && failAt < 0) failAt = tt;
+  if (state === 'play' && failAt >= 0 && tt - failAt > 1.5) showOver();
+  if (shake > 0) shake -= dt;
+  for (const p of pops) p.life += dt;
+  pops = pops.filter(p => p.life < p.dur);
+  if (hitFx) { hitFx.life += dt; if (hitFx.life > 0.5) hitFx = null; }
+  if (landPop) landPop.life += dt;
+  // 軌跡
+  if (game && !frozen) {
+    const S = game.s;
+    if (game.phase === 'rally') trail.push({ x: S.hx, y: S.hy, z: S.hz, t: tt }); else if (game.phase !== 'over') trail.length = 0;
+    while (trail.length && tt - trail[0].t > 0.3) trail.shift();
+  }
+  // 花びら（50回から）
+  if (mileLevel >= 3 && !reduceMotion && (state === 'play' || state === 'skip') && petals.length < 26 && Math.random() < dt * 8) petals.push({ x: Math.random() * W, y: -10, vx: -10 - Math.random() * 20, vy: 30 + Math.random() * 30, r: Math.random() * 6, ph: Math.random() * 6, gold: mileLevel >= 4 && Math.random() < 0.4 });
+  for (const p of petals) { p.x += p.vx * dt + Math.sin(tt * 2 + p.ph) * 0.4; p.y += p.vy * dt; }
+  petals = petals.filter(p => p.y < H + 10 && p.x > -20);
+}
+function addPop(text, opt = {}) {
+  pops = pops.filter(p => p.kind !== (opt.kind || 'mid'));
+  pops.push({ text, sub: opt.sub, life: 0, dur: opt.dur || 1.2, kind: opt.kind || 'mid', hot: opt.hot });
+}
+const MILES = [10, 30, 50, 100, 150, 200, 300];
+const KITE_AT = [[4.4, 7.4, -21, 1], [-5.6, 9.2, -26, 2], [5.8, 10.2, -31, 3]];
+function setMileLevel(lv) {
+  mileLevel = lv;
+  for (let i = 0; i < KITE_AT.length; i++) { while (kites.length < i + 2) { const [x, y, z, k] = KITE_AT[kites.length - 1]; addKite(x, y, z, k); } kites[i + 1].want = lv >= i + 1 ? 1 : 0; }
+}
+function handleEvents() {
+  const loud = state === 'play';
+  for (const e of game.events) {
+    if (e.type === 'swing') { if (loud) sSwing(e.p); }
+    else if (e.type === 'boost') { if (loud && e.p > 1.3 && game.n < 3 && rec.plays < 4) addPop('つよく！', { sub: '強すぎると おねえさんを越える' }); }
+    else if (e.type === 'ophit') {
+      oppSwing = { t: tt, x: game.s.hx, y: game.s.hy, z: game.s.hz };
+      if (loud) sOpHit(e.serve);
+      if (e.serve && loud && rec.plays < 2) addPop('いくよー', { sub: '羽根の下へ 指を動かして', dur: 1.6 });
+    }
+    else if (e.type === 'hit') {
+      hitFx = { life: 0, x: game.px, y: game.py, z: game.pz, edge: e.edge };
+      if (!loud) continue;
+      sHit(e.sp, e.edge);
+      const n = e.n;
+      if (MILES.includes(n)) {
+        milestone = n; setMileLevel(Math.max(mileLevel, MILES.indexOf(n) + 1));
+        addPop(`${n}回！`, { hot: true, dur: 1.8, kind: 'mile', sub: n === 10 ? 'もうひとつ 凧があがった' : n === 30 ? '風が出てきた。羽根が流される' : n === 50 ? '梅の花びらが舞う' : n === 100 ? '初日の出のような 金の光' : 'まだまだ つづく' });
+        sChime(n >= 50);
+      } else if (e.edge > 0.8) addPop('端っこ！', { sub: '板の真ん中で打つと まっすぐ' });
+      else if (e.p > 1.35) addPop('つよい！', { sub: n < 4 ? 'そっと打つほうが 届きやすい' : '' });
+      else if (n <= 2) addPop('こーん', { sub: n === 1 ? 'その調子。また落ちてくる' : '' });
+      if (n > rec.best && rec.best > 0 && !newShown && !botStart) { newShown = true; addPop('自己ベスト更新！', { hot: true, kind: 'best', dur: 1.6 }); }
+      if (navigator.vibrate) try { navigator.vibrate(8); } catch {}
+    }
+    else if (e.type === 'land') {
+      landPop = { life: 0, x: e.x, z: e.z, mine: game.last === 'op' };
+      if (loud) { sLand(); sFail(); if (navigator.vibrate) try { navigator.vibrate([20, 40, 30]); } catch {} }
+    }
+  }
+  game.events.length = 0;
+}
+
+// タイトル背景のデモ: ボットが打ち合っている（音なし）
+function newDemo() { newGame(nextSeed(), 'good'); demoEnd = -1; }
+function demoStep() {
+  if (!game) return;
+  if (game.phase === 'over') { if (demoEnd < 0) demoEnd = tt; if (tt - demoEnd > 1.2) newDemo(); }
+  else if (game.n >= 14 && game.last === 'me' && game.t - game.hitT > 0.5) newDemo();
+}
+
+/* ---------- 描画 ---------- */
+const cam = { x: 0, lookY: 1.3, init: true };
+const BODY_DX = 0.26;
+function updateCamera(dt) {
+  // 自分のうしろの高いところから、相手のほうを見下ろす。横は少しだけ自分についていく
+  const wantX = game ? clamp(game.bx * 0.22, -0.3, 0.3) : 0;
+  const k = cam.init ? 1 : Math.min(1, dt * 3); cam.init = false;
+  cam.x = lerp(cam.x, wantX, k);
+  // タイトル・結果のときは 下の札に隠れないよう、少し下を向いて 二人を上のほうに
+  const wide = W > H, low = state === 'title' || state === 'over' || state === 'loading';
+  cam.lookY = lerp(cam.lookY, low ? (wide ? 0.7 : 0.0) : wide ? 1.05 : 1.3, k);
+  let sx = 0, sy = 0;
+  if (shake > 0) { sx = Math.sin(tt * 90) * shake * 0.03; sy = Math.cos(tt * 77) * shake * 0.02; }
+  camera.position.set(cam.x + sx, (wide ? 3.0 : 2.9) + sy, wide ? 6.8 : 6.4);
+  camera.lookAt(cam.x * 0.6, cam.lookY, -1.5);
+}
+const _c = new THREE.Vector3();
+function syncMeshes(dt) {
+  const g = game, S = g.s;
+  // 自分
+  // 体は 羽子板を持つ右手（物理の g.bx）より 左に立つ。腕が届かないほど板が遠いときは、体ごと そちらへ のび上がる（見た目だけ）
+  const ry = clamp(-(g.hcx - g.bx) * 0.6, -0.5, 0.5);
+  let mx = g.bx - BODY_DX, mz = g.bz, my = 0;
+  const grip = _v2.set(g.px - g.ax * 0.3, g.py - g.ay * 0.3, g.pz - g.az * 0.3);
+  const sh = _v3.set(mx + 0.16 * Math.cos(ry), 1.2, mz - 0.16 * Math.sin(ry));
+  {
+    _v.subVectors(grip, sh); const L = _v.length(), ex = L - 0.6;
+    if (ex > 0) { _v.multiplyScalar(ex / L); mx += _v.x; mz += _v.z; my = clamp(_v.y, 0, 0.14); sh.x += _v.x; sh.z += _v.z; sh.y += my; }
+  }
+  me.position.set(mx, my + Math.abs(Math.sin(tt * 12)) * Math.min(0.03, Math.hypot(g.bvx, g.bvz) * 0.012), mz);
+  me.rotation.y = ry;
+  me.rotation.x = -clamp((g.py - 1.0) * 0.12, 0, 0.08);
+  setPose(meParts.paddle, g.px, g.py, g.pz, g.ax, g.ay, g.az, g.nx, g.ny, g.nz);
+  limb(meParts.arm, sh, grip); meParts.hand.position.copy(grip);
+  // 相手
+  opp.position.set(g.ox, 0, g.oz);
+  const lookX = S.hx - g.ox, lookZ = S.hz - g.oz;
+  opp.rotation.y = clamp(Math.atan2(lookX, Math.max(0.5, lookZ)) * 0.5, -0.6, 0.6);
+  {
+    // 相手の羽子板（見た目だけ）: ふだんは右手で前に構える。打つときは 羽根のところで 下から上へ
+    let cx = g.ox - 0.24, cy = 0.8, cz = g.oz + 0.22, el = 30;
+    const hx = -0.24;
+    if (oppSwing && tt - oppSwing.t < 0.45) {
+      const k = clamp((tt - oppSwing.t) / 0.32, 0, 1), e = 1 - (1 - k) * (1 - k);
+      cx = oppSwing.x; cy = oppSwing.y - 0.15 + 0.8 * e; cz = oppSwing.z + 0.05 * e; el = 40 + 45 * e;
+      if (tt - oppSwing.t > 0.32) { const r = clamp((tt - oppSwing.t - 0.32) / 0.13, 0, 1); cx = lerp(cx, g.ox + hx, r); cy = lerp(cy, 0.8, r); cz = lerp(cz, g.oz + 0.22, r); el = lerp(el, 30, r); }
+    } else if (g.last === 'me' && g.opPred && g.phase === 'rally') {
+      const tl = g.opPred.t - g.t;
+      if (tl < 0.35) { const k = clamp(1 - tl / 0.35, 0, 1); cx = lerp(cx, g.opPred.x, k * 0.8); cz = lerp(cz, g.opPred.z + 0.05, k * 0.8); cy = lerp(0.8, 0.55, k); el = lerp(30, 20, k); }
+    }
+    let dx = 0.3 * g.bx - cx, dz = PH.ME_Z - cz; const L = Math.hypot(dx, dz) || 1; dx /= L; dz /= L;
+    const ce = Math.cos(el * DEG), se = Math.sin(el * DEG);
+    const nx = dx * ce, ny = se, nz = dz * ce;
+    let ax = -dz * 0.8, ay = 1, az = dx * 0.8; const an = ax * nx + ay * ny + az * nz;
+    ax -= an * nx; ay -= an * ny; az -= an * nz; const La = Math.hypot(ax, ay, az) || 1; ax /= La; ay /= La; az /= La;
+    setPose(oppParts.paddle, cx, cy, cz, ax, ay, az, nx, ny, nz);
+    const ogrip = _v2.set(cx - ax * 0.3, cy - ay * 0.3, cz - az * 0.3);
+    limb(oppParts.arm, _v3.set(g.ox - 0.15, 1.2, g.oz), ogrip);
+    oppParts.sleeveR.position.y = 0.95 + clamp(cy - 0.8, -0.2, 0.3) * 0.3;
+  }
+  // 羽根: 玉の位置、羽のほうへ +y
+  shuttle.position.set(S.hx, S.hy, S.hz);
+  _v.set(S.tx - S.hx, S.ty - S.hy, S.tz - S.hz).normalize();
+  shuttle.quaternion.setFromUnitVectors(UPV, _v);
+  shuttle.visible = true;
+  const hh = Math.max(0, S.hy);
+  shShadow.position.set(S.hx, 0.008, S.hz); const ss = 0.12 + hh * 0.05; shShadow.scale.set(ss, ss, 1);
+  shShadow.material.opacity = clamp(1 - hh / 7, 0.25, 1);
+  // 目安の輪（はじめの10回くらい）と、手の届く範囲
+  const help = state !== 'title' && !botStart || state === 'skip';
+  const showPred = (state === 'play' || state === 'skip') && g.phase === 'rally' && g.last === 'op' && g.pred && g.n < 14;
+  const pk = showPred ? clamp((14 - g.n) / 4, 0, 1) : 0;
+  predRing.material.opacity = lerp(predRing.material.opacity, pk * (0.75 + 0.2 * Math.sin(tt * 8)), Math.min(1, dt * 10));
+  if (g.pred) { predRing.position.set(g.pred.x, 0.012, g.pred.z); const s = 1 + 0.08 * Math.sin(tt * 8); predRing.scale.set(s, s, 1); }
+  reachRing.position.set(g.bx, 0.01, g.bz - PH.REACH_F);
+  reachRing.material.opacity = lerp(reachRing.material.opacity, (state === 'play' || state === 'skip') && g.phase !== 'over' ? (help && rec.plays < 3 ? 0.5 : 0.28) : 0, Math.min(1, dt * 6));
+  // 凧
+  for (const k of kites) {
+    k.on += (k.want - k.on) * Math.min(1, dt * 1.5); setKiteOpacity(k);
+    k.gr.rotation.z = Math.sin(tt * 0.9 + k.ph) * 0.12; k.gr.position.y = k.y0 + Math.sin(tt * 0.6 + k.ph) * 0.25;
+    k.tails.forEach((t, i) => { t.rotation.z = Math.sin(tt * 2.4 + k.ph + i) * 0.35; });
+  }
+  if (skyGlow) skyGlow.material.opacity = lerp(skyGlow.material.opacity, mileLevel >= 4 && state !== 'title' ? 0.85 : 0, Math.min(1, dt));
+}
+function render(dt) {
+  updateCamera(dt);
+  if (game) syncMeshes(dt);
+  renderer.render(scene, camera);
+  drawFx();
+}
+const tmpV = new THREE.Vector3();
+function project(x, y, z) { tmpV.set(x, y, z).project(camera); return { x: (tmpV.x + 1) / 2 * W, y: (1 - tmpV.y) / 2 * H }; }
+// 画面の x → 世界の x（羽根が来るあたりの奥行き・打ちごろの高さの平面で）
+function hitPlaneZ() { return game && game.last === 'op' && game.pred && game.phase === 'rally' ? game.pred.z : (game ? game.bz - PH.REACH_F : PH.ME_Z - PH.REACH_F); }
+function worldXOf(sx) {
+  const z = hitPlaneZ(), a = project(0, PH.HIT_Y, z).x, b = project(1, PH.HIT_Y, z).x;
+  return (sx - a) / ((b - a) || 1);
+}
+function txt(s, x, y, size, fill = '#2a1a16', stroke = 'rgba(255,250,240,.92)', lw = 6, font = FD) {
+  const wt = /^\d00 /.exec(font);
+  fx.font = wt ? `${wt[0]}${size}px ${font.slice(wt[0].length)}` : `${size}px ${font}`; fx.lineJoin = 'round'; fx.lineWidth = lw; fx.strokeStyle = stroke; fx.strokeText(s, x, y); fx.fillStyle = fill; fx.fillText(s, x, y);
+}
+function drawFx() {
+  fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fx.clearRect(0, 0, W, H);
+  if (!game) return;
+  const g = game, sc = Math.min(1, W / 390 + 0.05);
+  fx.textAlign = 'center';
+  // 羽根の軌跡（見やすさのため）
+  if (trail.length > 1) {
+    fx.lineCap = 'round';
+    for (let i = 1; i < trail.length; i++) {
+      const a = project(trail[i - 1].x, trail[i - 1].y, trail[i - 1].z), b = project(trail[i].x, trail[i].y, trail[i].z);
+      fx.globalAlpha = (i / trail.length) * 0.55; fx.strokeStyle = '#fffaf0'; fx.lineWidth = 1 + 3 * i / trail.length;
+      fx.beginPath(); fx.moveTo(a.x, a.y); fx.lineTo(b.x, b.y); fx.stroke();
+    }
+    fx.globalAlpha = 1; fx.lineCap = 'butt';
+  }
+  const play = state === 'play' || state === 'skip';
+  if (play) {
+    const n = g.n;
+    const bump = reduceMotion || !hitFx ? 0 : Math.max(0, 0.25 - hitFx.life) * 2.2;
+    const cx = Math.min(W * 0.24, 110), cy = safeT + 66;
+    fx.save(); fx.translate(cx, cy); fx.scale(1 + bump * 0.4, 1 + bump * 0.4);
+    fx.textAlign = 'right'; txt(`${n}`, 14 * sc, 0, 58 * sc, hitFx ? '#b3312b' : '#2a1a16');
+    fx.restore();
+    fx.textAlign = 'left'; txt('回', cx + 18 * sc, cy, 22 * sc, '#2a1a16', 'rgba(255,250,240,.9)', 5);
+    txt('つづいた', cx + 18 * sc, cy - 26 * sc, 13 * sc, '#2a1a16', 'rgba(255,250,240,.9)', 4, `700 ${FB}`); fx.textAlign = 'center';
+    drawWind(sc);
+    drawHelp(sc);
+  }
+  // 打った瞬間の「こーん」
+  if (hitFx && play) {
+    const hp = project(hitFx.x, hitFx.y, hitFx.z), k = hitFx.life / 0.5;
+    fx.globalAlpha = 1 - k;
+    fx.strokeStyle = hitFx.edge > 0.8 ? '#d0352b' : '#fffaf0'; fx.lineWidth = 3;
+    for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4 + 0.2, r0 = 18 + k * 22, r1 = r0 + 12; fx.beginPath(); fx.moveTo(hp.x + Math.cos(a) * r0, hp.y + Math.sin(a) * r0); fx.lineTo(hp.x + Math.cos(a) * r1, hp.y + Math.sin(a) * r1); fx.stroke(); }
+    fx.globalAlpha = 1;
+  }
+  // 落ちた「ぽとっ」
+  if (landPop && play && landPop.life < 1.4) {
+    const p = project(landPop.x, 0.25, landPop.z), k = clamp(landPop.life / 0.15, 0, 1);
+    fx.globalAlpha = Math.min(k, clamp((1.4 - landPop.life) / 0.3, 0, 1));
+    txt('ぽとっ', p.x, p.y - 10 - landPop.life * 14, 24 * sc, '#2a1a16');
+    fx.globalAlpha = 1;
+  }
+  for (const p of pops) {
+    const k = clamp(p.life / 0.16, 0, 1), out = clamp((p.dur - p.life) / 0.25, 0, 1);
+    const y = safeT + (p.kind === 'mile' ? 150 : p.kind === 'best' ? 196 : 176) - p.life * 8;
+    fx.globalAlpha = Math.min(k, out);
+    txt(p.text, W / 2, y, (p.hot ? 30 : 22) * sc, p.hot ? '#b3312b' : '#2a1a16');
+    if (p.sub) txt(p.sub, W / 2, y + 23, 13 * sc, '#2a1a16', 'rgba(255,250,240,.9)', 4, `700 ${FB}`);
+    fx.globalAlpha = 1;
+  }
+  // 梅の花びら・金の粉
+  for (const p of petals) {
+    fx.fillStyle = p.gold ? 'rgba(232,179,58,.9)' : 'rgba(232,96,120,.85)';
+    fx.beginPath(); fx.ellipse(p.x, p.y, 4 + p.r * 0.4, 2.6, Math.sin(tt * 3 + p.ph), 0, Math.PI * 2); fx.fill();
+  }
+  fx.textAlign = 'start';
+}
+// 風（吹き流しの矢印）: 右上、最高の下
+function drawWind(sc) {
+  windAt(game, game.t, 1);
+  const w = WX;
+  if (Math.abs(w) < 0.25 && game.n < 20) return;
+  const x = W - 16 - 60 * sc, y = safeT + 86;
+  const len = clamp(Math.abs(w) / 2, 0.12, 1) * 46 * sc, dir = Math.sign(w) || 1;
+  fx.textAlign = 'right'; txt('風', x - 6, y + 6, 13 * sc, '#2a1a16', 'rgba(255,250,240,.9)', 4, `700 ${FB}`); fx.textAlign = 'center';
+  const x0 = x + 30 * sc - dir * len / 2, x1 = x + 30 * sc + dir * len / 2;
+  fx.strokeStyle = 'rgba(255,250,240,.9)'; fx.lineWidth = 7; fx.lineCap = 'round';
+  fx.beginPath(); fx.moveTo(x0, y); fx.lineTo(x1, y); fx.stroke();
+  fx.strokeStyle = Math.abs(w) > 1.2 ? '#b3312b' : '#24406a'; fx.lineWidth = 3.5;
+  fx.beginPath(); fx.moveTo(x0, y); fx.lineTo(x1, y); fx.moveTo(x1 - dir * 7, y - 5); fx.lineTo(x1, y); fx.lineTo(x1 - dir * 7, y + 5); fx.stroke();
+  fx.lineCap = 'butt';
+}
+// はじめのうちの案内: 「羽根の下へ」「いま！」
+function drawHelp(sc) {
+  const g = game;
+  if (g.phase === 'over' || botStart) return;
+  const help = rec.plays < 3 || g.n < 3;
+  const y = H - safeB - 64;
+  if (g.phase === 'serve' && help) {
+    txt('指を左右に動かして 羽根の下へ', W / 2, y - 30, 16 * sc, '#2a1a16', 'rgba(255,250,240,.95)', 6, `700 ${FB}`);
+    txt('落ちてきたら タップ', W / 2, y - 4, 20 * sc, '#b3312b', 'rgba(255,250,240,.95)', 6, FD);
+    return;
+  }
+  if (g.phase !== 'rally' || g.last !== 'op' || !g.pred) return;
+  const toIdeal = g.pred.t - PH.SW_T / 2 - g.t;
+  const sp = project(g.s.hx, g.s.hy, g.s.hz);
+  if (g.n < CUE_N || help) {
+    // 人は見てから押すまで 0.2 秒ほどかかるので、少し前から出す
+    if (toIdeal < 0.5 && toIdeal >= 0.22 && !g.sw && g.t >= g.swEnd) {
+      txt('せーの…', sp.x, sp.y - 26, 18 * sc, '#2a1a16', 'rgba(255,250,240,.95)', 6, `700 ${FB}`);
+    } else if (toIdeal < 0.22 && toIdeal > -0.1 && !g.sw && g.t >= g.swEnd) {
+      txt('いま！', sp.x, sp.y - 26, (26 + 6 * clamp(0.22 - toIdeal, 0, 0.3) * 4) * sc, '#b3312b', 'rgba(255,250,240,.95)', 7, FD);
+    } else if (help && toIdeal > 0.3) {
+      const near = Math.abs(g.pred.x - g.hcx) < PH.ARM * 0.8;
+      txt(near ? 'そのまま…' : '羽根の下へ', W / 2, y - 4, 17 * sc, '#2a1a16', 'rgba(255,250,240,.95)', 6, `700 ${FB}`);
+    }
+  }
+}
+const easeOut = k => 1 - (1 - k) * (1 - k);
+
+/* ---------- 結果 ---------- */
+function failMsg() {
+  const g = game, n = g.n, h = g.lastHit || {};
+  switch (g.fail) {
+    case 'noswing': return { noren: 'ぽとっ', msg: n === 0 ? 'まだ0回。羽根の下へ指を動かして、落ちてきたら タップ。' : '振らないうちに落ちた。羽根が頭の上まで来たら、もうタップ。' };
+    case 'far': return { noren: 'とどかない', msg: '手が届かなかった。羽根の影の上へ、早めに指を動かそう。' + (n >= 14 ? '風で流される分も 見越して。' : '') };
+    case 'early': return { noren: 'すかっ', msg: '振るのが早くて、羽根の下を空振り。もう少し引きつけて、胸の高さで。' };
+    case 'late': return { noren: 'すかっ', msg: '振るのが遅かった。羽根が頭の上を過ぎたら、もう振りはじめる。' };
+    case 'short': return { noren: 'とどかず', msg: h.edge > 0.8 ? '板の端に当たって、手前に落ちた。板の真ん中で打とう。' : h.u < 0.35 ? '低いところで当たって、おねえさんの手前に落ちた。少し早めに振ると まっすぐ届く。' : '高く上がりすぎて、手前に落ちた。少し引きつけて振ると 前へ飛ぶ。' };
+    case 'long': return { noren: 'こえた', msg: h.p > 1.15 ? '強すぎて、おねえさんの頭を越えた。そっと振れば届く。' : '飛びすぎて、おねえさんが届かなかった。' };
+    case 'wide': return { noren: 'それた', msg: h.edge > 0.75 ? '板の端に当たって、横へそれた。羽根の真下に入ろう。' : '風に流されて、おねえさんが届かなかった。' };
+  }
+  return { noren: 'ぽとっ', msg: '羽根が落ちた。' };
+}
+// 顔に墨（遊んだ回数ぶん、丸とバツが増える。9つまで）
+const INK = [['o', 0.3, 0.58], ['o', 0.7, 0.58], ['x', 0.5, 0.36], ['o', 0.5, 0.7], ['x', 0.24, 0.42], ['x', 0.76, 0.42], ['o', 0.5, 0.86], ['x', 0.36, 0.78], ['x', 0.64, 0.78]];
+function drawFace(k) {
+  const c = $('oFace'), g = c.getContext('2d'), w = c.width, h = c.height;
+  g.clearRect(0, 0, w, h);
+  const cx = w / 2, cy = h / 2 + 6, r = h * 0.42;
+  g.fillStyle = '#1a1412'; g.beginPath(); g.ellipse(cx, cy - 8, r * 1.08, r * 1.0, 0, Math.PI, Math.PI * 2); g.fill();
+  g.fillStyle = '#f3cfae'; g.beginPath(); g.ellipse(cx, cy, r * 0.92, r, 0, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#1a1412'; g.beginPath(); g.moveTo(cx - r * 0.95, cy - r * 0.2); g.quadraticCurveTo(cx, cy - r * 0.6, cx + r * 0.95, cy - r * 0.2); g.lineTo(cx + r * 0.9, cy - r * 0.9); g.lineTo(cx - r * 0.9, cy - r * 0.9); g.closePath(); g.fill();
+  g.fillStyle = '#2a1a16'; for (const s of [-1, 1]) { g.beginPath(); g.ellipse(cx + s * r * 0.34, cy + r * 0.05, 4, 6, 0, 0, Math.PI * 2); g.fill(); }
+  g.strokeStyle = '#b3312b'; g.lineWidth = 3; g.beginPath(); g.arc(cx, cy + r * 0.38, 9, 0.2, Math.PI - 0.2); g.stroke();
+  const x0 = cx - r * 0.92, y0 = cy - r, ww = r * 1.84, hh = r * 2;
+  for (let i = 0; i < Math.min(k, INK.length); i++) {
+    const [t, u, v] = INK[i], x = x0 + u * ww, y = y0 + v * hh, newest = i === Math.min(k, INK.length) - 1;
+    g.strokeStyle = newest ? 'rgba(20,14,12,.95)' : 'rgba(20,14,12,.55)'; g.lineWidth = 6; g.lineCap = 'round';
+    g.beginPath();
+    if (t === 'o') g.arc(x, y, 9, 0, Math.PI * 2); else { g.moveTo(x - 8, y - 8); g.lineTo(x + 8, y + 8); g.moveTo(x + 8, y - 8); g.lineTo(x - 8, y + 8); }
+    g.stroke();
+  }
+}
+function showOver() {
+  if (state !== 'play') return;
+  state = 'over';
+  const n = game.n;
+  const isNew = n > rec.best;
+  if (!botStart) { rec.plays++; rec.total += n; rec.last = n; if (isNew) rec.best = n; save(); }
+  $('oScore').textContent = n;
+  const F = failMsg();
+  $('oMsg').textContent = F.msg;
+  $('oNoren').innerHTML = F.noren.split('').map(c => `<span>${c}</span>`).join('');
+  const inkN = Math.max(1, Math.min(rec.plays, INK.length));
+  drawFace(inkN);
+  $('oInk').textContent = rec.plays > INK.length ? '顔は墨だらけ' : `顔に墨が ${inkN}つ`;
+  $('oBest').textContent = rec.best; $('oTotal').textContent = rec.total; $('oPlays').textContent = rec.plays;
+  $('newRec').hidden = !(isNew && n > 0 && !botStart);
+  $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({ text: `${shareText(n)}${isNew && rec.plays > 1 && n > 0 ? ' 自己ベスト！' : ''}\n`, url: gameUrl(), hashtags: '羽根つき' });
+  $('copyMsg').textContent = '画面タップ・スペースでもう一回';
+  $('over').hidden = false; $('hud').hidden = true;
+  overShownAt = performance.now();
+  $('retryBtn').focus({ preventScroll: true });
+}
+const shareText = n => n > 0 ? `🎍羽根つき ${n}回 つづいた！` : '🎍羽根つき、まだ0回…顔に墨がひとつ';
+
+/* ---------- シェア ---------- */
+// 公開先のURL。ローカルで開いたときもこれをシェアする
+const PUBLIC_URL = 'https://asobi.enludus.com/games/hanetsuki/';
+function gameUrl() {
+  try {
+    if (/^https?:$/.test(location.protocol) && location.hostname !== 'localhost') return location.origin + location.pathname;
+  } catch {}
+  return PUBLIC_URL;
+}
+
+/* ---------- HUD ---------- */
+function updateHud() { $('hBest').textContent = rec.best ? `${rec.best}回` : '—'; }
+function fillTitle() { $('tBest').textContent = rec.best || '—'; $('tTotal').textContent = rec.total; }
+
+/* ---------- 音（木の低い「こーん」。2kHz 以上は使わない。最後に 1.9kHz のローパス） ---------- */
+let ac = null, master = null, noiseBuf = null, wind = null;
+function wakeAudio() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1900; lp.Q.value = 0.5;
+      master = ac.createDynamicsCompressor(); master.threshold.value = -16; master.ratio.value = 5;
+      master.connect(lp).connect(ac.destination);
+      const len = ac.sampleRate * 1.5; noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0); let b = 0;
+      for (let i = 0; i < len; i++) { b = b * 0.7 + (Math.random() * 2 - 1) * 0.3; d[i] = b * 2; }
+      // 羽根の風切り: 低いノイズを、羽根の速さで
+      const s = ac.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+      const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 380; f.Q.value = 0.9;
+      const g = ac.createGain(); g.gain.value = 0;
+      s.connect(f).connect(g).connect(master); s.start();
+      wind = { f, g };
+    }
+    if (ac.state === 'suspended') ac.resume();
+  } catch {}
+}
+const live = () => ac && state === 'play';
+function updateWhoosh() {
+  if (!wind) return;
+  try {
+    const S = game && game.s, n0 = ac.currentTime;
+    const sp = live() && S && game.phase === 'rally' && !frozen ? Math.hypot(S.hvx, S.hvy, S.hvz) : 0;
+    wind.g.gain.setTargetAtTime(clamp((sp - 5.5) / 12, 0, 1) * 0.07, n0, 0.03);
+    wind.f.frequency.setTargetAtTime(260 + sp * 14, n0, 0.05);
+  } catch {}
+}
+function tone(freq, at, dur, vol, type = 'sine', f1) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at); if (f1) o.frequency.exponentialRampToValueAtTime(f1, at + dur);
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  o.connect(g).connect(master); o.start(at); o.stop(at + dur + 0.05);
+  return o;
+}
+function noise(at, dur, vol, type, freq, q = 1) {
+  const s = ac.createBufferSource(); s.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1100;
+  const g = ac.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.002); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  s.connect(f).connect(lp).connect(g).connect(master); s.start(at, Math.random() * 1.0); s.stop(at + dur + 0.05);
+  return f;
+}
+// 羽子板の「こーん」: 木の板の低い響き。こもらせて、端に当たると にぶく
+function koon(at, k, dull) {
+  const f0 = dull ? 250 : 300;
+  tone(f0, at, 0.22, 0.16 * k, 'triangle', f0 * 0.93);
+  tone(f0 * 2.02, at, 0.09, 0.05 * k, 'sine');
+  tone(f0 * 0.5, at, 0.16, 0.08 * k, 'sine');
+  noise(at, 0.035, 0.12 * k, 'bandpass', 650, 1.4);
+}
+function sHit(sp, edge) { try { if (!live()) return; koon(ac.currentTime, clamp(0.6 + sp / 30, 0.6, 1.1), edge > 0.8); } catch {} }
+function sOpHit(serve) { try { if (!live()) return; koon(ac.currentTime + 0.02, serve ? 0.45 : 0.55, true); } catch {} }
+function sSwing(p) { try { if (!live()) return; const n0 = ac.currentTime, f = noise(n0, 0.16, 0.05 + 0.03 * (p - 1), 'bandpass', 480, 1.1); f.frequency.exponentialRampToValueAtTime(240, n0 + 0.15); } catch {} }
+function sLand() { try { if (!live()) return; const n0 = ac.currentTime; tone(130, n0, 0.14, 0.12, 'sine', 75); noise(n0, 0.05, 0.08, 'lowpass', 400); } catch {} }
+function sFail() { try { if (!live()) return; const n0 = ac.currentTime + 0.25; tone(262, n0, 0.14, 0.05, 'triangle'); tone(196, n0 + 0.16, 0.45, 0.06, 'sine', 160); } catch {} }
+function sChime(big) { try { if (!live()) return; const n0 = ac.currentTime + 0.08; const seq = big ? [[523, 0], [659, 0.1], [784, 0.2], [1046, 0.32]] : [[523, 0], [659, 0.1], [784, 0.2]]; seq.forEach(([f, t]) => tone(f, n0 + t, 0.4, 0.05)); } catch {} }
+
+/* ---------- ループ ---------- */
+let lastTs = performance.now();
+function frame() {
+  const now = performance.now();
+  const dt = Math.min(0.1, (now - lastTs) / 1000); lastTs = now;
+  step(dt);
+  render(Math.max(dt, 1 / 240));
+  updateWhoosh();
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 入力: 指の横位置＝体の位置（羽根の下へ）、タップ＝振る（上へ速くスワイプで強く）。時刻つきで物理へ ---------- */
+function start() {
+  wakeAudio(); state = 'play';
+  $('title').hidden = true; $('over').hidden = true; $('hud').hidden = false;
+  const bn = HASH.has('debug') && HASH.get('bot') && SKILLS[HASH.get('bot')] ? HASH.get('bot') : null;
+  botStart = !!bn;   // #bot=… で始めたプレイは記録しない（撮影・確認用）
+  newGame(nextSeed(), bn); frozen = false; setMileLevel(0); petals = []; keyDir = { l: false, r: false };
+  updateHud();
+  // #debug&skip=秒: はじめにその秒数だけ一気に進め、自分が羽根を打った直後で止める（OGP 撮影・確認用。bot=good と組み合わせる。freeze=1 で止めたまま）
+  if (HASH.has('debug') && +HASH.get('skip') > 0) skipTo(game.t + +HASH.get('skip'), HASH.get('pose') || 'hit');
+  if (HASH.has('debug') && HASH.get('ff') === '1') ff = true;   // #debug&ff=1: ずっと早送り（長いプレイの確認用。結果は同じ）
+}
+// pose=hit: 指定の秒数のあと、自分が打った少しあと（羽根が板から空へ飛び出したところ）まで進める
+function skipTo(t1, pose = 'none') {
+  const quiet = state; state = 'skip';
+  const lim = t1 + 30, after = +(HASH.get('after') || 0.3);
+  let hitAt = -1;
+  while (game.phase !== 'over' && game.t < lim) {
+    if (bot) bot.step(); stepGame(game);
+    let hitNow = false;
+    for (const e of game.events) if (e.type === 'hit') hitNow = true;
+    if (game.events.length) handleEvents();
+    if (game.t >= t1) {
+      if (pose !== 'hit') break;
+      if (hitNow && hitAt < 0) hitAt = game.t;
+      if (hitAt >= 0 && game.t - hitAt >= after) break;
+    }
+  }
+  state = quiet;
+  pops = []; failAt = game.phase === 'over' ? tt : -1; shake = 0; landPop = null;
+  hitFx = hitAt >= 0 ? { life: 0.12, x: game.px, y: game.py, z: game.pz, edge: 0 } : null;
+  oppSwing = null;
+  setMileLevel(MILES.filter(m => m <= game.n).length);
+  for (const k of kites) { k.on = k.want; setKiteOpacity(k); }
+  trail = [];
+  { const S = game.s; for (let i = 6; i >= 0; i--) trail.push({ x: S.hx - S.hvx * i * 0.012, y: S.hy - S.hvy * i * 0.012, z: S.hz - S.hvz * i * 0.012, t: tt - i * 0.012 }); }
+  base = performance.now() / 1000 - game.t;
+  if (HASH.get('freeze') === '1') frozen = true;
+}
+fxc.addEventListener('pointerdown', e => {
+  e.preventDefault(); wakeAudio();
+  if (state !== 'play' || !game) return;
+  if (game.phase === 'over') { if (failAt >= 0 && tt - failAt > 0.4) showOver(); return; }
+  if (bot) return;
+  try { fxc.setPointerCapture(e.pointerId); } catch {}
+  const t = evTime(e);
+  ptr = { id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: t, boosted: false };
+  input('move', t, worldXOf(e.clientX));
+  input('swing', t, 1);
+});
+addEventListener('pointermove', e => {
+  if (state !== 'play' || !game || bot || game.phase === 'over') return;
+  const down = ptr && e.pointerId === ptr.id;
+  if (!down && e.pointerType !== 'mouse') return;
+  const list = e.getCoalescedEvents ? e.getCoalescedEvents() : [];
+  const last = list.length ? list[list.length - 1] : e, t = evTime(last);
+  input('move', t, worldXOf(last.clientX));
+  // 押してすぐ上へ速く動かした: 強く振る
+  if (down && !ptr.boosted && t - ptr.t0 < 160) {
+    const dy = ptr.y0 - last.clientY, dtS = Math.max(0.016, (t - ptr.t0) / 1000), s = dy / H / dtS;
+    if (dy > Math.max(18, H * 0.03) && s > 1.0) { ptr.boosted = true; input('boost', t, clamp(1 + (s - 1.0) * 0.18, 1, PH.P_MAX)); }
+  }
+});
+const ptrUp = e => { if (ptr && e.pointerId === ptr.id) ptr = null; };
+addEventListener('pointerup', ptrUp);
+addEventListener('pointercancel', () => { ptr = null; });
+fxc.addEventListener('contextmenu', e => e.preventDefault());
+for (const id of ['title', 'over']) {
+  $(id).addEventListener('pointerdown', e => {
+    if (e.target.closest('button, a') || state === 'loading') return;
+    if (id === 'over' && performance.now() - overShownAt < 400) return;
+    e.preventDefault(); start();
+  });
+}
+// キーボード: ←→/A D = 動く、スペース/↑/W = 打つ（Shift で強く）
+function sendKeyDir(e) { input('kdir', evTime(e), (keyDir.r ? 1 : 0) - (keyDir.l ? 1 : 0)); }
+addEventListener('keydown', e => {
+  const c = e.code;
+  if (state === 'play') {
+    if (!game) return;
+    if (game.phase === 'over') { if ((c === 'Space' || c === 'Enter') && !e.repeat && failAt >= 0 && tt - failAt > 0.4) { e.preventDefault(); showOver(); } return; }
+    if (c === 'ArrowLeft' || c === 'KeyA' || c === 'ArrowRight' || c === 'KeyD') {
+      e.preventDefault(); if (e.repeat) return; wakeAudio();
+      if (c === 'ArrowLeft' || c === 'KeyA') keyDir.l = true; else keyDir.r = true;
+      // キーで動きはじめたら、指の位置ではなく いまの体の位置から
+      if (game && !game.kdir) input('move', evTime(e), game.bx);
+      sendKeyDir(e); return;
+    }
+    if (c === 'Space' || c === 'ArrowUp' || c === 'KeyW') { e.preventDefault(); if (e.repeat) return; wakeAudio(); input('swing', evTime(e), e.shiftKey ? 1.45 : 1); return; }
+    if (c === 'Enter') e.preventDefault();
+    return;
+  }
+  if (c !== 'Space' && c !== 'Enter') return;
+  if (state === 'loading' || state === 'skip') return;
+  const el = document.activeElement;
+  if (el && el !== $('retryBtn') && el !== $('startBtn') && el.matches('button, a, input')) return;
+  if (state === 'over' && performance.now() - overShownAt < 400) { e.preventDefault(); return; }
+  e.preventDefault(); start();
+});
+addEventListener('keyup', e => {
+  const c = e.code;
+  if (c === 'ArrowLeft' || c === 'KeyA') keyDir.l = false; else if (c === 'ArrowRight' || c === 'KeyD') keyDir.r = false; else return;
+  if (state === 'play' && game) sendKeyDir(e);
+});
+addEventListener('blur', () => { ptr = null; if (keyDir.l || keyDir.r) { keyDir = { l: false, r: false }; if (state === 'play' && game) input('kdir', performance.now(), 0); } });
+$('startBtn').addEventListener('click', start);
+$('retryBtn').addEventListener('click', start);
+$('copyBtn').addEventListener('click', () => {
+  const text = `${shareText(rec.last)} ${gameUrl()}`;
+  const msg = $('copyMsg');
+  const fallback = () => { msg.textContent = text; const r = document.createRange(); r.selectNodeContents(msg); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.style.userSelect = 'text'; };
+  try { navigator.clipboard.writeText(text).then(() => { msg.textContent = 'コピーしました'; }, fallback); } catch { fallback(); }
+});
+
+/* ---------- 調整・検証用（#debug のときだけ） ---------- */
+if (HASH.has('debug')) {
+  const q = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(p * (s.length - 1))]; };
+  // 同じ入力（時刻つき）の列を、fps コマ割りで物理に流しなおす（入力はそのコマで届くが、物理はその時刻で効く）
+  const replay = (log, seedR, fps) => {
+    const g = makeGame(seedR); let i = 0, tNow = 0;
+    while (g.phase !== 'over' && tNow < 3000) {
+      tNow += 1 / fps;
+      // 記録の時刻はボットが入れたときの物理の時刻（その次の 1/1000 秒で効いた）。同じ刻みで効くように半刻みだけ後ろへ
+      while (i < log.length && log[i].t <= tNow) { gInput(g, Math.max(g.t, log[i].t + PH.DT * 0.5), log[i].type, log[i].a, log[i].b); i++; }
+      while (g.t + PH.DT <= tNow) { stepGame(g); g.events.length = 0; }
+    }
+    return { n: g.n, t: +g.t.toFixed(3), fail: g.fail };
+  };
+  const r2 = v => Math.round(v * 100) / 100;
+  window.__hanetsuki = {
+    info: () => {
+      if (!game) return null;
+      const g = game, S = g.s, P = g.pred && g.last === 'op' && g.phase === 'rally' ? g.pred : null;
+      windAt(g, g.t, 1);
+      return {
+        state, phase: g.phase, last: g.last, t: +g.t.toFixed(3), n: g.n, opN: g.opN, fail: g.fail,
+        shuttle: { x: r2(S.hx), y: r2(S.hy), z: r2(S.hz), v: r2(Math.hypot(S.hvx, S.hvy, S.hvz)) },
+        body: { x: r2(g.bx), z: r2(g.bz) }, opp: { x: r2(g.ox), z: r2(g.oz) }, wind: r2(WX),
+        // 羽根が打ちごろの高さに来るところ（物理の先読み）と、その画面座標。swingIn = 振りはじめるとよい時刻まで（秒）
+        pred: P && { x: r2(P.x), z: r2(P.z), hitIn: r2(P.t - g.t), swingIn: r2(P.t - PH.SW_T / 2 - g.t) },
+        predScreen: P ? project(P.x, PH.HIT_Y, P.z) : null, predGround: P ? project(P.x, 0, P.z) : null,
+        shuttleScreen: project(S.hx, S.hy, S.hz), bodyScreen: project(g.bx - BODY_DX, 0.6, g.bz),
+        swinging: !!g.sw, canSwing: !g.sw && g.t >= g.swEnd, lastHit: g.lastHit,
+        bot: !!bot, botStart, ff, frozen, rec, seed: g.seed, queue: g.queue.length,
+      };
+    },
+    // 物理だけでボットに N 回遊ばせる: sim('first', 100) → [回数...]
+    sim: (skill = 'good', N = 50, opts = {}) => Array.from({ length: N }, (_, i) => runBot(SKILLS[skill], (opts.seed0 ?? 1000) + i, opts).n),
+    stats: (skill = 'good', N = 100, opts = {}) => {
+      const R = Array.from({ length: N }, (_, i) => runBot(SKILLS[skill], (opts.seed0 ?? 1000) + i, opts)), n = R.map(r => r.n);
+      const kinds = {}; for (const r of R) kinds[r.fail] = (kinds[r.fail] || 0) + 1;
+      return { skill, N, p10: q(n, 0.1), p25: q(n, 0.25), p50: q(n, 0.5), p75: q(n, 0.75), p90: q(n, 0.9), min: Math.min(...n), max: Math.max(...n), ge2: R.filter(r => r.n >= 2).length / N, ge10: R.filter(r => r.n >= 10).length / N, ge50: R.filter(r => r.n >= 50).length / N, mean: +(n.reduce((a, b) => a + b, 0) / N).toFixed(1), kinds };
+    },
+    // ボットの入力の列を記録して、13 / 30 / 60 / 144 fps のコマ割りで流しなおす（結果がそろうか）
+    fpsCheck: (skill = 'first', seedR = 4242) => { const r = runBot(SKILLS[skill], seedR, { log: true }); return { live: { n: r.n, fail: r.fail, t: +r.t.toFixed(3) }, fps13: replay(r.log, seedR, 13), fps30: replay(r.log, seedR, 30), fps60: replay(r.log, seedR, 60), fps144: replay(r.log, seedR, 144), inputs: r.log.length }; },
+    // いまのプレイをボットに任せる
+    autoplay: (skill = 'good') => { if (game && state === 'play') { bot = makeBot(game, SKILLS[skill], mulberry(nextSeed())); botStart = true; } },
+    skip: (s, pose = 'none') => skipTo(game.t + s, pose),
+    freeze: (on = true) => { frozen = on; },
+    ff: (on = true) => { ff = on; },
+    // 画面の座標（Playwright で押すため）
+    predScreen: () => game && game.pred ? project(game.pred.x, PH.HIT_Y, game.pred.z) : null,
+    shuttleScreen: () => project(game.s.hx, game.s.hy, game.s.hz), bodyScreen: () => project(game.bx - BODY_DX, 0.6, game.bz),
+    screenOfX: x => project(x, PH.HIT_Y, hitPlaneZ()), worldXOf,
+    gl: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles }),
+    PH, SKILLS, makeGame, runBot, diffOf, game: () => game,
+  };
+}
+
+/* ---------- はじめ ---------- */
+try { await Promise.race([Promise.all([document.fonts.load(`40px "Dela Gothic One"`, '0123456789回寿福龍いま！こーんぽとっ自己ベスト更新端っこつよい落ちてきたらタップいくよー'), document.fonts.load(`700 16px "Zen Kaku Gothic New"`, 'つづいた風指を左右に動かして羽根の下へそのまま…その調子。また落ちてくる板の真ん中で打つとまっすぐ強すぎるとおねえさんを越えるそっと打つほうが届きやすいもうひとつ凧があがった風が出てきた。羽根が流される梅の花びらが舞う初日の出のような金の光まだまだつづく')]), new Promise(r => setTimeout(r, 1500))]); } catch {}
+resize();
+buildWorld();   // 凧の文字にフォントを使うので、読み込みのあとで
+newDemo();
+state = 'title';
+fillTitle(); updateHud();
+$('startBtn').disabled = false; $('startBtn').textContent = '羽子板を持つ';
+$('startBtn').focus({ preventScroll: true });
+requestAnimationFrame(frame);
+</script>
+<a class="hub-back" id="hubBack" href="/" aria-label="あそび横丁（ゲーム一覧）にもどる">← 横丁</a>
+<script>
+// プレイ中でもゲーム一覧に戻れるボタン。押してもゲームの入力（タップ・ドラッグ）に伝わらないようにする
+for (const ev of ['pointerdown', 'touchstart', 'mousedown']) document.getElementById('hubBack').addEventListener(ev, e => e.stopPropagation(), { passive: true });
+</script>
+</body>
+</html>
