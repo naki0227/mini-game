@@ -1,0 +1,1595 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>風車まわし</title>
+<meta name="description" content="春の田んぼ道を、紙の風車を持って走る。押している間は走る、離すと歩いて息がもどる。指を左右にずらして、風車の面を見かけの風に向ける。追い風は走っても回らない、向かい風は歩くだけで回る。突風・無風・ぬかるみ・坂・橋・曲がり角。風車が止まりかけたらおしまい。何秒回し続けられるか。見かけの風と羽根の回転を計算する3D物理のブラウザゲーム。ログイン不要。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="風車まわし">
+<meta property="og:description" content="からから、からから。菜の花の土手を走って、紙の風車を回し続けろ。こいのぼりで風を読め。何秒もつ？">
+<meta property="og:url" content="https://asobi.enludus.com/games/kazaguruma/">
+<meta property="og:image" content="https://asobi.enludus.com/games/kazaguruma/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%8F%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+:root { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+/* 全画面 WebGL（春の田んぼ道。菜の花の土手・水を張った田んぼ・遠くの山・こいのぼり・道ばたの風車）+ 2D の演出レイヤー（秒・距離・風の目盛り・息・回転）。タイトル/結果は下寄せのカード1枚 */
+:root {
+  --sky: #cfe5ec;        /* 春がすみの空 */
+  --ink: #26231f;        /* 墨 */
+  --paper: #fbf6e6;      /* 和紙 */
+  --noren: #2d4f7c;      /* こいのぼりの藍ののれん */
+  --noren-ink: #f6f1e0;
+  --shu: #d8452e;        /* 緋鯉の朱 */
+  --nano: #f2c230;       /* 菜の花 */
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--sky); color: var(--ink);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+#gl, #fx { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#fx { touch-action: none; cursor: pointer; }
+
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: end center; z-index: 40;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: 16px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  background: linear-gradient(to top, rgba(30, 40, 30, .55), rgba(30, 40, 30, 0) 62%);
+  touch-action: none; cursor: pointer; overflow: hidden;
+}
+#title { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); }
+.card {
+  width: min(360px, 100%); background: var(--paper); color: var(--ink);
+  border-radius: 10px; overflow: hidden; box-shadow: 0 10px 40px rgba(20, 30, 20, .4);
+  text-align: center; cursor: default;
+}
+.noren {
+  background: var(--noren); color: var(--noren-ink);
+  display: flex; gap: 3px;
+  padding-top: 16px;
+}
+.noren span {
+  flex: 1; background: var(--noren); border-bottom: 3px solid rgba(255,255,255,.08);
+  font-family: var(--font-display); font-size: 32px; line-height: 1; padding-block: 6px 14px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.2); white-space: nowrap;
+}
+.noren.result { padding-top: 10px; }
+.noren.result span { font-size: 26px; padding-block: 4px 10px; }
+.body { padding: 16px 20px 18px; display: grid; gap: 11px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.7; text-wrap: balance; }
+.score { font-family: var(--font-display); font-size: 58px; line-height: 1; font-variant-numeric: tabular-nums; }
+.score small { font-size: 24px; margin: 0 2px; }
+.sub2 { margin: -4px 0 0; font-size: 15px; font-weight: 700; color: var(--shu); min-height: 1.3em; }
+.meta { display: flex; justify-content: center; gap: 6px 16px; font-size: 13px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.meta b { font-size: 16px; }
+.badge {
+  justify-self: center; background: var(--shu); color: #fff; font-weight: 700;
+  font-size: 12px; letter-spacing: .14em; padding: 3px 10px; border-radius: 99px;
+}
+#oTrail { width: 100%; height: 46px; display: block; }
+#over .lead { font-size: 13px; line-height: 1.55; }
+#over .body { gap: 8px; padding-block: 12px 14px; }
+.btns { display: grid; gap: 8px; }
+.btns .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+button {
+  font: inherit; font-weight: 700; font-size: 16px; border: 0; border-radius: 8px;
+  padding: 13px 16px; cursor: pointer;
+  background: var(--noren); color: var(--noren-ink); box-shadow: 0 3px 0 #18304f;
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 #18304f; }
+button:disabled { opacity: .6; cursor: progress; }
+a.xbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font-weight: 700; font-size: 16px; border-radius: 8px; padding: 13px 16px;
+  background: #0f1419; color: #fff; box-shadow: 0 3px 0 #000;
+}
+a.xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+a.xbtn:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+a.xbtn svg { width: 16px; height: 16px; fill: currentColor; }
+button.sub { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); padding-inline: 8px; font-size: 15px; }
+button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.how { font-size: 12px; opacity: .72; margin: 0; line-height: 1.6; }
+.err { font-size: 13px; color: #b3361b; margin: 0; font-weight: 700; }
+.back { font-size: 13px; color: var(--ink); opacity: .75; }
+.back:hover { opacity: 1; }
+@media (max-height: 740px) {
+  .score { font-size: 48px; }
+  .body { gap: 8px; padding-block: 12px 14px; }
+  #over .body { gap: 6px; padding-block: 10px 12px; }
+  button, a.xbtn { padding-block: 10px; }
+  .noren span { font-size: 28px; }
+  #oTrail { height: 38px; }
+}
+@media (max-height: 620px) { #over .lead, #title .how, #oTrail { display: none; } }
+.hub-back {
+  position: fixed; z-index: 60;
+  left: calc(env(safe-area-inset-left, 0px) + 10px); bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  font: 700 12px/1 "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif; letter-spacing: .04em;
+  padding: 7px 11px; border-radius: 99px; text-decoration: none;
+  background: rgba(20, 18, 24, .55); color: #fff; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.hub-back:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<canvas id="gl" aria-hidden="true"></canvas>
+<canvas id="fx" aria-label="風車まわしのゲーム画面。押している間は走る、離すと歩く。押したまま指を左右にずらすと、風車の面の向きが変わる"></canvas>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="noren" aria-hidden="true"><span>風</span><span>車</span><span>ま</span><span>わ</span><span>し</span></div>
+    <div class="body">
+      <p class="lead">春の田んぼ道を、<b>紙の風車</b>を持って走る。<br>からから回る風車が<b>止まりかけたら</b>おしまい。<br><b>何秒</b>回し続けられるか。</p>
+      <div class="meta"><span>最高 <b id="tBest">—</b></span><span>遊んだ <b id="tPlays">0</b> 回</span></div>
+      <div class="btns"><button id="startBtn" disabled>よみこみ中…</button></div>
+      <p class="err" id="loadErr" hidden></p>
+      <p class="how"><b>押している間＝走る</b>（長く押すほど速い）、<b>離す＝歩く</b>（息がもどる）。<br>押したまま<b>指を左右にずらす＝風車の向き</b>。白い矢印（見かけの風）に面を向けるほど、よく回る。<br>向かい風は楽、<b>追い風</b>は走っても回りにくい。こいのぼりで風を読もう。（キー: スペース＝走る、← →＝向き）</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <div class="noren result" aria-hidden="true" id="oNoren"><span>か</span><span>ら</span><span>か</span><span>ら</span></div>
+    <div class="body">
+      <div class="badge" id="newRec" hidden>新記録</div>
+      <div class="score" id="oScore">0<small>秒</small></div>
+      <p class="sub2" id="oSub">回し続けた</p>
+      <canvas id="oTrail" aria-label="風車の回転の記録"></canvas>
+      <p class="lead" id="oMsg"></p>
+      <div class="meta"><span>最高 <b id="oBest">—</b></span><span>遊んだ <b id="oPlays">0</b> 回</span><span>最長 <b id="oBestM">—</b></span></div>
+      <div class="btns">
+        <div class="two"><button id="retryBtn">もう一回</button><button class="sub" id="copyBtn">結果をコピー</button></div>
+        <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Xでシェア</a>
+      </div>
+      <p class="how" id="copyMsg">画面タップ・スペースでもう一回</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+let THREE;
+try {
+  THREE = await import(THREE_URL);
+} catch (e) {
+  $('startBtn').textContent = '読み込めませんでした';
+  $('loadErr').hidden = false;
+  $('loadErr').textContent = '3Dエンジンの読み込みに失敗しました。通信状況を確かめて、ページを再読み込みしてください。';
+  throw e;
+}
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FD = getComputedStyle(document.documentElement).getPropertyValue('--font-display');
+const FB = getComputedStyle(document.documentElement).getPropertyValue('--font-body');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const DEG = Math.PI / 180;
+const HASH = new URLSearchParams(location.hash.slice(1));
+
+/*PHYS-BEGIN*/
+/* ---------- 風車まわしの物理（three には頼らない自前のモデル。単位は m・秒・rad。風車の回転 ω は「回転/秒」） ----------
+   道: 種から決まる 1 本の道（まっすぐ・曲がり角・S字）。道の上の距離 s だけで位置と向き ψ が決まる。ところどころに
+     ぬかるみ（速く走れない・息が減る）・のぼり坂（息が減る・遅い）・くだり坂（速い・息が楽）・橋（川の上は風が強い）。
+   自然の風 W: 吹いてくる向き χ と強さ U。χ はゆっくりさまよう（だんだん気まぐれに）。ときどき 突風（強く・向きもぶれる）と
+     無風（ほぼ止む）。時間がたつほど 突風・無風 が多く・長く・強くなり、風の向きも大きく変わる。
+   見かけの風 A = W − v·f（f は走る向き）。走るほど前から風が来る。追い風だと走っても A が小さい。向かい風なら歩くだけでよい。
+   風車: 手に持った軸の向き d = 走る向きから α だけ回した向き（指を左右にずらす・← →）。面に正面から当たる風の強さ
+     u = |A|·cosδ·√|cosδ|（δ = 面と見かけの風のずれ。ずれるほど急に弱い。うしろから当たると逆向きに押されて止まる）。
+     dω/dt = KC·u·(G·u − ω)（風が羽根を押す: 風の速さに見合う回転 G·u へ近づく）− F0 − F1·ω − F2·ω²（軸の摩擦・空気の抵抗）。
+   走る: 押している間 v は V_TOP へ近づく（長く押すほど速い）。離すと歩く（V_WALK）。
+     息 B: 速く走るほど減る（DR·(v − V_FREE)^1.5）。歩くと戻る。0 になると「息切れ」で B_RESUME まで走れない。
+   はじめ: 立ったまま「ふーっ」と吹いた風車（W0）を持って待つ。押したら（押さなくても READY_T 秒で）時計が動きだす。
+   判定: ω が W_STOP（止まりかけ）を T_STOP 秒下回ったら おしまい。記録は 動きだしてから そこまでの秒数と距離。 */
+const DEGP = Math.PI / 180;
+const PH = {
+  DT: 1 / 200,
+  V_WALK: 1.0, V_TIRED: 0.75, A_RUN: 2.0, V_TOP: 5.5, A_DOWN: 2.6,           // 歩く・息切れ・走りの加速・いちばん速い・止まる減速
+  DR: 0.0069, V_FREE: 1.5, REC: 0.09, V_REC: 1.7, B_RESUME: 0.35,           // 息: 減り方・息の減らない速さ・戻り方・戻る速さ・息切れから走れるまで
+  G: 1.6, KC: 0.5, REV: 0.3, F0: 0.5, F1: 0.12, F2: 0.012,                  // 風車: 風の速さに見合う回転・羽根の受け方・うしろからの風・摩擦と抵抗
+  W0: 4.2, W_STOP: 1.1, T_STOP: 0.35, GRACE: 2.5, STOP_T: 1.5, READY_T: 4,  // はじめの回転（ふーっ）・止まりかけ・その時間・はじめの猶予・止まる演出・押さなくても歩きだすまで
+  AIM_MAX: 88 * DEGP, AIM_TAU: 0.06, KEY_RATE: 120 * DEGP,                  // 風車の向き: 左右の限り・手の追いつき・キーで回す速さ
+  U0: 2.3, RAMP_T: 240,                                                      // 自然の風の強さ・気まぐれになるまでの時間（秒）
+  MUD_V: 2.0, MUD_W: 0.7, MUD_D: 1.5, UP_V: 0.72, UP_D: 1.9, UP_W: 0.8, DN_V: 1.18, DN_D: 0.5, DN_W: 1.25, BRIDGE_U: 1.3,
+  MILE: 50, EMA: 2.5,
+};
+function mulberry(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function gaussR(r) { let u = r(); while (u < 1e-9) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+const clampP = (v, a, b) => Math.max(a, Math.min(b, v));
+const easeP = k => k * k * (3 - 2 * k);
+const wrapA = a => { a = (a + Math.PI) % (2 * Math.PI); if (a < 0) a += 2 * Math.PI; return a - Math.PI; };
+
+/* 道（種から決まる）: まっすぐ → 曲がり角 →（ときどき S 字）… 進むほど まっすぐが短く、曲がりが急に。必要なぶんだけ先へ作る */
+function makeCourse(seed) {
+  const rnd = mulberry((seed * 2654435761) >>> 0);
+  const psi0 = rnd() * Math.PI * 2;
+  const c = { S: 0.5, psi0, X: [0], Z: [0], P: [psi0], Y: [0], pieces: [], feats: [], cur: 0, yc: 0, pi: 0 };
+  function gen() {
+    const s = c.cur, cap = clampP(s / 700, 0, 1), cap2 = clampP((s - 700) / 900, 0, 1);
+    const L = s < 1 ? 55 : Math.max(10, (16 + 28 * (1 - cap) + 16 * rnd()) * (1 - 0.35 * cap2));
+    c.pieces.push({ s0: s, s1: s + L, k: 0 });
+    if (s > 25 && L > 12) {
+      const types = [['up', c.yc < 2.2 ? 0.5 : 0], ['down', c.yc > 0.5 ? 0.9 : 0], ['none', 0.55 - 0.35 * cap]];
+      if (s > 45) types.push(['mud', 0.45 + 0.35 * cap]);
+      if (s > 80) types.push(['bridge', 0.3]);
+      let tot = 0; for (const t of types) tot += t[1];
+      let u = rnd() * tot, ty = 'none';
+      for (const t of types) { if ((u -= t[1]) <= 0) { ty = t[0]; break; } }
+      const a = s + 3 + rnd() * Math.max(0, L - 16);
+      if (ty === 'mud') c.feats.push({ type: 'mud', s0: a, s1: Math.min(s + L - 1, a + 3 + rnd() * (4 + 6 * cap)) });
+      else if (ty === 'up' || ty === 'down') {
+        const grade = 0.05 + 0.05 * cap + 0.03 * rnd();
+        let len = Math.min(L - 4, 8 + rnd() * 12);
+        if (ty === 'down') len = Math.min(len, c.yc / grade); else len = Math.min(len, (2.6 - c.yc) / grade);
+        if (len > 3) { const gg = ty === 'up' ? grade : -grade; c.feats.push({ type: ty, s0: a, s1: a + len, grade: gg }); c.yc += gg * len; }
+      } else if (ty === 'bridge') c.feats.push({ type: 'bridge', s0: a, s1: a + 6 + rnd() * 5 });
+    }
+    const sg = rnd() < 0.5 ? -1 : 1, ang = (22 + (30 + 50 * cap) * rnd() + 35 * cap2 * rnd()) * DEGP, R = Math.max(7, 20 - 9 * cap + 8 * rnd() - 4 * cap2), cl = ang * R;
+    let e = s + L;
+    c.pieces.push({ s0: e, s1: e + cl, k: sg / R, ang: sg * ang }); e += cl;
+    if (rnd() < 0.15 + 0.35 * cap) { const a2 = (20 + 40 * rnd() + 30 * cap * rnd()) * DEGP, R2 = Math.max(7, 18 - 8 * cap + 6 * rnd()), l2 = a2 * R2; c.pieces.push({ s0: e, s1: e + l2, k: -sg / R2, ang: -sg * a2 }); e += l2; }
+    c.cur = e;
+  }
+  const lb = (a, x) => { let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m].s1 < x) lo = m + 1; else hi = m; } return lo; };
+  c.featAt = s => { const a = c.feats, i = lb(a, s); return i < a.length && a[i].s0 <= s && s <= a[i].s1 ? a[i] : null; };
+  c.pieceAt = s => { const a = c.pieces, i = lb(a, s); return a[Math.min(i, a.length - 1)]; };
+  c.ensure = sMax => {
+    while (c.cur < sMax + 40) gen();
+    const S = c.S;
+    while ((c.X.length - 1) * S < sMax) {
+      const i = c.X.length, mid = (i - 0.5) * S;
+      while (c.pi < c.pieces.length - 1 && c.pieces[c.pi].s1 < mid) c.pi++;
+      const k = c.pieces[c.pi].k, p0 = c.P[i - 1], pm = p0 + k * S / 2, f = c.featAt(mid);
+      c.P.push(p0 + k * S); c.X.push(c.X[i - 1] + Math.cos(pm) * S); c.Z.push(c.Z[i - 1] + Math.sin(pm) * S);
+      c.Y.push(c.Y[i - 1] + (f && f.grade ? f.grade * S : 0));
+    }
+  };
+  // 道の上の距離 s → 位置・向き・高さ（0.5m ごとの点を線でつなぐ）
+  c.at = (s, out = {}) => {
+    if (s > (c.X.length - 2) * c.S) c.ensure(s + 60);
+    const u = Math.max(0, s) / c.S, i = Math.min(c.X.length - 2, Math.floor(u)), k = u - i;
+    out.x = c.X[i] + (c.X[i + 1] - c.X[i]) * k; out.z = c.Z[i] + (c.Z[i + 1] - c.Z[i]) * k;
+    out.psi = c.P[i] + (c.P[i + 1] - c.P[i]) * k; out.y = c.Y[i] + (c.Y[i + 1] - c.Y[i]) * k;
+    return out;
+  };
+  c.ensure(120);
+  return c;
+}
+
+/* 自然の風（種から決まる。時刻だけで決まる）: 吹いてくる向き χ・強さ U・いまの突風／無風 */
+function makeWind(seed, psi0) {
+  const rnd = mulberry((seed * 40503 + 77) >>> 0);
+  const w = { K: 5, chi: [], str: [], ev: [], ph: [0, 1, 2, 3, 4].map(() => rnd() * 6.283) };
+  // はじめは横（ななめ前〜真横）から。だんだん大きく・速くさまよう
+  let chi = psi0 + (rnd() < 0.5 ? -1 : 1) * (55 + 60 * rnd()) * DEGP, st = 1;
+  for (let k = 0; k <= 520; k++) {
+    const cap = clampP(k * w.K / PH.RAMP_T, 0, 1);
+    w.chi.push(chi); w.str.push(st);
+    chi += gaussR(rnd) * (0.16 + 0.42 * cap);
+    st = clampP(st + (1 - st) * 0.25 + gaussR(rnd) * 0.12, 0.7, 1.35);
+  }
+  // 突風・無風（重ならない）。はじめの一回は無風（4〜5秒。歩いているだけだと止まる。走れば大丈夫）
+  let t = 17 + rnd() * 8, first = true;
+  while (t < 2550) {
+    const cap = clampP(t / PH.RAMP_T, 0, 1), lull = first || rnd() < 0.45;
+    const dur = first ? 4.2 + rnd() : lull ? 2.6 + 2.5 * cap + rnd() * (1.2 + 3 * cap) : 1.6 + rnd() * (1.4 + 1.6 * cap);
+    const mag = first ? 0.05 : lull ? 0.03 + 0.12 * rnd() : 1.45 + rnd() * (0.5 + 0.9 * cap);
+    w.ev.push({ i: w.ev.length, t0: t, t1: t + dur, lull, mag, dchi: lull ? 0 : (rnd() * 2 - 1) * (15 + 45 * cap) * DEGP });
+    first = false;
+    t += dur + (15 - 7 * cap) + rnd() * (14 - 6 * cap);
+  }
+  return w;
+}
+function evAt(w, t) { const a = w.ev; let lo = 0, hi = a.length; while (lo < hi) { const m = (lo + hi) >> 1; if (a[m].t1 < t) lo = m + 1; else hi = m; } return lo < a.length && a[lo].t0 <= t ? a[lo] : null; }
+function windAt(w, t, out = {}) {
+  const kf = Math.max(0, t) / w.K, k = Math.min(w.chi.length - 2, Math.floor(kf)), u = easeP(Math.min(1, kf - k));
+  const cap = clampP(t / PH.RAMP_T, 0, 1), cap2 = clampP((t - PH.RAMP_T) / 300, 0, 1), p = w.ph;
+  let chi = w.chi[k] + (w.chi[k + 1] - w.chi[k]) * u;
+  const st = w.str[k] + (w.str[k + 1] - w.str[k]) * u;
+  chi += (0.06 + 0.14 * cap) * Math.sin(0.83 * t + p[0]) + 0.05 * cap * Math.sin(2.3 * t + p[1]);
+  let U = PH.U0 * (1 + 0.3 * cap + 0.2 * cap2) * st * (1 + 0.15 * Math.sin(0.61 * t + p[2]) + (0.06 + 0.1 * cap) * Math.sin(1.7 * t + p[3]));
+  const ev = evAt(w, t);
+  let e = 0;
+  if (ev) { e = easeP(Math.min(1, (t - ev.t0) / 0.7, (ev.t1 - t) / 0.7)); U *= 1 + (ev.mag - 1) * e; chi += ev.dchi * e; }
+  out.U = U; out.chi = chi; out.ev = ev; out.e = e;
+  out.wx = -U * Math.cos(chi); out.wz = -U * Math.sin(chi);   // 風の吹いていく向き（吹いてくる向き χ の反対）
+  return out;
+}
+
+function makeGame(seed = 1) {
+  const course = makeCourse(seed), wind = makeWind(seed, course.psi0);
+  return {
+    course, wind, seed, t: 0, t0: 0, phase: 'ready', s: 0, v: 0, B: 1, tired: false, om: PH.W0, a: 0, aT: 0, key: 0, run: false,
+    queue: [], events: [], lowT: 0, T: 0, pt: 0, ranEver: false, lastTired: -99, evI: 0, mile: 0, feat: null,
+    u: 0, Am: 0, beta: 0, delta: 0, psi: course.psi0, W: { U: 0, chi: 0, wx: 0, wz: 0, ev: null, e: 0 },
+    ema: { U: PH.U0, tail: 0, v: 1, mis: 0, mud: 0, up: 0 }, cause: null, runT: 0, maxOm: PH.W0,
+  };
+}
+function cloneGame(g) { return { ...g, queue: g.queue.slice(), events: [], W: { ...g.W }, ema: { ...g.ema }, log: null }; }
+// 入力: 時刻つき。kind = 'run'（v: true 押した / false 離した）・'aim'（v: 風車の向き rad）・'key'（v: −1 / 0 / +1 で向きを回す）
+function gInput(g, t, kind, v) { if (g.log) g.log.push({ t, kind, v }); const q = g.queue; let i = q.length; while (i > 0 && q[i - 1].t > t) i--; q.splice(i, 0, { t, kind, v }); }
+function applyInput(g, e) {
+  if (e.kind === 'run') { g.run = !!e.v; if (e.v) g.ranEver = true; }
+  else if (e.kind === 'aim') g.aT = clampP(e.v, -PH.AIM_MAX, PH.AIM_MAX);
+  else if (e.kind === 'key') g.key = e.v;
+}
+// 地面のようす（速さ・息・歩く速さの倍率）
+function terrOf(f) {
+  if (!f) return { vk: 1, dk: 1, wk: 1, uk: 1 };
+  if (f.type === 'mud') return { vk: PH.MUD_V / PH.V_TOP, dk: PH.MUD_D, wk: PH.MUD_W, uk: 1 };
+  if (f.type === 'up') return { vk: PH.UP_V, dk: PH.UP_D, wk: PH.UP_W, uk: 1 };
+  if (f.type === 'down') return { vk: PH.DN_V, dk: PH.DN_D, wk: PH.DN_W, uk: 1 };
+  return { vk: 1, dk: 1, wk: 1, uk: PH.BRIDGE_U };
+}
+// 見かけの風と、風車の面に正面から当たる強さ（速さ v・向き a のとき）
+function apparent(W, psi, v, a, uk = 1, out = {}) {
+  const fx = Math.cos(psi), fz = Math.sin(psi), Ax = W.wx * uk - v * fx, Az = W.wz * uk - v * fz, Am = Math.hypot(Ax, Az);
+  const beta = Am > 1e-6 ? wrapA(Math.atan2(-Az, -Ax) - psi) : 0;   // 見かけの風が吹いてくる向き（走る向きから。＋＝右）
+  const delta = wrapA(a - beta), cd = Math.cos(delta);
+  out.Am = Am; out.beta = beta; out.delta = delta; out.u = Am * cd * Math.sqrt(Math.abs(cd));
+  out.tail = (W.wx * fx + W.wz * fz) * uk;   // 追い風の成分
+  return out;
+}
+const _ap = {};
+function stepGame(g, dt = PH.DT) {
+  g.t += dt; g.pt += dt;
+  const q = g.queue;
+  while (q.length && q[0].t <= g.t) applyInput(g, q.shift());
+  if (g.phase === 'over') return;
+  const c = g.course, f = c.featAt(g.s), tr = terrOf(f);
+  if (f !== g.feat) { g.feat = f; if (f) g.events.push({ type: 'feat', f }); }
+  windAt(g.wind, g.t, g.W);
+  if (g.W.ev && g.W.ev.i >= g.evI) { g.evI = g.W.ev.i + 1; g.events.push({ type: g.W.ev.lull ? 'lull' : 'gust', ev: g.W.ev }); }
+  g.psi = c.at(g.s, _ap).psi;
+  if (g.phase === 'ready') {
+    // 立って待っている: 風車は吹いたまま回っている。押したら（押さなくても READY_T 秒で）走りだす・歩きだす
+    const ap = apparent(g.W, g.psi, 0, g.a, tr.uk, _ap); g.u = ap.u; g.Am = ap.Am; g.beta = ap.beta; g.delta = ap.delta;
+    if (g.key) g.aT = clampP(g.aT + g.key * PH.KEY_RATE * dt, -PH.AIM_MAX, PH.AIM_MAX);
+    g.a += (g.aT - g.a) * (1 - Math.exp(-dt / PH.AIM_TAU));
+    if (g.run || g.t >= PH.READY_T) { g.phase = 'go'; g.t0 = g.t; g.events.push({ type: 'go' }); }
+    return;
+  }
+  // 走る・歩く・息
+  if (g.phase === 'go') {
+    if (g.B <= 0 && !g.tired) { g.tired = true; g.lastTired = g.t; g.events.push({ type: 'tired' }); }
+    if (g.tired && g.B >= PH.B_RESUME) g.tired = false;
+    const vTop = PH.V_TOP * tr.vk;
+    if (g.run && !g.tired) {
+      if (g.v < vTop) g.v += PH.A_RUN * (1 - g.v / vTop) * dt * (f && f.type === 'up' ? 0.7 : 1);
+      else g.v = Math.max(vTop, g.v - PH.A_DOWN * dt);
+      g.runT += dt;
+    } else {
+      const vt = (g.tired ? PH.V_TIRED : PH.V_WALK) * tr.wk;
+      g.v += clampP(vt - g.v, -PH.A_DOWN * dt, PH.A_RUN * 0.5 * dt);
+    }
+    if (g.v > PH.V_FREE) g.B -= PH.DR * Math.pow(g.v - PH.V_FREE, 1.5) * tr.dk * dt;
+    else if (g.v < PH.V_REC) g.B += PH.REC * dt;
+    g.B = clampP(g.B, 0, 1);
+  } else g.v = Math.max(0, g.v - 2.2 * dt);
+  g.s += g.v * dt;
+  // 風車の向き（手がおいつく）
+  if (g.key) g.aT = clampP(g.aT + g.key * PH.KEY_RATE * dt, -PH.AIM_MAX, PH.AIM_MAX);
+  g.a += (g.aT - g.a) * (1 - Math.exp(-dt / PH.AIM_TAU));
+  // 見かけの風 → 風車の回転
+  const ap = apparent(g.W, g.psi, g.v, g.a, tr.uk, _ap);
+  g.u = ap.u; g.Am = ap.Am; g.beta = ap.beta; g.delta = ap.delta;
+  const u = ap.u;
+  let dom = u > 0 ? PH.KC * u * (PH.G * u - g.om) : PH.KC * PH.REV * u * Math.abs(u);
+  dom -= PH.F0 + PH.F1 * g.om + PH.F2 * g.om * g.om;
+  g.om = Math.max(0, g.om + dom * dt);
+  if (g.om > g.maxOm) g.maxOm = g.om;
+  // 終わりの原因を見るための、ならした値（ここ数秒）
+  const E = g.ema, k = dt / PH.EMA;
+  E.U += (g.W.U - E.U) * k; E.tail += (ap.tail - E.tail) * k; E.v += (g.v - E.v) * k;
+  E.mis += ((ap.Am > 1.2 ? Math.abs(ap.delta) : 0) - E.mis) * k; E.mud += ((f && f.type === 'mud' ? 1 : 0) - E.mud) * k; E.up += ((f && f.type === 'up' ? 1 : 0) - E.up) * k;
+  const m = Math.floor(g.s / PH.MILE) * PH.MILE;
+  if (m > g.mile) { g.mile = m; g.events.push({ type: 'mile', m }); }
+  if (g.phase === 'go') {
+    if (g.t - g.t0 > PH.GRACE && g.om < PH.W_STOP) { g.lowT += dt; if (g.lowT >= PH.T_STOP) stopGame(g); }
+    else g.lowT = 0;
+  } else if (g.phase === 'stop' && g.pt >= PH.STOP_T) { g.phase = 'over'; g.events.push({ type: 'over' }); }
+}
+function causeOf(g) {
+  const E = g.ema;
+  if (!g.ranEver) return 'walk';
+  if (g.W.ev && g.W.ev.lull || E.U < 0.9) return 'lull';
+  if (E.tail > 0.8 && E.tail > E.v * 0.55) return 'tail';
+  if (g.t - g.lastTired < 4) return 'breath';
+  if (E.mis > 40 * DEGP) return 'aim';
+  if (E.mud > 0.4) return 'mud';
+  if (E.up > 0.4) return 'up';
+  return 'slow';
+}
+function stopGame(g) {
+  g.phase = 'stop'; g.pt = 0; g.T = Math.max(0, g.t - g.lowT - g.t0); g.cause = causeOf(g);
+  g.events.push({ type: 'stop', cause: g.cause, T: g.T, m: g.s });
+}
+/*PHYS-END*/
+
+/*BOT-BEGIN*/
+/* ---------- ボット（調整・タイトルのデモ・OGP 用）: 人と同じく「押す・離す」と「指を左右にずらした向き」だけを入力する ----------
+   none : なにもしない。hold : はじめに押して、ずっと押しっぱなし（向きはまっすぐ前のまま）。
+   first: はじめての人。だいたい押しっぱなしで走る（息が切れても押している）。ときどき離して休む。向きはほとんど合わせない
+          （たまに思いつきで指をずらすが、風とは関係ない向き）。
+   good : こいのぼり（自然の風）と自分の走りから見かけの風を読み、面を正対させる（手のぶれ aimSd・反応の遅れ react）。
+          歩いても回るなら歩いて息をため、足りない・回転が落ちてきたら走る。速すぎれば離して加減する。 */
+const SKILLS = {
+  none: { kind: 'none' },
+  hold: { kind: 'hold', start: [0.2, 0.6] },
+  first: { kind: 'first', start: [0.3, 1.0], rest: [6, 15], restLen: [0.4, 1.5], aimP: 0.3, aimDeg: 30, aimEvery: [5, 12] },
+  good: { kind: 'good', every: 0.1, react: [0.12, 0.28], aimSd: 6, uGoal: 2.6, uLow: 3.4, omLow: 2.6, bLow: 0.14 },
+};
+function makeBot(g, sk, rnd) {
+  const R = a => a[0] + (a[1] - a[0]) * rnd();
+  const b = { next: 0, run: false, aim: 0, rest: 0, restUntil: -1, aimAt: 0, lastLook: -9 };
+  const run = (t, on) => { if (b.run === on) return; b.run = on; gInput(g, t, 'run', on); };
+  const aim = (t, a) => { b.aim = a; gInput(g, t, 'aim', a); };
+  if (sk.kind === 'hold' || sk.kind === 'first') b.next = R(sk.start);
+  if (sk.kind === 'first') { b.rest = R(sk.start) + R(sk.rest); b.aimAt = R(sk.aimEvery); }
+  b.step = () => {
+    if (g.phase === 'stop' || g.phase === 'over' || sk.kind === 'none') return;
+    if (sk.kind === 'hold') { if (g.t >= b.next) run(g.t, true); return; }
+    if (sk.kind === 'first') {
+      if (g.t >= b.rest) { b.restUntil = g.t + R(sk.restLen); b.rest = b.restUntil + R(sk.rest); }
+      run(g.t, g.t >= b.next && !(g.t < b.restUntil));
+      if (g.t >= b.aimAt) { b.aimAt = g.t + R(sk.aimEvery); if (rnd() < sk.aimP) aim(g.t, (rnd() * 2 - 1) * sk.aimDeg * DEGP); else if (b.aim !== 0 && rnd() < 0.5) aim(g.t, 0); }
+      return;
+    }
+    // good
+    if (g.t - b.lastLook < sk.every) return;
+    b.lastLook = g.t;
+    const tr = terrOf(g.course.featAt(g.s)), d = R(sk.react), t1 = g.t + d;
+    const ideal = clampP(apparent(g.W, g.psi, g.v, g.a, tr.uk).beta, -PH.AIM_MAX, PH.AIM_MAX);
+    const want = clampP(ideal + gaussR(rnd) * sk.aimSd * DEGP, -PH.AIM_MAX, PH.AIM_MAX);
+    if (Math.abs(want - b.aim) > 5 * DEGP) aim(t1, want);
+    // この速さなら 面をそろえたとき どれだけ風を受けるか
+    const uAt = v => { const ap = apparent(g.W, g.psi, v, 0, tr.uk); const al = clampP(ap.beta, -PH.AIM_MAX, PH.AIM_MAX); return apparent(g.W, g.psi, v, al, tr.uk).u; };
+    const goal = g.om < sk.omLow ? sk.uLow : sk.uGoal;
+    let vNeed = PH.V_TOP;
+    for (let v = 1; v <= PH.V_TOP * tr.vk + 1e-6; v += 0.25) if (uAt(v) >= goal) { vNeed = v; break; }
+    let want2 = g.v < vNeed - 0.05 ? true : g.v > vNeed + 0.35 ? false : b.run;
+    if (g.B < sk.bLow && g.om > 2.0 && !(g.W.ev && g.W.ev.lull)) want2 = false;
+    run(t1, want2);
+  };
+  return b;
+}
+function runBot(sk, seed, opts = {}) {
+  const g = makeGame(seed), r = mulberry((seed * 7919 + 13) >>> 0), log = opts.log ? [] : null;
+  const bot = makeBot(g, sk, r), tMax = opts.tMax || 1500;
+  g.log = log;   // 入力の列（時刻つき）を記録する
+  while ((g.phase === 'go' || g.phase === 'ready') && g.t < tMax) { bot.step(); stepGame(g); g.events.length = 0; }
+  if (log) log.sort((a, b2) => a.t - b2.t);
+  return { T: g.phase === 'go' ? g.t - g.t0 : g.T, m: g.s, cause: g.cause, runT: g.runT, log };
+}
+/*BOT-END*/
+
+/* ---------- 記録（このブラウザだけ） ---------- */
+const KEY = 'kazaguruma:v1';
+const DEF = () => ({ ver: 1, best: 0, plays: 0, total: 0, last: 0, bestM: 0, lastM: 0 });
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || '{}');
+    if (d && d.ver === 1) { const r = { ...DEF(), ...d }; for (const k of ['best', 'total', 'last', 'bestM', 'lastM']) r[k] = Math.max(0, Math.round((+r[k] || 0) * 10) / 10); r.plays = Math.max(0, Math.floor(+r.plays || 0)); return r; }
+  } catch {}
+  return DEF();
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch {} }
+let rec = load();
+// 乱数の種（道・風）。#seed=数字 で固定できる（何回目のプレイかまで同じなら同じ道・同じ風）
+let seed = (Math.random() * 2 ** 32) >>> 0, sessionPlays = 0;
+function upcomingSeed() { return HASH.has('seed') ? ((+HASH.get('seed') >>> 0) + 7919 * sessionPlays) >>> 0 : seed; }
+function nextSeed() { const s = seed; seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return s; }
+const r1 = v => Math.round(v * 10) / 10, r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
+const hsh = (k, j = 0) => { const h = Math.sin(k * 12.9898 + j * 78.233) * 43758.5453; return h - Math.floor(h); };
+
+/* ---------- three.js ---------- */
+const glc = $('gl'), fxc = $('fx'), fx = fxc.getContext('2d');
+const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, powerPreference: 'high-performance' });
+const scene = new THREE.Scene();
+const FOG = '#dce9e7';
+scene.background = new THREE.Color(FOG);
+scene.fog = new THREE.Fog(FOG, 22, 110);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.05, 300);
+let W = 0, H = 0, dpr = 1, safeT = 0, safeB = 0;
+function resize() {
+  W = innerWidth; H = innerHeight; dpr = Math.min(devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(Math.min(dpr, 1.6)); renderer.setSize(W, H, false);
+  fxc.width = Math.round(W * dpr); fxc.height = Math.round(H * dpr);
+  camera.aspect = W / H;
+  camera.fov = W / H < 0.75 ? 56 : 42;
+  camera.updateProjectionMatrix();
+  const cs = getComputedStyle(document.documentElement);
+  safeT = parseFloat(cs.paddingTop) || 0; safeB = parseFloat(cs.paddingBottom) || 0;
+}
+addEventListener('resize', resize);
+
+function canvasTex(w, h, draw, repeat) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
+  t.anisotropy = 4;
+  return t;
+}
+const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
+let srnd = 7; const prand = () => (srnd = (srnd * 9301 + 49297) % 233280) / 233280;
+
+// 光: 春の昼すぎ（やわらかい日ざし・空の照り返し）
+scene.add(new THREE.HemisphereLight('#f2f7ff', '#7c8a58', 1.35));
+const SUN_DIR = new THREE.Vector3(0.45, 0.8, 0.35).normalize();
+const sun = new THREE.DirectionalLight('#fff2da', 1.45); scene.add(sun); scene.add(sun.target);
+
+/* 空（色の球）・遠くの山なみ（春がすみ）: カメラについてくる遠景 */
+const far = new THREE.Group(); scene.add(far);
+{
+  const geo = new THREE.SphereGeometry(200, 32, 16), pos = geo.attributes.position, col = [];
+  const cTop = new THREE.Color('#8fc0e0'), cMid = new THREE.Color('#c7e0ea'), cLow = new THREE.Color('#e6eee6'), tmp = new THREE.Color(), v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i).normalize();
+    const h = v.y;
+    if (h > 0.1) tmp.copy(cMid).lerp(cTop, clamp((h - 0.1) / 0.6, 0, 1)); else tmp.copy(cLow).lerp(cMid, clamp((h + 0.02) / 0.12, 0, 1));
+    col.push(tmp.r, tmp.g, tmp.b);
+  }
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  far.add(new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false })));
+  // 雲（うすい）
+  const cloudTex = canvasTex(256, 128, (g, w, h) => { g.clearRect(0, 0, w, h); for (let i = 0; i < 14; i++) { const x = 30 + prand() * (w - 60), y = 50 + prand() * 40, r = 18 + prand() * 26; const gr = g.createRadialGradient(x, y, 0, x, y, r); gr.addColorStop(0, 'rgba(255,255,255,.85)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); } });
+  for (let i = 0; i < 6; i++) { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: cloudTex, fog: false, depthWrite: false, transparent: true, opacity: 0.8 })); const a = i * 1.1 + 0.4; sp.position.set(Math.cos(a) * 170, 40 + (i % 3) * 14, Math.sin(a) * 170); sp.scale.set(70, 30, 1); far.add(sp); }
+  const mtn = (seedM, colr, snow, yb, amp) => canvasTex(1024, 128, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    let s = seedM; const r = () => (s = (s * 9301 + 49297) % 233280) / 233280;
+    const ph = [r() * 6, r() * 6, r() * 6], top = x => { const u = x / w * Math.PI * 2; return h * yb - amp * h * (0.5 + 0.3 * Math.sin(u * 3 + ph[0]) + 0.15 * Math.sin(u * 7 + ph[1]) + 0.06 * Math.sin(u * 19 + ph[2])); };
+    g.fillStyle = colr; g.beginPath(); g.moveTo(0, h); for (let x = 0; x <= w; x += 8) g.lineTo(x, top(x)); g.lineTo(w, h); g.closePath(); g.fill();
+    if (snow) { for (let x = 0; x <= w; x += 2) { const y = top(x), lim = h * 0.3; if (y < lim) { const gr = g.createLinearGradient(0, y, 0, y + (lim - y) * 0.9); gr.addColorStop(0, 'rgba(248,250,255,.9)'); gr.addColorStop(1, 'rgba(248,250,255,0)'); g.fillStyle = gr; g.fillRect(x, y, 2, (lim - y) * 0.9); } } }
+  });
+  for (const [r, c, snow, yb, amp, y0, hh] of [[190, 'rgba(158,178,198,.75)', true, 0.97, 0.8, -2, 26], [175, 'rgba(112,146,126,.9)', false, 0.99, 0.45, -2, 13]]) {
+    const t = mtn(r * 13, c, snow, yb, amp); t.wrapS = THREE.RepeatWrapping;
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r, hh, 48, 1, true), new THREE.MeshBasicMaterial({ map: t, transparent: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+    m.position.y = y0 + hh / 2; far.add(m);
+  }
+}
+
+/* 田んぼ（水を張った田・れんげの田・あぜ）: カメラについていく大きな板（模様は地面に固定） */
+const GY = -0.5, ROAD = 0.8, SHO = 0.3, FIELD = 5.6, GSZ = 320, GTILE = 26;
+const paddyTex = canvasTex(512, 512, (g, w, h) => {
+  const cells = [[0, 0, 0.5, 0.42], [0.5, 0, 0.5, 0.42], [0, 0.42, 0.34, 0.58], [0.34, 0.42, 0.33, 0.58], [0.67, 0.42, 0.33, 0.58]];
+  cells.forEach(([x, y, cw, chh], i) => {
+    const X = x * w, Y = y * h, CW = cw * w, CHH = chh * h;
+    if (i === 1 || i === 3) {
+      // 水を張った田（空がうつる）
+      const gr = g.createLinearGradient(X, Y, X + CW, Y + CHH); gr.addColorStop(0, '#b9d6dd'); gr.addColorStop(0.5, '#d6e7e8'); gr.addColorStop(1, '#a7c6cf'); g.fillStyle = gr; g.fillRect(X, Y, CW, CHH);
+      for (let k = 0; k < 30; k++) { g.fillStyle = `rgba(255,255,255,${0.1 + prand() * 0.2})`; g.fillRect(X + prand() * CW, Y + prand() * CHH, 6 + prand() * 30, 1.5); }
+      if (i === 3) for (let r = 0; r < CW; r += 12) for (let k = 0; k < CHH; k += 10) { g.fillStyle = 'rgba(96,140,70,.55)'; g.fillRect(X + r + 4, Y + k + 3, 2, 4); }   // 植えたばかりの苗
+    } else if (i === 4) {
+      // れんげの田（うすい紅）
+      g.fillStyle = '#9cae62'; g.fillRect(X, Y, CW, CHH);
+      for (let k = 0; k < 900; k++) { g.fillStyle = prand() < 0.55 ? `rgba(226,140,170,${0.5 + prand() * 0.4})` : 'rgba(120,150,70,.6)'; g.fillRect(X + prand() * CW, Y + prand() * CHH, 2 + prand() * 2, 2 + prand() * 2); }
+    } else {
+      // 土の田（すき返した）・草
+      g.fillStyle = i === 0 ? '#a89470' : '#8fa25a'; g.fillRect(X, Y, CW, CHH);
+      for (let k = 0; k < 600; k++) { g.fillStyle = i === 0 ? `rgba(80,60,40,${0.15 + prand() * 0.2})` : `rgba(${100 + prand() * 60},${130 + prand() * 50},60,.5)`; g.fillRect(X + prand() * CW, Y + prand() * CHH, 2 + prand() * 3, 1 + prand() * 2); }
+    }
+    // あぜ
+    g.strokeStyle = '#7d8a4c'; g.lineWidth = 6; g.strokeRect(X + 3, Y + 3, CW - 6, CHH - 6);
+    g.strokeStyle = 'rgba(200,210,140,.5)'; g.lineWidth = 2; g.strokeRect(X + 5, Y + 5, CW - 10, CHH - 10);
+  });
+}, [GSZ / GTILE, GSZ / GTILE]);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(GSZ, GSZ), lam('#ffffff', { map: paddyTex }));
+ground.rotation.x = -Math.PI / 2; ground.position.y = GY; scene.add(ground);
+
+/* 道（土手の上の土の道）・菜の花の土手・ぬかるみ・橋と小川: 道に沿って 20m ずつ作る */
+const CH = 20, chunks = new Map();
+const dirtTex = canvasTex(128, 256, (g, w, h) => {
+  g.fillStyle = '#c7a57a'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 1800; i++) { const v = prand(); g.fillStyle = v < 0.5 ? `rgba(110,80,50,${0.08 + prand() * 0.18})` : `rgba(240,220,180,${0.08 + prand() * 0.16})`; const s = 1 + prand() * 2.4; g.fillRect(prand() * w, prand() * h, s, s); }
+  // わだちと、まんなかの草
+  for (const x0 of [w * 0.25, w * 0.75]) { g.fillStyle = 'rgba(110,80,50,.12)'; g.fillRect(x0 - 9, 0, 18, h); }
+  for (let i = 0; i < 160; i++) { g.fillStyle = `rgba(${110 + prand() * 40},${140 + prand() * 30},70,.75)`; g.fillRect(w * 0.5 - 6 + prand() * 12, prand() * h, 1.5, 3 + prand() * 4); }
+  for (let i = 0; i < 80; i++) { g.fillStyle = `rgba(${110 + prand() * 40},${140 + prand() * 30},70,.75)`; const x = prand() < 0.5 ? prand() * 8 : w - prand() * 8; g.fillRect(x, prand() * h, 1.5, 3 + prand() * 4); }
+}, [1, 1]);
+const roadMat = lam('#ffffff', { map: dirtTex, side: THREE.DoubleSide });
+const nanoTex = canvasTex(256, 256, (g, w, h) => {
+  g.fillStyle = '#86a045'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 1400; i++) { g.fillStyle = prand() < 0.25 ? 'rgba(70,100,40,.6)' : `rgba(${235 + prand() * 20},${190 + prand() * 40},${30 + prand() * 40},${0.75 + prand() * 0.25})`; const s = 2 + prand() * 4; g.fillRect(prand() * w, prand() * h, s, s * 0.8); }
+}, [1, 1]);
+const bankMat = lam('#ffffff', { map: nanoTex, side: THREE.DoubleSide });
+const mudTex = canvasTex(128, 128, (g, w, h) => {
+  g.clearRect(0, 0, w, h);
+  const gr = g.createLinearGradient(0, 0, w, 0); gr.addColorStop(0, 'rgba(96,70,46,0)'); gr.addColorStop(0.12, 'rgba(96,70,46,.92)'); gr.addColorStop(0.88, 'rgba(96,70,46,.92)'); gr.addColorStop(1, 'rgba(96,70,46,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 260; i++) { g.fillStyle = `rgba(${60 + prand() * 30},${42 + prand() * 20},${28 + prand() * 14},.5)`; g.fillRect(20 + prand() * (w - 40), prand() * h, 3 + prand() * 6, 1.5); }
+  for (let i = 0; i < 5; i++) { const x = 30 + prand() * (w - 60), y = prand() * h, rx = 10 + prand() * 16, ry = 5 + prand() * 9; g.fillStyle = 'rgba(176,200,206,.7)'; g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, 7); g.fill(); g.fillStyle = 'rgba(235,245,245,.5)'; g.beginPath(); g.ellipse(x - rx * 0.3, y - ry * 0.2, rx * 0.4, ry * 0.25, 0, 0, 7); g.fill(); }
+  // 足あと
+  for (let i = 0; i < 8; i++) { g.fillStyle = 'rgba(50,34,22,.55)'; g.beginPath(); g.ellipse(w * (0.4 + (i % 2) * 0.2), i * h / 8 + 6, 4, 7, 0, 0, 7); g.fill(); }
+}, [1, 1]);
+const mudMat = lam('#ffffff', { map: mudTex, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+const creekTex = canvasTex(128, 256, (g, w, h) => {
+  const gr = g.createLinearGradient(0, 0, w, 0); gr.addColorStop(0, '#7aa6a8'); gr.addColorStop(0.5, '#9cc6cf'); gr.addColorStop(1, '#7aa6a8'); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 70; i++) { g.strokeStyle = `rgba(255,255,255,${0.2 + prand() * 0.3})`; g.lineWidth = 1.5; const x = prand() * w, y = prand() * h; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + 6, y + 8, x, y + 16 + prand() * 10); g.stroke(); }
+}, [1, 6]);
+const creekMat = lam('#ffffff', { map: creekTex, emissive: '#3a5a60', emissiveIntensity: 0.25 });
+const woodMat = lam('#8a6442'), woodDark = lam('#6a4a30'), stoneMat = lam('#9a968a'), creekBankMat = lam('#7d7050');
+// 菜の花: 十字に組んだ板 2 枚に、茎と花の絵（透けるところは捨てる）
+const flowerTex = canvasTex(128, 128, (g, w, h) => {
+  g.clearRect(0, 0, w, h);
+  for (let i = 0; i < 9; i++) {
+    const x = 14 + prand() * (w - 28), top = 18 + prand() * 40;
+    g.strokeStyle = prand() < 0.5 ? '#5d8a32' : '#6f9a3a'; g.lineWidth = 3; g.beginPath(); g.moveTo(x + (prand() - 0.5) * 10, h); g.quadraticCurveTo(x + (prand() - 0.5) * 16, (h + top) / 2, x, top); g.stroke();
+    g.fillStyle = '#5f8f34'; g.beginPath(); g.ellipse(x + 6, (h + top) * 0.6, 9, 4, 0.6, 0, 7); g.fill();
+    for (let k = 0; k < 16; k++) { const a = prand() * 7, r = prand() * 14; g.fillStyle = prand() < 0.2 ? '#e8b818' : prand() < 0.5 ? '#ffe03a' : '#f8d226'; g.beginPath(); g.arc(x + Math.cos(a) * r, top + Math.sin(a) * r * 0.8, 3 + prand() * 2.5, 0, 7); g.fill(); }
+  }
+});
+const flowerGeo = (() => {
+  const pos = [], uv = [], idx = [];
+  for (let k = 0; k < 2; k++) { const a = k * Math.PI / 2, cx = Math.cos(a) * 0.5, cz = Math.sin(a) * 0.5, n = k * 4; pos.push(-cx, 0, -cz, cx, 0, cz, cx, 1, cz, -cx, 1, -cz); uv.push(0, 0, 1, 0, 1, 1, 0, 1); idx.push(n, n + 1, n + 2, n, n + 2, n + 3); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+  g.setAttribute('normal', new THREE.Float32BufferAttribute([0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0], 3));
+  return g;
+})();
+const flowerMat = new THREE.MeshLambertMaterial({ map: flowerTex, alphaTest: 0.5, side: THREE.DoubleSide });
+const _col = new THREE.Color(), _m4 = new THREE.Matrix4(), _q4 = new THREE.Quaternion(), _s4 = new THREE.Vector3(), _p4 = new THREE.Vector3(), _e4 = new THREE.Euler();
+const bankFoot = y => ROAD + SHO + Math.max(0.35, (y - GY - 0.04) / 0.55);
+function profileY(y, a) { const ft = bankFoot(y); return a <= ROAD ? y : a <= ROAD + SHO ? y - 0.04 : a <= ft ? lerp(y - 0.04, GY + 0.01, (a - ROAD - SHO) / (ft - ROAD - SHO)) : GY + 0.01; }
+const isBridge = (c, s) => { const f = c.featAt(s); return !!(f && f.type === 'bridge'); };
+function buildChunk(k) {
+  const c = game.course, s0 = k * CH, s1 = s0 + CH; c.ensure(s1 + 2);
+  const grp = new THREE.Group();
+  const i0 = Math.max(0, Math.round(s0 / c.S)), i1 = Math.round(s1 / c.S);
+  const road = [], ruv = [], ridx = [], bank = [], buv = [], bidx = [];
+  const LAT = [-FIELD, -1, -(ROAD + SHO), -ROAD, ROAD, ROAD + SHO, 1, FIELD];
+  for (let i = i0; i <= i1; i++) {
+    const x = c.X[i], z = c.Z[i], y = c.Y[i], p = c.P[i], rx = -Math.sin(p), rz = Math.cos(p), s = i * c.S, ft = bankFoot(y);
+    road.push(x - rx * ROAD, y, z - rz * ROAD, x + rx * ROAD, y, z + rz * ROAD); ruv.push(0, s * 0.3, 1, s * 0.3);
+    for (const l0 of LAT) { const l = Math.abs(l0) === 1 ? Math.sign(l0) * ft : l0, a = Math.abs(l); bank.push(x + rx * l, a <= ROAD ? y : profileY(y, a), z + rz * l); buv.push(l * 0.3, s * 0.3); }
+    if (i > i0 && !isBridge(c, (i - 0.5) * c.S)) {
+      const a = (i - 1 - i0) * 2, b = (i - i0) * 2; ridx.push(a, b, a + 1, a + 1, b, b + 1);
+      const A = (i - 1 - i0) * 8, B = (i - i0) * 8; for (const j of [0, 1, 2, 4, 5, 6]) bidx.push(A + j, B + j, A + j + 1, A + j + 1, B + j, B + j + 1);
+    }
+  }
+  const mk = (pos, uv, idx, mat) => { const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); geo.setIndex(idx); geo.computeVertexNormals(); const m = new THREE.Mesh(geo, mat); grp.add(m); return m; };
+  mk(road, ruv, ridx, roadMat); mk(bank, buv, bidx, bankMat);
+  // 菜の花（土手と、その外の畑）: ひとかたまりずつ
+  const NF = 190, inst = new THREE.InstancedMesh(flowerGeo, flowerMat, NF);
+  let nf = 0; const at = {};
+  for (let j = 0; j < NF; j++) {
+    const s = s0 + hsh(k * 131 + j, 1) * CH; if (isBridge(c, s)) continue;
+    const side = j % 2 ? 1 : -1, a = ROAD + SHO + 0.05 + Math.pow(hsh(k * 131 + j, 2), 0.9) * (FIELD - ROAD - SHO + 0.6);
+    c.at(s, at); const rx = -Math.sin(at.psi), rz = Math.cos(at.psi), y = profileY(at.y, a);
+    const sc = 0.5 + 0.35 * hsh(k * 131 + j, 3);
+    _p4.set(at.x + rx * a * side, y - 0.04, at.z + rz * a * side); _q4.setFromEuler(_e4.set(0, hsh(j, k) * 6, 0)); _s4.set(sc * 1.1, sc * 0.85, sc * 1.1);
+    inst.setMatrixAt(nf, _m4.compose(_p4, _q4, _s4)); inst.setColorAt(nf, _col.setHSL(0.14, 0.15 + 0.3 * hsh(j, 7), 0.8 + 0.2 * hsh(j, 8))); nf++;
+  }
+  inst.count = nf; inst.instanceMatrix.needsUpdate = true; if (inst.instanceColor) inst.instanceColor.needsUpdate = true;
+  grp.add(inst);
+  // ぬかるみ・橋
+  for (const f of c.feats) {
+    if (f.s1 < s0 || f.s0 >= s1) continue;
+    if (f.type === 'mud') {
+      const a0 = Math.max(s0, f.s0), a1 = Math.min(s1, f.s1), pos = [], uv = [], idx = [];
+      let n = 0;
+      for (let s = a0; s <= a1 + 1e-6; s += 0.5) { c.at(s, at); const rx = -Math.sin(at.psi), rz = Math.cos(at.psi); pos.push(at.x - rx * 0.72, at.y + 0.012, at.z - rz * 0.72, at.x + rx * 0.72, at.y + 0.012, at.z + rz * 0.72); uv.push(0, s * 0.25, 1, s * 0.25); if (n) { const a = (n - 1) * 2, b = n * 2; idx.push(a, b, a + 1, a + 1, b, b + 1); } n++; }
+      if (n > 1) mk(pos, uv, idx, mudMat).renderOrder = 1;
+    }
+    if (f.type === 'bridge' && f.s0 >= s0) {
+      const sm = (f.s0 + f.s1) / 2, Lb = f.s1 - f.s0 + 0.6; c.at(sm, at);
+      const bg = new THREE.Group(); bg.position.set(at.x, at.y, at.z); bg.rotation.y = -at.psi; grp.add(bg);
+      const deck = new THREE.Mesh(new THREE.BoxGeometry(Lb, 0.08, 1.5), woodMat); deck.position.y = -0.04; bg.add(deck);
+      for (let x = -Lb / 2 + 0.3; x < Lb / 2; x += 0.5) { const pl = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.005, 1.5), woodDark); pl.position.set(x, 0.002, 0); bg.add(pl); }
+      for (const sd of [-1, 1]) {
+        for (let x = -Lb / 2 + 0.2; x <= Lb / 2; x += 1.4) { const po = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.55, 0.07), woodDark); po.position.set(x, 0.24, sd * 0.78); bg.add(po); }
+        const rl = new THREE.Mesh(new THREE.BoxGeometry(Lb, 0.06, 0.06), woodMat); rl.position.set(0, 0.5, sd * 0.78); bg.add(rl);
+        const ab = new THREE.Mesh(new THREE.BoxGeometry(0.9, at.y - GY + 0.1, 2.0), stoneMat); ab.position.set(sd * (Lb / 2 + 0.1), (GY - at.y) / 2 - 0.05, 0); bg.add(ab);
+        const cb = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.06, 90), creekBankMat); cb.position.set(sd * (Lb / 2 - 0.5), GY - at.y + 0.03, 0); bg.add(cb);
+      }
+      const cr = new THREE.Mesh(new THREE.PlaneGeometry(Math.max(1, Lb - 1.2), 90), creekMat); cr.rotation.x = -Math.PI / 2; cr.position.y = GY - at.y + 0.04; bg.add(cr);
+      // 橋げた
+      for (const x of [-Lb / 4, Lb / 4]) { const pi = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, at.y - GY, 6), woodDark); pi.position.set(x, (GY - at.y) / 2, 0); bg.add(pi); }
+    }
+  }
+  scene.add(grp);
+  return grp;
+}
+function disposeGroup(g) { scene.remove(g); g.traverse(o => { if (o.isInstancedMesh) o.dispose(); else if (o.geometry && o.geometry !== flowerGeo) o.geometry.dispose(); }); }
+function syncChunks(cs) {
+  const k0 = Math.floor((cs - 14) / CH), k1 = Math.floor((cs + 95) / CH);
+  for (const [k, g] of chunks) if (k < k0 || k > k1) { disposeGroup(g); chunks.delete(k); }
+  for (let k = Math.max(-1, k0); k <= k1; k++) if (!chunks.has(k)) chunks.set(k, buildChunk(k));
+}
+function resetChunks() { for (const [, g] of chunks) disposeGroup(g); chunks.clear(); }
+
+/* 紙の風車（4 枚羽根。軸は +x 向き）: 自分の手のと、道ばたに挿してあるの */
+const PIN_COLS = [['#d8452e', '#f2c230'], ['#2d6fb5', '#f4f1e6'], ['#e0609a', '#f6d04a'], ['#3a9a5b', '#f4e04a'], ['#7a4fb0', '#f4a3c0'], ['#f08a24', '#3a7fc0']];
+const pinGeoCache = new Map(), blurTexCache = new Map();
+function pinGeo(R, ci) {
+  const key = R + ':' + ci; if (pinGeoCache.has(key)) return pinGeoCache.get(key);
+  const [cA, cB] = PIN_COLS[ci], pos = [], col = [], cl = new THREE.Color(), white = new THREE.Color('#ffffff');
+  const push = (p, c) => { pos.push(p[0], p[1], p[2]); col.push(c.r, c.g, c.b); };
+  const P = (r, a, x) => [x, r * Math.cos(a), r * Math.sin(a)];
+  for (let i = 0; i < 4; i++) {
+    const a = i * Math.PI / 2, base = new THREE.Color(i % 2 ? cA : cB), light = base.clone().lerp(white, 0.3);
+    const O = [0, 0, 0], A = P(R, a, 0), B = P(R * 0.66, a - Math.PI / 4, -0.004), C = P(R * 0.4, a + Math.PI / 5, R * 0.32);
+    push(O, base); push(B, base); push(A, base);
+    push(O, light); push(A, light); push(C, light);
+  }
+  void cl;
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.computeVertexNormals();
+  pinGeoCache.set(key, g); return g;
+}
+function blurTex(ci) {
+  if (blurTexCache.has(ci)) return blurTexCache.get(ci);
+  const [cA, cB] = PIN_COLS[ci];
+  const t = canvasTex(128, 128, (g, w) => {
+    g.clearRect(0, 0, w, w);
+    const gr = g.createRadialGradient(64, 64, 0, 64, 64, 63);
+    gr.addColorStop(0, 'rgba(250,246,236,.95)'); gr.addColorStop(0.12, cB); gr.addColorStop(0.55, cA); gr.addColorStop(0.85, cB); gr.addColorStop(1, 'rgba(255,255,255,0)');
+    g.globalAlpha = 0.85; g.fillStyle = gr; g.beginPath(); g.arc(64, 64, 63, 0, 7); g.fill();
+    // ぼやけた羽根の筋
+    g.globalAlpha = 0.25; g.strokeStyle = '#ffffff'; g.lineWidth = 3; for (const r of [26, 40, 52]) { g.beginPath(); g.arc(64, 64, r, 0, 7); g.stroke(); }
+  });
+  blurTexCache.set(ci, t); return t;
+}
+const discGeos = new Map();
+const discGeo = R => { if (!discGeos.has(R)) { const g = new THREE.CircleGeometry(R * 1.02, 28); g.rotateY(Math.PI / 2); discGeos.set(R, g); } return discGeos.get(R); };
+const hubGeo = new THREE.SphereGeometry(1, 8, 6), hubMat = lam('#f4efe0'), stickMat = lam('#b48a56');
+function makePinwheel(R, ci) {
+  const g = new THREE.Group(), rotor = new THREE.Group(); g.add(rotor);
+  const blades = new THREE.Mesh(pinGeo(R, ci), new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, transparent: true }));
+  rotor.add(blades);
+  const disc = new THREE.Mesh(discGeo(R), new THREE.MeshBasicMaterial({ map: blurTex(ci), transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  disc.position.x = R * 0.12; g.add(disc);
+  const hub = new THREE.Mesh(hubGeo, hubMat); hub.scale.setScalar(R * 0.1); hub.position.x = R * 0.05; g.add(hub);
+  return { g, rotor, blades, disc, rot: 0, om: 0 };
+}
+function spinPin(p, om, dt) {
+  p.rot += om * 2 * Math.PI * dt; p.rotor.rotation.x = p.rot % (Math.PI * 2);
+  const k = clamp((om - 1.6) / 4.5, 0, 1);
+  p.disc.material.opacity = 0.9 * k; p.blades.material.opacity = 1 - 0.7 * k; p.disc.visible = k > 0.01;
+}
+
+/* 道ばたの風車（いくつかを使いまわして、道に沿って並べる）・こいのぼり・桜・家・距離の立て札 */
+const decor = [];
+for (let i = 0; i < 12; i++) {
+  const p = makePinwheel(0.13, i % PIN_COLS.length), g = new THREE.Group();
+  const st = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.01, 0.75, 5), stickMat); st.position.y = 0.375; g.add(st);
+  p.g.position.y = 0.76; g.add(p.g); scene.add(g);
+  decor.push({ g, p, k: null, yaw: 0, om: 0 });
+}
+function carpTex(body, belly, fin) {
+  return canvasTex(128, 256, (g, w, h) => {
+    const gr = g.createLinearGradient(0, 0, w, 0); gr.addColorStop(0, body); gr.addColorStop(0.38, body); gr.addColorStop(0.5, belly); gr.addColorStop(0.62, body); gr.addColorStop(1, body);
+    g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(255,255,255,.32)'; g.lineWidth = 2;
+    for (let y = 64, r = 0; y < h - 26; y += 14, r++) for (let x = (r % 2) * 8; x < w + 8; x += 16) { g.beginPath(); g.arc(x, y, 8, 0.1, Math.PI - 0.1); g.stroke(); }
+    g.fillStyle = '#f4efe2'; g.fillRect(0, 0, w, 9);
+    for (const ex of [w * 0.25, w * 0.75]) { g.fillStyle = '#f8f6ee'; g.beginPath(); g.arc(ex, 30, 11, 0, 7); g.fill(); g.fillStyle = '#1e1c22'; g.beginPath(); g.arc(ex, 30, 6, 0, 7); g.fill(); g.strokeStyle = 'rgba(240,200,80,.9)'; g.lineWidth = 2.5; g.beginPath(); g.arc(ex, 30, 13, 0, 7); g.stroke(); }
+    g.strokeStyle = 'rgba(255,255,255,.75)'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, 52); for (let x = 0; x <= w; x += 8) g.lineTo(x, 52 + Math.sin(x / w * Math.PI * 4) * 4); g.stroke();
+    g.fillStyle = fin; g.fillRect(0, h - 26, w, 26);
+    g.fillStyle = 'rgba(255,255,255,.3)'; for (let x = 0; x < w; x += 10) g.fillRect(x, h - 24, 2, 22);
+  });
+}
+const fukiTex = canvasTex(160, 64, (g, w, h) => { ['#2d6fb5', '#f4f1e6', '#d8452e', '#f2c230', '#3a9a5b'].forEach((c, i) => { g.fillStyle = c; g.fillRect(i * w / 5, 0, w / 5 + 1, h); }); });
+const CARPS = [
+  { tex: fukiTex, len: 3.3, r: 0.2, y: 7.8 },
+  { tex: carpTex('#2a2c38', '#b9a27a', '#1c1d24'), len: 3.2, r: 0.38, y: 6.7 },
+  { tex: carpTex('#d8452e', '#f4d0b0', '#a8301f'), len: 2.6, r: 0.31, y: 5.6 },
+  { tex: carpTex('#2d6fb5', '#cfe2f4', '#1e4f88'), len: 2.0, r: 0.25, y: 4.6 },
+];
+function makeStreamer(cd) {
+  const geo = new THREE.CylinderGeometry(cd.r, cd.r, cd.len, 10, 6, true);
+  const m = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: cd.tex, side: THREE.DoubleSide }));
+  m.frustumCulled = false; scene.add(m);
+  return { m, geo, base: geo.attributes.position.array.slice(), len: cd.len, r0: cd.r, y: cd.y, ph: Math.random() * 6 };
+}
+function bendStreamer(S, ax, ay, az, dx, dz, U, t) {
+  const st = clamp(U / 3.0, 0, 1), droop0 = (1 - st) * 1.3 + 0.06, infl = clamp(st * 1.4, 0, 1);
+  const Lx = -dz, Lz = dx, pos = S.geo.attributes.position.array, b = S.base, n = b.length / 3, len = S.len;
+  for (let i = 0; i < n; i++) {
+    const u = clamp((len / 2 - b[i * 3 + 1]) / len, 0, 1), th = Math.atan2(b[i * 3], b[i * 3 + 2]);
+    const dr = droop0 * (0.35 + 0.65 * u), cd = Math.cos(dr), sd = Math.sin(dr);
+    const wv = Math.sin(t * (2.5 + 5 * st) - u * 5 + S.ph) * (0.06 + 0.1 * st) * u * len;
+    const wy = Math.sin(t * (2 + 3 * st) - u * 4 + S.ph * 1.7) * 0.04 * u * len * st;
+    const cx = ax + dx * cd * u * len + Lx * wv, cy = ay - sd * u * len + wy, cz = az + dz * cd * u * len + Lz * wv;
+    const r = S.r0 * (1 - 0.42 * u), rN = r * (0.22 + 0.78 * infl), cth = Math.cos(th), sth = Math.sin(th);
+    pos[i * 3] = cx + sd * dx * cth * rN + Lx * sth * r;
+    pos[i * 3 + 1] = cy + cd * cth * rN;
+    pos[i * 3 + 2] = cz + sd * dz * cth * rN + Lz * sth * r;
+  }
+  S.geo.attributes.position.needsUpdate = true; S.geo.computeVertexNormals();
+}
+const poleMat = lam('#e8e2d2'), roofMat = lam('#4b5866'), wallMat = lam('#efe6d0'), wallDark = lam('#7a5a3c'), goldMat = lam('#e8b830');
+const koinobori = [];
+for (let i = 0; i < 3; i++) {
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.1, 8.7, 8), poleMat); pole.position.y = 4.35; g.add(pole);
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(0.1, 10, 8), goldMat); ball.position.y = 8.8; ball.scale.setScalar(1.2); g.add(ball);
+  const yg = makePinwheel(0.42, 0); yg.blades.material = new THREE.MeshLambertMaterial({ color: '#e8b830', side: THREE.DoubleSide, transparent: true }); yg.g.position.y = 8.5; g.add(yg.g);
+  // 家（瓦屋根）
+  const house = new THREE.Group();
+  const wall = new THREE.Mesh(new THREE.BoxGeometry(4.4, 2.5, 3.4), wallMat); wall.position.y = 1.25; house.add(wall);
+  const base = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.6, 3.5), wallDark); base.position.y = 0.3; house.add(base);
+  const rg = new THREE.CylinderGeometry(2.3, 2.3, 5.0, 3, 1); rg.rotateZ(Math.PI / 2); rg.rotateX(-Math.PI / 2); rg.scale(1, 0.48, 1);
+  const roof = new THREE.Mesh(rg, roofMat); roof.position.y = 2.5 + 2.3 * 0.24; house.add(roof);
+  scene.add(g); scene.add(house);
+  koinobori.push({ g, yg, house, streamers: CARPS.map(makeStreamer), k: null, side: 1 });
+}
+const sakura = [];
+const sakuraMats = [lam('#f4c8d4'), lam('#f7d8e0'), lam('#eeb8c8')], trunkMat = lam('#6a4d3c');
+for (let i = 0; i < 8; i++) {
+  const g = new THREE.Group();
+  const tr = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, 2.4, 6), trunkMat); tr.position.y = 1.2; g.add(tr);
+  for (let j = 0; j < 4; j++) { const b = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 1), sakuraMats[(i + j) % 3]); b.position.set((j % 2 ? 0.8 : -0.7) * (j > 1 ? 0.6 : 1), 2.7 + (j > 1 ? 0.7 : 0), (j - 1.5) * 0.5); b.scale.setScalar(1.25 - j * 0.12); g.add(b); }
+  scene.add(g); sakura.push({ g, k: null });
+}
+const signs = [];
+function signTex(m) {
+  return canvasTex(128, 64, (g, w, h) => {
+    g.fillStyle = '#d9c39a'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 12; i++) { g.fillStyle = 'rgba(120,90,50,.18)'; g.fillRect(0, prand() * h, w, 1.5); }
+    g.strokeStyle = '#6a4a30'; g.lineWidth = 4; g.strokeRect(2, 2, w - 4, h - 4);
+    g.fillStyle = '#2a2016'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `34px ${FD}`; g.fillText(`${m}m`, w / 2, h / 2 + 2);
+  });
+}
+for (let i = 0; i < 4; i++) {
+  const g = new THREE.Group();
+  const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.8, 0.06), woodDark); post.position.y = 0.4; g.add(post);
+  const bmat = lam('#ffffff', { map: signTex(0) }), board = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.26, 0.52), [woodMat, woodMat, woodMat, woodMat, bmat, bmat]);
+  board.position.y = 0.78; board.rotation.y = Math.PI / 2; g.add(board);
+  scene.add(g); signs.push({ g, bmat, m: -1 });
+}
+const _at = {};
+function placeOnPath(obj, s, lat, yOff = 0, groundLevel = false) {
+  const c = game.course; c.at(s, _at);
+  const rx = -Math.sin(_at.psi), rz = Math.cos(_at.psi);
+  obj.position.set(_at.x + rx * lat, (groundLevel ? GY : profileY(_at.y, Math.abs(lat))) + yOff, _at.z + rz * lat);
+  return _at.psi;
+}
+function syncProps(cs, dt, t) {
+  const c = game.course, Wn = windNow;
+  // 道ばたの風車: 14m ごと（左右どちらか、土手の肩）
+  const d0 = Math.floor((cs - 8) / 14);
+  decor.forEach((d, i) => {
+    const k = d0 + ((i - d0) % decor.length + decor.length) % decor.length;
+    if (d.k !== k) {
+      d.k = k; const s = k * 14 + 6 + hsh(k, 1) * 6, side = hsh(k, 2) < 0.5 ? -1 : 1;
+      d.g.visible = s > 2 && !isBridge(c, s);
+      const psi = placeOnPath(d.g, s, side * (ROAD + SHO * 0.5 + 0.08 * hsh(k, 3)), -0.02);
+      d.yaw = psi + (hsh(k, 4) * 2 - 1) * 1.3 + (hsh(k, 5) < 0.3 ? Math.PI : 0); d.g.rotation.y = -d.yaw; d.om = 0;
+    }
+    // 自然の風を、その向きで受けて回る
+    const ax = -(Wn.wx * Math.cos(d.yaw) + Wn.wz * Math.sin(d.yaw)), tgt = Math.max(0, PH.G * ax * 0.95 - 0.4);
+    d.om += (tgt - d.om) * Math.min(1, dt * 1.4); spinPin(d.p, d.om, dt);
+  });
+  // こいのぼり: 65m ごと（田んぼの中の家の庭）
+  const kk0 = Math.floor((cs + 25 - 35) / 65);
+  const U = Wn.U, dl = Math.hypot(Wn.wx, Wn.wz) || 1, dx = Wn.wx / dl, dz = Wn.wz / dl;
+  koinobori.forEach((kb, i) => {
+    const k = kk0 + ((i - kk0) % 3 + 3) % 3;
+    if (kb.k !== k) {
+      kb.k = k; const s = 35 + k * 65, side = hsh(k, 6) < 0.5 ? -1 : 1, lat = side * (5.8 + hsh(k, 7) * 2.5);
+      kb.s = s; kb.side = side; placeOnPath(kb.g, s, lat, 0, true);
+      const psi = placeOnPath(kb.house, s + 4 + hsh(k, 8) * 3, lat + side * 5.5, 0, true); kb.house.rotation.y = -psi + (hsh(k, 9) - 0.5) * 0.6;
+    }
+    const near = Math.abs(kb.s - cs) < 120;
+    kb.g.visible = kb.house.visible = near;
+    for (const S of kb.streamers) { S.m.visible = near; if (near) bendStreamer(S, kb.g.position.x + dx * 0.08, GY + S.y, kb.g.position.z + dz * 0.08, dx, dz, U, t); }
+    if (near) { kb.yg.g.rotation.y = -Math.atan2(-dz, -dx); spinPin(kb.yg, Math.max(0, U * 1.4 - 0.5), dt); }
+  });
+  // 桜: 27m ごと（田んぼの向こう）
+  const q0 = Math.floor((cs - 20) / 27);
+  sakura.forEach((sk, i) => {
+    const k = q0 + ((i - q0) % sakura.length + sakura.length) % sakura.length;
+    if (sk.k !== k) { sk.k = k; const s = k * 27 + 13, side = hsh(k, 11) < 0.5 ? -1 : 1; placeOnPath(sk.g, s, side * (10 + hsh(k, 12) * 14), 0, true); sk.g.rotation.y = hsh(k, 13) * 6; sk.g.scale.setScalar(0.8 + hsh(k, 14) * 0.5); }
+  });
+  // 距離の立て札: 50m ごと（左の肩）
+  const m0 = Math.max(1, Math.floor((cs - 6) / 50));
+  signs.forEach((sg, i) => {
+    const m = (m0 + i) * 50;
+    if (sg.m !== m) { sg.m = m; if (sg.bmat.map) sg.bmat.map.dispose(); sg.bmat.map = signTex(m); sg.bmat.needsUpdate = true; const psi = placeOnPath(sg.g, m, -(ROAD + SHO + 0.15), -0.03); sg.g.rotation.y = -psi; sg.g.visible = !isBridge(c, m); }
+  });
+  ground.position.x = camera.position.x; ground.position.z = camera.position.z;
+  paddyTex.offset.set(camera.position.x / GTILE, -camera.position.z / GTILE);
+  creekTex.offset.y -= dt * 0.12;
+}
+
+/* 子ども（風車を持って走る）: 円柱と球だけ。毎コマ、物理の速さ・風車の向きから組み立てる */
+const M = {
+  skin: lam('#f0c49a'), shirt: lam('#f4f4ee'), stripe: lam('#3a7fc0'), shorts: lam('#2d4f7c'), hair: lam('#2a2220'), cap: lam('#f2c230'),
+  sock: lam('#f4f0e8'), shoe: lam('#c8402e'), bag: lam('#c8402e'),
+};
+const Yv = new THREE.Vector3(0, 1, 0);
+const cylD = (r0, r1, len, mat, seg = 8) => { const g = new THREE.CylinderGeometry(r0, r1, len, seg); g.translate(0, -len / 2, 0); return new THREE.Mesh(g, mat); };
+const cylU = (r0, r1, mat, seg = 8) => { const g = new THREE.CylinderGeometry(r1, r0, 1, seg); g.translate(0, 0.5, 0); return new THREE.Mesh(g, mat); };
+const kidG = new THREE.Group(); scene.add(kidG);
+const hipG = new THREE.Group(); hipG.position.y = 0.56; kidG.add(hipG);
+const legs = [-1, 1].map(s => {
+  const th = new THREE.Group(); th.position.set(0, 0, s * 0.075); hipG.add(th);
+  th.add(cylD(0.052, 0.045, 0.27, M.shorts));
+  const kn = new THREE.Group(); kn.position.y = -0.26; th.add(kn);
+  kn.add(cylD(0.04, 0.034, 0.25, M.skin));
+  const sock = cylD(0.036, 0.036, 0.06, M.sock); sock.position.y = -0.2; kn.add(sock);
+  const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.055, 0.08), M.shoe); shoe.position.set(0.03, -0.28, 0); kn.add(shoe);
+  return { th, kn };
+});
+const upG = new THREE.Group(); hipG.add(upG);
+{
+  const hips = cylD(0.125, 0.12, 0.12, M.shorts, 12); hips.position.y = 0.08; upG.add(hips);
+  const torso = cylD(0.105, 0.12, 0.34, M.shirt, 12); torso.position.y = 0.4; upG.add(torso);
+  const band = cylD(0.122, 0.122, 0.05, M.stripe, 12); band.position.y = 0.22; upG.add(band);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.105, 14, 10), M.skin); head.position.y = 0.52; upG.add(head);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.109, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.6), M.hair); hair.position.y = 0.525; hair.rotation.z = 0.5; upG.add(hair);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.115, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.42), M.cap); cap.position.y = 0.535; cap.rotation.z = -0.15; upG.add(cap);
+  const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.012, 16), M.cap); brim.position.set(0.02, 0.555, 0); brim.rotation.z = -0.15; upG.add(brim);
+  const bag = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.2, 0.18), M.bag); bag.position.set(-0.15, 0.3, 0); upG.add(bag);
+  // 目・ほっぺ（前から見たとき）
+  const eyeM = lam('#221c1a'), chM = lam('#f0907a');
+  for (const sd of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.014, 6, 4), eyeM); e.position.set(0.095, 0.53, sd * 0.038); upG.add(e); const ch = new THREE.Mesh(new THREE.SphereGeometry(0.018, 6, 4), chM); ch.position.set(0.085, 0.5, sd * 0.06); ch.scale.set(0.5, 0.6, 1); upG.add(ch); }
+}
+const lArm = new THREE.Group(); lArm.position.set(0, 0.36, -0.15); upG.add(lArm);
+lArm.add(cylD(0.032, 0.028, 0.19, M.shirt));
+const lFore = new THREE.Group(); lFore.position.y = -0.18; lArm.add(lFore);
+lFore.add(cylD(0.027, 0.025, 0.17, M.skin));
+{ const h = new THREE.Mesh(new THREE.SphereGeometry(0.034, 8, 6), M.skin); h.position.y = -0.18; lFore.add(h); }
+// 右手（風車を持つ）: 肩→ひじ→手 を毎コマつなぐ
+const rUp = cylU(0.032, 0.028, M.shirt), rFo = cylU(0.027, 0.025, M.skin), rHand = new THREE.Mesh(new THREE.SphereGeometry(0.036, 8, 6), M.skin);
+kidG.add(rUp); kidG.add(rFo); kidG.add(rHand);
+const stick = cylU(0.007, 0.007, stickMat, 5); kidG.add(stick);
+const myPin = makePinwheel(0.2, 0); kidG.add(myPin.g);
+function blobTex() { return canvasTex(64, 64, (g) => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(40,50,30,.5)'); gr.addColorStop(0.6, 'rgba(40,50,30,.25)'); gr.addColorStop(1, 'rgba(40,50,30,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); }); }
+const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: blobTex(), transparent: true, depthWrite: false }));
+shadow.rotation.x = -Math.PI / 2; scene.add(shadow);
+const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3(), tmpV = new THREE.Vector3();
+function placeSeg(m, a, b) { _d.subVectors(b, a); const L = _d.length(); m.position.copy(a); if (L < 1e-6) { m.scale.set(1, 1e-4, 1); return; } m.quaternion.setFromUnitVectors(Yv, _d.multiplyScalar(1 / L)); m.scale.set(1, L, 1); }
+function ik(A, T, l1, l2, hint, out) {
+  _d.subVectors(T, A); let d = _d.length(); const dir = _d.clone().multiplyScalar(1 / Math.max(d, 1e-6)); d = Math.min(d, l1 + l2 - 1e-4);
+  const a = (l1 * l1 - l2 * l2 + d * d) / (2 * d), h = Math.sqrt(Math.max(0, l1 * l1 - a * a));
+  const perp = hint.clone().addScaledVector(dir, -hint.dot(dir)).normalize();
+  return out.copy(A).addScaledVector(dir, a).addScaledVector(perp, h);
+}
+const kidA = { ph: 0, lastSin: 0, bob: 0, lean: 0, x: 0, y: 0, z: 0, psi: 0 };
+function syncKid(g, dt) {
+  const c = g.course; c.at(g.s, _at);
+  const v = g.v, A = kidA;
+  A.x = _at.x; A.y = _at.y; A.z = _at.z; A.psi = _at.psi;
+  kidG.position.set(_at.x, _at.y, _at.z); kidG.rotation.y = -_at.psi;
+  // 走る足どり（速いほど大きく・速く）
+  const moving = v > 0.05, amp = clamp(0.22 + 0.13 * v, 0, 0.95);
+  if (moving) A.ph += dt * 2 * Math.PI * (0.75 + 0.2 * v);
+  const sn = Math.sin(A.ph);
+  if (moving && Math.sign(sn) !== Math.sign(A.lastSin) && state !== 'skip') footstep(v);
+  A.lastSin = sn;
+  legs.forEach((L, i) => { const ph = A.ph + (i ? Math.PI : 0), sw = Math.sin(ph); L.th.rotation.z = moving ? sw * amp : 0; L.kn.rotation.z = moving ? -(0.15 + 0.9 * Math.max(0, Math.sin(ph + 1.3))) * amp : 0; });
+  const tired = g.tired || g.B < 0.15;
+  A.lean += ((0.04 + 0.045 * v + (tired ? 0.18 : 0)) - A.lean) * Math.min(1, dt * 6);
+  upG.rotation.z = -A.lean;
+  const bob = moving ? Math.abs(Math.cos(A.ph)) * 0.025 * clamp(v / 2, 0.3, 1.4) : 0;
+  hipG.position.y = 0.56 + bob - (tired ? 0.02 : 0);
+  lArm.rotation.z = moving ? -Math.sin(A.ph) * amp * 0.9 : 0.05; lFore.rotation.z = 0.4 + 0.5 * amp;
+  // 右手: 胸の前、少し右・上に 風車をかかげる。風車の向きに合わせて手首を返す
+  const al = g.a;
+  const sh = _a.set(0.02 + 0.36 * Math.sin(A.lean), 0.56 + bob + 0.36 * Math.cos(A.lean), 0.15);
+  const hand = _b.set(0.3 + 0.03 * Math.cos(al), 1.0 + bob * 0.6 + (reduceMotion ? 0 : Math.sin(A.ph * 2) * 0.008 * v), 0.3 + 0.05 * Math.sin(al));
+  const el = ik(sh, hand, 0.19, 0.18, _c.set(-0.2, -1, 0.6), new THREE.Vector3());
+  placeSeg(rUp, sh, el); placeSeg(rFo, el, hand); rHand.position.copy(hand);
+  const hub = _c.copy(hand).add(_d.set(0.015, 0.34, 0));
+  placeSeg(stick, hand.clone().add(_d.set(0, -0.06, 0)), hub);
+  myPin.g.position.copy(hub); myPin.g.rotation.set(0, -al, 0.08);
+  spinPin(myPin, g.om, dt);
+  shadow.position.set(_at.x + 0.05, _at.y + 0.006, _at.z); shadow.scale.set(0.7, 0.5, 1); shadow.rotation.z = _at.psi;
+  return A;
+}
+
+/* 菜の花の花びら・風の筋（自然の風で流れる。風の向きと強さが見える） */
+const PET_N = 70, petGeo = new THREE.BufferGeometry(), petPos = new Float32Array(PET_N * 3);
+petGeo.setAttribute('position', new THREE.BufferAttribute(petPos, 3));
+const petTex = canvasTex(32, 32, g => { g.fillStyle = '#ffe466'; g.beginPath(); g.ellipse(16, 16, 13, 8, 0.5, 0, 7); g.fill(); });
+const petals = new THREE.Points(petGeo, new THREE.PointsMaterial({ size: 0.07, map: petTex, transparent: true, depthWrite: false, alphaTest: 0.3 }));
+petals.frustumCulled = false; scene.add(petals);
+const petP = Array.from({ length: PET_N }, () => ({ x: 0, y: -9, z: 0, ph: Math.random() * 6 }));
+const STK_N = 16, stkGeo = new THREE.BufferGeometry(), stkPos = new Float32Array(STK_N * 6);
+stkGeo.setAttribute('position', new THREE.BufferAttribute(stkPos, 3));
+const stkMat = new THREE.LineBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.4, depthWrite: false });
+const streaks = new THREE.LineSegments(stkGeo, stkMat); streaks.frustumCulled = false; scene.add(streaks);
+const stkP = Array.from({ length: STK_N }, () => ({ x: 0, y: -9, z: 0, life: 9, dur: 1 }));
+let windNow = { U: 0, chi: 0, wx: 0, wz: 0, ev: null, e: 0 };
+function respawnAround(p, K, ux, uz, spread) {
+  // 風上の側に出す
+  const a = Math.random() * Math.PI * 2, r = Math.random() * spread;
+  p.x = K.x - ux * spread * 0.8 + Math.cos(a) * r; p.z = K.z - uz * spread * 0.8 + Math.sin(a) * r; p.y = K.y + 0.2 + Math.random() * 2.2;
+}
+function airStep(dt, K, t) {
+  const Wn = windNow, U = Math.hypot(Wn.wx, Wn.wz), ux = U > 0.01 ? Wn.wx / U : 0, uz = U > 0.01 ? Wn.wz / U : 0;
+  for (let i = 0; i < PET_N; i++) {
+    const p = petP[i];
+    if (p.y < K.y - 1 || Math.hypot(p.x - K.x, p.z - K.z) > 13) respawnAround(p, K, ux, uz, 9);
+    const tb = Math.sin(t * 1.7 + p.ph) * 0.4 + Math.sin(t * 3.1 + p.ph * 2) * 0.2;
+    p.x += (Wn.wx + tb * 0.5) * dt; p.z += (Wn.wz + Math.cos(t * 1.3 + p.ph) * 0.3) * dt; p.y += (Math.sin(t * 2.1 + p.ph) * 0.25 - 0.12 + (U < 0.6 ? -0.15 : 0)) * dt;
+    petPos[i * 3] = p.x; petPos[i * 3 + 1] = p.y; petPos[i * 3 + 2] = p.z;
+  }
+  petGeo.attributes.position.needsUpdate = true;
+  const L = clamp(U * 0.28, 0, 1.6);
+  for (let i = 0; i < STK_N; i++) {
+    const p = stkP[i];
+    p.life += dt;
+    if (p.life > p.dur) { p.life = 0; p.dur = 0.8 + Math.random() * 0.8; respawnAround(p, K, ux, uz, 7); }
+    p.x += Wn.wx * dt * 1.1; p.z += Wn.wz * dt * 1.1;
+    const on = U > 0.5 && Math.sin(Math.PI * p.life / p.dur) > 0.1;
+    const l = on ? L * Math.sin(Math.PI * p.life / p.dur) : 0;
+    stkPos.set([p.x, p.y, p.z, p.x - ux * l, p.y, p.z - uz * l], i * 6);
+  }
+  stkGeo.attributes.position.needsUpdate = true;
+  stkMat.opacity = clamp(0.12 + U * 0.07, 0, 0.5);
+}
+
+/* ---------- ゲーム状態 ---------- */
+let game = null, bot = null, botStart = false, state = 'loading';    // loading | title | play | over | skip
+let tt = 0, overShownAt = 0, failAt = -1, pops = [], frozen = false, ff = false, newShown = false, base = 0, demoEnd = -1;
+let shake = 0, pressing = false, trail = [], lastSample = -1, aimUI = 0, drag = null, dragged = false, keyRun = false, keyDir = { l: false, r: false }, lastAdv = 0;
+const LAG = 0.08, FF = 4;   // 物理は画面より 0.08 秒うしろを進む（押した時刻をそのまま使うため）。早送りは 4 倍
+const evTime = e => (e.timeStamp > 1e3 && Math.abs(e.timeStamp - performance.now()) < 5000 ? e.timeStamp : performance.now());
+function newGame(s, botSkill) {
+  game = makeGame(s);
+  bot = botSkill ? makeBot(game, SKILLS[botSkill], mulberry((s * 7 + 3) >>> 0)) : null;
+  pops = []; failAt = -1; newShown = false; trail = []; lastSample = -1; shake = 0; aimUI = 0; drag = null; dragged = false; pressing = false; keyRun = false; keyDir = { l: false, r: false };
+  windAt(game.wind, 0, game.W); windNow = game.W;
+  base = performance.now() / 1000 + LAG; lastAdv = performance.now() / 1000; resetChunks(); cam.init = true;
+  for (const d of decor) d.k = null; for (const k of koinobori) k.k = null; for (const s of sakura) s.k = null; for (const s of signs) s.m = -1;
+  for (const p of petP) p.y = -99; for (const p of stkP) p.life = 9;
+}
+
+/* ---------- 1ステップ（物理は 1/200 秒きざみ。描画のコマ数によらない。入力は押した時刻で物理に入る） ---------- */
+function advancePhys() {
+  if (!game) return;
+  const now = performance.now() / 1000;
+  if (frozen) { base = now - game.t - LAG; lastAdv = now; return; }
+  if (ff && state === 'play') base -= (now - lastAdv) * (FF - 1);   // 早送り（時間が速く進むだけ。入力は物理の時刻で効くので結果は同じ）
+  lastAdv = now;
+  let target = now - base - LAG;
+  if (target - game.t > 0.25 * (ff ? FF : 1)) { base += target - game.t - 0.25 * (ff ? FF : 1); target = now - base - LAG; }   // タブを離れていた・重かった: 置いていかない
+  let k = 0;
+  while (game.t + PH.DT <= target && k < 4000) { if (bot) bot.step(); stepGame(game); if (game.events.length) handleEvents(); k++; }
+  windNow = game.W;
+}
+// 押した・離した・指をずらした（時刻つき）→ 物理の時刻にして入れる
+function gameTimeOf(ms) { return Math.max(game.t, ms / 1000 - base); }
+function input(kind, v, ms) { if (!game || bot || state !== 'play' || !(game.phase === 'go' || game.phase === 'ready')) return; gInput(game, gameTimeOf(ms), kind, v); }
+function step(dt) {
+  tt += dt;
+  advancePhys();
+  if (state === 'title') demoStep();
+  if (state === 'play' && failAt >= 0) showOver();
+  if (state === 'play' && game && (game.phase === 'go' || game.phase === 'stop') && game.t - lastSample >= 0.25) { lastSample = game.t; trail.push({ t: game.t - game.t0, om: game.om, ev: game.W.ev ? (game.W.ev.lull ? 1 : 2) : 0 }); if (trail.length > 6000) trail.splice(0, 2); }
+  if (shake > 0) shake -= dt;
+  for (const p of pops) p.life += dt;
+  pops = pops.filter(p => p.life < p.dur);
+}
+function addPop(text, opt = {}) {
+  if (opt.kind !== 'onoma') pops = pops.filter(p => p.kind !== (opt.kind || 'mid'));
+  pops.push({ text, sub: opt.sub, life: 0, dur: opt.dur || 1.4, kind: opt.kind || 'mid', size: opt.size || 26, col: opt.col, wx: opt.wx, wy: opt.wy, wz: opt.wz });
+  if (pops.length > 8) pops.shift();
+}
+const STOP_TEXT = { walk: '歩いているだけでは 風が足りない', lull: '風がやんで 止まった', tail: '追い風で 風が足りない', breath: '息切れで 走れなかった', aim: '面が 風に向いていなかった', mud: 'ぬかるみで 走れなかった', up: 'のぼり坂で 速く走れなかった', slow: '風が足りなかった' };
+const FEAT_POP = { mud: ['ぬかるみ', '速く走れない'], up: ['のぼり坂', '息が切れやすい'], down: ['くだり坂', '速く走れる'], bridge: ['橋', '川の上は 風が強い'] };
+function handleEvents() {
+  const loud = state === 'play';
+  for (const e of game.events) {
+    if (!loud) continue;
+    if (e.type === 'gust') {
+      const tail = (game.W.wx * Math.cos(game.psi) + game.W.wz * Math.sin(game.psi)) > 0.4 * Math.hypot(game.W.wx, game.W.wz);
+      addPop('突風！', { sub: tail ? 'うしろから…走っても回りにくい' : '風車を風に向けて！', col: '#fff6c8', size: 32, dur: 1.6 }); sGust();
+    } else if (e.type === 'lull') { addPop('風がやんだ', { sub: '走って 風を作れ！', col: '#fff6c8', size: 30, dur: 1.8 }); }
+    else if (e.type === 'tired') { addPop('息切れ！', { sub: '少し歩いて 息をととのえる', kind: 'hot', size: 24, dur: 1.6, col: '#ffd0c0' }); sGasp(); }
+    else if (e.type === 'feat') { const fp = FEAT_POP[e.f.type]; if (fp) addPop(fp[0], { sub: rec.plays < 6 ? fp[1] : null, kind: 'tag', size: 20, dur: 1.4 }); }
+    else if (e.type === 'mile') { addPop(`${e.m}m！`, { kind: 'mile', size: 26, dur: 1.1, col: '#fff6c8' }); sMile(e.m); }
+    else if (e.type === 'stop') { addPop('とまった…', { sub: STOP_TEXT[e.cause], size: 36, dur: 2.2, col: '#fbf6e6' }); sStop(); if (navigator.vibrate) try { navigator.vibrate([10, 40, 10]); } catch {} }
+    else if (e.type === 'over') { failAt = tt; }
+  }
+  if (state === 'play' && game.phase === 'go' && rec.best > 0 && !newShown && !botStart && game.t - game.t0 > rec.best && rec.plays > 0) { newShown = true; addPop('自己ベスト更新！', { kind: 'hot', size: 24, dur: 1.8, col: '#ffe08a' }); sChime(); }
+  if (state !== 'play' && game.events.some(e => e.type === 'over')) failAt = tt;
+  game.events.length = 0;
+}
+// タイトル背景のデモ: ボットが走っている（音なし）
+function newDemo() { newGame(nextSeed(), 'good'); demoEnd = -1; }
+function demoStep() { if (game.phase === 'over' || game.t > 70) { if (demoEnd < 0) demoEnd = tt; if (tt - demoEnd > 1.0) newDemo(); } }
+
+/* ---------- 描画 ---------- */
+const cam = { x: 0, y: 2, z: 0, lx: 0, ly: 0, lz: 0, psi: 0, sh: 0, init: true };
+let camOver = null;   // 調べる用（#debug の lookAt）
+function camTarget(K) {
+  const ui = state === 'title' || state === 'over', port = W / H < 0.75;
+  const f = [Math.cos(cam.psi), Math.sin(cam.psi)], r = [-f[1], f[0]];
+  const P = (back, side, up) => [K.x - f[0] * back + r[0] * side, K.y + up, K.z - f[1] * back + r[1] * side];
+  let p, l, sh = 0;
+  if (ui) { p = port ? P(-3.6, 2.6, 1.5) : P(-4.4, 2.8, 1.9); l = P(0.3, -0.2, 0.9); sh = port ? 0.22 : 0.3; }       // ななめ前から（走ってくる子ども・うしろに道と菜の花）
+  else if (port) { p = P(3.3, 0.55, 1.95); l = P(-2.6, 0.3, 0.75); }                   // うしろ少し右上から（風車が見えるように）
+  else { p = P(3.1, 0.7, 1.75); l = P(-3.2, 0.25, 0.8); }
+  return { x: p[0], y: p[1], z: p[2], lx: l[0], ly: l[1], lz: l[2], sh };
+}
+function updateCamera(dt, K) {
+  if (cam.init) cam.psi = K.psi; else cam.psi += wrapA(K.psi - cam.psi) * Math.min(1, dt * 2.4);
+  const T = camTarget(K), k = cam.init ? 1 : Math.min(1, dt * 4);
+  cam.init = false;
+  for (const key of ['x', 'y', 'z', 'lx', 'ly', 'lz', 'sh']) cam[key] = lerp(cam[key], T[key], k);
+  if (Math.abs(cam.sh - (camera.view && camera.view.enabled ? camera.view.offsetY / H : 0)) > 1e-4) { if (cam.sh > 1e-3) camera.setViewOffset(W, H, 0, cam.sh * H, W, H); else camera.clearViewOffset(); }
+  let sx = 0, sy = 0;
+  if (shake > 0 && !reduceMotion) { const a = shake * 0.06; sx = (Math.random() - 0.5) * a; sy = (Math.random() - 0.5) * a; }
+  camera.position.set(cam.x + sx, cam.y + sy, cam.z);
+  camera.lookAt(cam.lx, cam.ly, cam.lz);
+  if (camOver) { camera.position.set(camOver[0], camOver[1], camOver[2]); camera.lookAt(camOver[3], camOver[4], camOver[5]); }
+  far.position.copy(camera.position); far.position.y = 0;
+  sun.target.position.set(cam.lx, 0, cam.lz); sun.position.copy(SUN_DIR).multiplyScalar(20).add(sun.target.position);
+}
+function project(x, y, z) { tmpV.set(x, y, z).project(camera); return { x: (tmpV.x + 1) / 2 * W, y: (1 - tmpV.y) / 2 * H, front: tmpV.z < 1 }; }
+let lastRenderDt = 1 / 60;
+function render(dt) {
+  if (!game) return;
+  lastRenderDt = dt;
+  const rdt = frozen ? 0 : dt;
+  syncChunks(game.s);
+  const K = syncKid(game, rdt);
+  updateCamera(dt, K);
+  syncProps(game.s, rdt, game.t);
+  airStep(rdt, K, game.t);
+  renderer.render(scene, camera);
+  drawFx();
+}
+function txt(s, x, y, size, fill = '#fbf6e6', stroke = 'rgba(30,40,30,.88)', lw = 6, font = FD) {
+  const wt = /^\d00 /.exec(font);
+  fx.font = wt ? `${wt[0]}${size}px ${font.slice(wt[0].length)}` : `${size}px ${font}`; fx.lineJoin = 'round'; fx.lineWidth = lw; fx.strokeStyle = stroke; fx.strokeText(s, x, y); fx.fillStyle = fill; fx.fillText(s, x, y);
+}
+const fmtT = t => t.toFixed(1);
+// HUD の置き場（画面の座標）
+function hudLayout() {
+  const sc = Math.min(1, W / 390 + 0.05), r = 50 * sc, cy = H - safeB - 22 - r - 16 * sc;
+  return { sc, dial: { x: W / 2, y: cy, r }, breath: { x: Math.max(30, W / 2 - 128 * sc), y0: cy - r, y1: cy + r }, spin: { x: Math.min(W - 30, W / 2 + 128 * sc), y0: cy - r, y1: cy + r } };
+}
+const OM_MAX = 9;
+const omY = (om, y0, y1) => y1 - (y1 - y0) * Math.sqrt(clamp(om / OM_MAX, 0, 1));
+function drawFx() {
+  fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fx.clearRect(0, 0, W, H);
+  if (!game || state === 'loading') return;
+  const g = game, Lh = hudLayout(), sc = Lh.sc;
+  fx.textAlign = 'center';
+  if (state === 'play' || state === 'skip') {
+    // 止まりかけ: まわりが少し暗く
+    if (g.phase === 'go' && g.om < 2.2 && g.t > 0.5) { const k = clamp((2.2 - g.om) / 1.1, 0, 1) * (0.6 + 0.4 * Math.sin(tt * 8)); const gr = fx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75); gr.addColorStop(0, 'rgba(120,40,20,0)'); gr.addColorStop(1, `rgba(120,40,20,${0.35 * k})`); fx.fillStyle = gr; fx.fillRect(0, 0, W, H); }
+    const T = g.phase === 'go' ? g.t - g.t0 : g.phase === 'ready' ? 0 : g.T;
+    txt(fmtT(T), W / 2 - 10 * sc, safeT + 60, 50 * sc, '#fbf6e6');
+    fx.textAlign = 'left'; txt('秒', W / 2 + fx.measureText(fmtT(T)).width / 2 - 4 * sc, safeT + 60, 18 * sc, '#fbf6e6', 'rgba(30,40,30,.85)', 5); fx.textAlign = 'center';
+    txt(`${Math.floor(g.s)} m`, W / 2, safeT + 84, 14 * sc, '#fbf6e6', 'rgba(30,40,30,.85)', 4, `700 ${FB}`);
+    if (rec.best > 0) { fx.textAlign = 'right'; txt(`最高 ${fmtT(rec.best)}秒`, W - 12, safeT + 24, 12 * sc, '#fbf6e6', 'rgba(30,40,30,.8)', 4, `700 ${FB}`); fx.textAlign = 'center'; }
+    if (ff) txt('早送り ▶▶', W / 2, safeT + 104, 12 * sc, '#fff6c8', 'rgba(30,40,30,.85)', 4, `700 ${FB}`);
+    drawTags(sc);
+    drawDial(Lh); drawBars(Lh);
+    // はじめの説明
+    if (g.phase === 'ready' && !bot) {
+      const ph = reduceMotion ? 1 : 0.75 + 0.25 * Math.sin(tt * 4);
+      fx.globalAlpha = ph; txt('押して、走りだせ！', W / 2, H * 0.34, 22 * sc, '#fff6c8', 'rgba(30,40,30,.9)', 6); fx.globalAlpha = 1;
+      txt('押している間 走る・離すと歩く', W / 2, H * 0.34 + 27 * sc, 13 * sc, '#fbf6e6', 'rgba(30,40,30,.85)', 4, `700 ${FB}`);
+    } else if (g.phase === 'go' && !bot && rec.plays < 3 && g.t - g.t0 < 9) {
+      const tg = g.t - g.t0, a = clamp((9 - tg) / 1.2, 0, 1) * clamp(tg / 0.3, 0, 1);
+      fx.globalAlpha = a;
+      txt(g.ranEver ? '指を ← → にずらすと 風車の向き' : '押している間 走る！', W / 2, H * 0.34, 20 * sc, '#fff6c8', 'rgba(30,40,30,.9)', 6);
+      txt(g.ranEver ? '白い矢印（見かけの風）に 面を向ける' : '離すと歩いて 息がもどる', W / 2, H * 0.34 + 26 * sc, 13 * sc, '#fbf6e6', 'rgba(30,40,30,.85)', 4, `700 ${FB}`);
+      fx.globalAlpha = 1;
+    }
+  }
+  for (const p of pops) {
+    const k = clamp(p.life / 0.12, 0, 1), out = clamp((p.dur - p.life) / 0.25, 0, 1);
+    fx.globalAlpha = Math.min(k, out);
+    if (p.kind === 'onoma') { const s = project(p.wx, p.wy, p.wz); if (s.front) txt(p.text, s.x, s.y - p.life * 30, p.size * sc, p.col, 'rgba(30,40,30,.9)', 5); }
+    else {
+      const y = p.kind === 'hot' ? safeT + 140 * sc : p.kind === 'tag' ? H * 0.42 : p.kind === 'mile' ? safeT + 122 * sc : H * 0.27 - p.life * 6;
+      txt(p.text, W / 2, y, p.size * sc, p.col || '#fbf6e6');
+      if (p.sub) txt(p.sub, W / 2, y + (p.kind === 'tag' ? 20 : 28) * sc, (p.kind === 'tag' ? 12 : 15) * sc, '#fbf6e6', 'rgba(30,40,30,.85)', 4, `700 ${FB}`);
+    }
+    fx.globalAlpha = 1;
+  }
+  fx.textAlign = 'start';
+}
+// 道の先の目印（曲がり角・ぬかるみ・坂・橋）
+const FEAT_TAG = { mud: 'ぬかるみ', up: 'のぼり坂', down: 'くだり坂', bridge: '橋' };
+function drawTags(sc) {
+  const g = game, c = g.course; if (g.phase !== 'go') return;
+  const items = [];
+  for (const f of c.feats) { if (f.s0 < g.s + 4) continue; if (f.s0 > g.s + 30) break; items.push({ s: f.s0, t: FEAT_TAG[f.type] }); }
+  for (const p of c.pieces) { if (!p.k || p.s0 < g.s + 4) continue; if (p.s0 > g.s + 30) break; const ang = Math.round(Math.abs(p.ang) / DEG / 15) * 15; items.push({ s: p.s0, t: p.ang > 0 ? `右へ曲がる ${ang}°` : `左へ曲がる ${ang}°`, curve: true }); }
+  const shown = [];
+  for (const it of items) {
+    c.at(it.s, _at);
+    const s = project(_at.x, _at.y + 0.1, _at.z); if (!s.front || s.y > H * 0.7) continue;
+    if (shown.some(p => Math.abs(p.y - s.y) < 30 * sc && Math.abs(p.x - s.x) < 100)) continue; shown.push(s);
+    const a = clamp((g.s + 30 - it.s) / 6, 0, 1);
+    fx.globalAlpha = a * 0.95;
+    fx.strokeStyle = 'rgba(255,250,220,.8)'; fx.lineWidth = 2; fx.beginPath(); fx.moveTo(s.x, s.y); fx.lineTo(s.x, s.y - 22 * sc); fx.stroke();
+    txt(it.t, s.x, s.y - 27 * sc, (it.curve ? 12 : 14) * sc, it.curve ? '#fbf6e6' : '#fff2a8', 'rgba(30,40,30,.88)', 4, it.curve ? `700 ${FB}` : FD);
+    fx.globalAlpha = 1;
+  }
+}
+// 角度（走る向きから。＋＝右）→ 画面の向き（上が前）
+const scrDir = a => [Math.sin(a), -Math.cos(a)];
+function arrow(cx, cy, a, r0, r1, col, lw) {
+  // 外側 r1 から中心へ向かって r0 まで（風が吹いてくる向き a から）
+  const [dx, dy] = scrDir(a), x0 = cx + dx * r1, y0 = cy + dy * r1, x1 = cx + dx * r0, y1 = cy + dy * r0;
+  fx.strokeStyle = col; fx.lineWidth = lw; fx.lineCap = 'round'; fx.beginPath(); fx.moveTo(x0, y0); fx.lineTo(x1, y1); fx.stroke();
+  const ux = -dx, uy = -dy, hx = x1 - ux * lw * 0.2, hy = y1 - uy * lw * 0.2, s = lw * 1.9;
+  fx.fillStyle = col; fx.beginPath(); fx.moveTo(hx + ux * s, hy + uy * s); fx.lineTo(hx - uy * s * 0.75, hy + ux * s * 0.75); fx.lineTo(hx + uy * s * 0.75, hy - ux * s * 0.75); fx.closePath(); fx.fill();
+}
+// 風の目盛り: 上が走る向き。赤＝自然の風（こいのぼり）、白＝見かけの風。真ん中の風車の面がどちらを向いているか
+function drawDial(Lh) {
+  const g = game, { x: cx, y: cy, r } = Lh.dial, sc = Lh.sc;
+  fx.fillStyle = 'rgba(28,40,30,.42)'; fx.beginPath(); fx.arc(cx, cy, r + 6, 0, 7); fx.fill();
+  fx.strokeStyle = 'rgba(250,246,230,.5)'; fx.lineWidth = 1.5; fx.beginPath(); fx.arc(cx, cy, r, 0, 7); fx.stroke();
+  // 前の印
+  fx.fillStyle = 'rgba(250,246,230,.8)'; fx.beginPath(); fx.moveTo(cx, cy - r - 4); fx.lineTo(cx - 5, cy - r + 4); fx.lineTo(cx + 5, cy - r + 4); fx.closePath(); fx.fill();
+  const Wn = g.W, U = Wn.U;
+  if (U > 0.15) { const aN = wrapA(Wn.chi - g.psi); arrow(cx, cy, aN, r * 0.42, r * 0.42 + clamp(U / 5, 0.15, 1) * r * 0.55, 'rgba(232,90,60,.95)', 3.2 * sc); }
+  if (g.Am > 0.1) arrow(cx, cy, g.beta, r * 0.2, r * 0.2 + clamp(g.Am / 6, 0.12, 1) * r * 0.78, 'rgba(255,255,250,.95)', 4.2 * sc);
+  // 風車（面の線と、面が向いている向き）
+  const d = Math.abs(g.delta) / DEG, good = d < 15 && g.Am > 0.6, mid = d < 35;
+  const col = good ? '#8ee07a' : mid ? '#ffd860' : '#ff9070';
+  const [ax, ay] = scrDir(g.a), px = -ay, py = ax, L = r * 0.32;
+  fx.strokeStyle = col; fx.lineWidth = 5 * sc; fx.lineCap = 'round';
+  fx.beginPath(); fx.moveTo(cx - px * L, cy - py * L); fx.lineTo(cx + px * L, cy + py * L); fx.stroke();
+  fx.lineWidth = 2.5 * sc; fx.beginPath(); fx.moveTo(cx, cy); fx.lineTo(cx + ax * L * 0.9, cy + ay * L * 0.9); fx.stroke();
+  fx.fillStyle = col; fx.beginPath(); fx.arc(cx, cy, 3.5 * sc, 0, 7); fx.fill();
+  fx.textAlign = 'center';
+  const lab = g.Am < 0.6 ? '風がない' : good ? 'ぴったり！' : `ずれ ${Math.round(d)}°`;
+  txt(lab, cx, cy + r + 19 * sc, 12 * sc, good ? '#c8f5b8' : '#fbf6e6', 'rgba(30,40,30,.85)', 4, `700 ${FB}`);
+  // 押している / 走る・歩く
+  const st = g.phase !== 'go' ? '' : g.tired ? 'ぜえぜえ…' : g.run ? (g.v > 4.5 ? '全力！' : 'はしる') : 'あるく';
+  txt(st, cx, cy - r - 12 * sc, 12 * sc, g.tired ? '#ffd0c0' : '#fbf6e6', 'rgba(30,40,30,.85)', 4, `700 ${FB}`);
+}
+// 左: 息　右: 風車の回転（止まりかけの線）
+function drawBars(Lh) {
+  const g = game, sc = Lh.sc, bw = 12 * sc;
+  const bar = (x, y0, y1, k, col, lab, warn) => {
+    fx.fillStyle = 'rgba(28,40,30,.45)'; fx.beginPath(); fx.roundRect(x - bw / 2 - 3, y0 - 3, bw + 6, y1 - y0 + 6, 8); fx.fill();
+    const yk = y1 - (y1 - y0) * clamp(k, 0, 1);
+    fx.fillStyle = col; fx.beginPath(); fx.roundRect(x - bw / 2, yk, bw, Math.max(0.5, y1 - yk), 5); fx.fill();
+    fx.textAlign = 'center'; txt(lab, x, y1 + 19 * sc, 12 * sc, warn ? '#ffd0c0' : '#fbf6e6', 'rgba(30,40,30,.85)', 4, `700 ${FB}`);
+  };
+  const B = Lh.breath;
+  bar(B.x, B.y0, B.y1, g.B, g.tired ? `rgba(240,120,90,${0.6 + 0.4 * Math.sin(tt * 10)})` : g.B < 0.25 ? '#f0b060' : '#7cc8e0', 'いき', g.tired || g.B < 0.25);
+  const S = Lh.spin, k = Math.sqrt(clamp(g.om / OM_MAX, 0, 1));
+  bar(S.x, S.y0, S.y1, k, g.om < 2.2 ? `rgba(240,110,80,${0.7 + 0.3 * Math.sin(tt * 12)})` : g.om > 5 ? '#ffd040' : '#f2c230', 'かいてん', g.om < 2.2);
+  // 止まりかけの線
+  const ys = omY(PH.W_STOP, S.y0, S.y1);
+  fx.strokeStyle = 'rgba(255,120,90,.95)'; fx.lineWidth = 2; fx.beginPath(); fx.moveTo(S.x - bw / 2 - 6, ys); fx.lineTo(S.x + bw / 2 + 6, ys); fx.stroke();
+  fx.textAlign = 'left'; txt(`${g.om.toFixed(1)}`, S.x + bw / 2 + 6, omY(g.om, S.y0, S.y1) + 4, 11 * sc, '#fbf6e6', 'rgba(30,40,30,.85)', 3.5, `700 ${FB}`);
+  fx.textAlign = 'right'; txt(`${Math.round(g.B * 100)}`, B.x - bw / 2 - 6, B.y1 - (B.y1 - B.y0) * g.B + 4, 11 * sc, '#fbf6e6', 'rgba(30,40,30,.85)', 3.5, `700 ${FB}`);
+  fx.textAlign = 'center';
+}
+
+/* ---------- 結果 ---------- */
+function advice(g) {
+  const c = g.cause;
+  if (g.T < 3 && !g.ranEver) return 'はじめの「ふーっ」のぶんだけで止まった。押している間は走る。走ると前から風が来て、風車が回る。';
+  if (c === 'walk') return '一度も走らずに止まった。押している間は走る。歩いているだけでは、向かい風でないと回らない。';
+  if (c === 'lull') return '風がやんで止まった。無風のときは走って風を作る。そのときのために、息を残しておこう。';
+  if (c === 'tail') return '追い風で止まった。うしろからの風は、走っても見かけの風が弱い。追い風の前に息をためて、全力で走り抜けよう。';
+  if (c === 'breath') return '息切れで止まった。向かい風・横風のときは、歩いて（離して）息をもどそう。面を風に向ければ、歩いても回る。';
+  if (c === 'aim') return '風車の面が、見かけの風に向いていなかった。押したまま指を左右にずらして、白い矢印に面を向けよう。';
+  if (c === 'mud') return 'ぬかるみで速く走れずに止まった。ぬかるみの前に、風車をよく回しておこう。';
+  if (c === 'up') return 'のぼり坂で速く走れずに止まった。坂の前に息をためておこう。';
+  return '風が足りなかった。もう少し速く走るか、風車の面を白い矢印にぴったり向けよう。';
+}
+function showOver() {
+  if (state !== 'play') return;
+  state = 'over';
+  const T = r1(game.T), m = r1(game.s), isNew = T > rec.best;
+  if (!botStart) { rec.plays++; rec.total = r1(rec.total + T); rec.last = T; rec.lastM = m; if (isNew) rec.best = T; if (m > rec.bestM) rec.bestM = m; save(); }
+  $('oScore').innerHTML = `${T.toFixed(1)}<small>秒</small>`;
+  $('oSub').textContent = T >= 3 ? `回し続けた（${Math.round(m)}m）` : `すぐに止まっちゃった（${Math.round(m)}m）`;
+  $('oMsg').textContent = advice(game);
+  $('oNoren').innerHTML = (T >= 300 ? ['風', 'の', '神', 'さ', 'ま'] : T >= 180 ? ['風', 'の', '子'] : T >= 90 ? ['風', 'を', '読', 'む'] : T >= 45 ? ['よ', 'く', '回', 'っ', 'た'] : T >= 15 ? ['か', 'ら', 'か', 'ら'] : T >= 3 ? ['ひ', 'ゅ', 'る', 'る'] : ['と', 'ま', 'っ', 'た']).map(c => `<span>${c}</span>`).join('');
+  $('oBest').textContent = rec.plays ? `${rec.best.toFixed(1)}秒` : '—'; $('oPlays').textContent = rec.plays; $('oBestM').textContent = rec.plays ? `${Math.round(rec.bestM)}m` : '—';
+  $('newRec').hidden = !(isNew && T > 0 && rec.plays > 1 && !botStart);
+  $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({ text: `${shareText(T, m)}${isNew && T > 0 && rec.plays > 1 ? ' 自己ベスト！' : ''}\n`, url: gameUrl(), hashtags: '風車まわし' });
+  $('copyMsg').textContent = '画面タップ・スペースでもう一回';
+  $('over').hidden = false;
+  drawTrail();
+  overShownAt = performance.now();
+  $('retryBtn').focus({ preventScroll: true });
+}
+// 結果画面: 風車の回転の記録（突風・無風のところに色）
+function drawTrail() {
+  const c = $('oTrail'), r = c.getBoundingClientRect(), w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
+  c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  const T = Math.max(5, game.T + 1.5), X = t => 10 + (w - 20) * t / T, Y = om => h - 6 - (h - 14) * Math.sqrt(clamp(om / OM_MAX, 0, 1));
+  for (const p of trail) if (p.ev) { g.fillStyle = p.ev === 1 ? 'rgba(120,130,140,.1)' : 'rgba(60,130,200,.08)'; g.fillRect(X(p.t) - 1, 0, Math.max(2, (w - 20) * 0.25 / T + 1), h); }
+  g.strokeStyle = 'rgba(216,69,46,.7)'; g.setLineDash([4, 4]); g.lineWidth = 1; g.beginPath(); g.moveTo(10, Y(PH.W_STOP)); g.lineTo(w - 10, Y(PH.W_STOP)); g.stroke(); g.setLineDash([]);
+  g.strokeStyle = '#2d4f7c'; g.lineWidth = 2; g.lineJoin = 'round'; g.beginPath();
+  trail.forEach((p, i) => { if (i) g.lineTo(X(p.t), Y(p.om)); else g.moveTo(X(p.t), Y(p.om)); }); g.stroke();
+  g.fillStyle = '#d8452e'; g.font = `11px ${FD}`; g.textAlign = 'center'; g.fillText('とまった', clamp(X(game.T), 30, w - 30), 11);
+  if (trail.length < 3) { g.fillStyle = 'rgba(38,35,31,.5)'; g.font = `700 12px ${FB}`; g.fillText('からから… が すぐ止まった', w / 2, h / 2 + 4); }
+}
+const shareText = (T, m) => T >= 3 ? `🎏風車まわし ${T.toFixed(1)}秒・${Math.round(m)}m 回し続けた！` : `🎏風車まわし ${T.toFixed(1)}秒で すぐ止まっちゃった…`;
+
+/* ---------- シェア ---------- */
+// 公開先のURL。ローカルで開いたときもこれをシェアする
+const PUBLIC_URL = 'https://asobi.enludus.com/games/kazaguruma/';
+function gameUrl() {
+  try {
+    if (/^https?:$/.test(location.protocol) && location.hostname !== 'localhost') return location.origin + location.pathname;
+  } catch {}
+  return PUBLIC_URL;
+}
+function fillTitle() { $('tBest').textContent = rec.plays ? `${rec.best.toFixed(1)}秒` : '—'; $('tPlays').textContent = rec.plays; }
+
+/* ---------- 音（紙と竹と土の低い音。2kHz 以上は使わない。最後に 1.9kHz のローパス） ---------- */
+let ac = null, master = null, noiseBuf = null, windSrc = null, windLP = null, windGain = null, nextClick = 0;
+function wakeAudio() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1900; lp.Q.value = 0.5;
+      master = ac.createDynamicsCompressor(); master.threshold.value = -16; master.ratio.value = 5;
+      master.connect(lp).connect(ac.destination);
+      const len = ac.sampleRate * 2; noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0); let b = 0;
+      for (let i = 0; i < len; i++) { b = b * 0.7 + (Math.random() * 2 - 1) * 0.3; d[i] = b * 2; }
+      // 風の「ごー」: ずっと鳴っているノイズを、見かけの風の強さで開け閉めする
+      windSrc = ac.createBufferSource(); windSrc.buffer = noiseBuf; windSrc.loop = true;
+      windLP = ac.createBiquadFilter(); windLP.type = 'lowpass'; windLP.frequency.value = 200; windLP.Q.value = 0.8;
+      windGain = ac.createGain(); windGain.gain.value = 0;
+      windSrc.connect(windLP).connect(windGain).connect(master); windSrc.start();
+    }
+    if (ac.state === 'suspended') ac.resume();
+  } catch {}
+}
+const live = () => ac && state === 'play';
+function tone(freq, at, dur, vol, type = 'sine', f1) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at); if (f1) o.frequency.exponentialRampToValueAtTime(f1, at + dur);
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  o.connect(g).connect(master); o.start(at); o.stop(at + dur + 0.05);
+}
+function noise(at, dur, vol, type, freq, q = 1, lpf = 1500) {
+  const s = ac.createBufferSource(); s.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = lpf;
+  const g = ac.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.003); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  s.connect(f).connect(lp).connect(g).connect(master); s.start(at, Math.random() * 1.5); s.stop(at + dur + 0.05);
+  return f;
+}
+// 毎コマ: 風の音・風車の「からから」（紙が竹ひごをはじく、低く乾いた音。回転が速いほど間隔がつまる）
+function soundFrame() {
+  try {
+    if (!ac) return;
+    const on = live() && game && game.phase !== 'over' && !frozen, n0 = ac.currentTime;
+    windGain.gain.setTargetAtTime(on ? clamp(0.012 * Math.pow(game.Am, 1.25), 0, 0.12) : 0, n0, 0.15);
+    windLP.frequency.setTargetAtTime(on ? clamp(170 + 70 * game.Am, 170, 750) : 200, n0, 0.2);
+    if (!on || game.om < 0.6) { nextClick = n0 + 0.05; return; }
+    if (nextClick < n0) nextClick = n0;
+    const om = game.om, rate = clamp(om * 2.2, 1.5, 15), vol = 0.03 * clamp(om / 4, 0.35, 1.25);
+    let k = 0;
+    while (nextClick < n0 + 0.12 && k++ < 8) {
+      const f = 420 + Math.random() * 120;
+      noise(nextClick, 0.024, vol, 'bandpass', f, 2.2, 900);
+      tone(190 + Math.random() * 30, nextClick, 0.025, vol * 0.35, 'triangle');
+      nextClick += (1 / rate) * (0.85 + Math.random() * 0.3);
+    }
+  } catch {}
+}
+let stepAlt = 0;
+function footstep(v) {
+  try {
+    if (!live() || game.phase === 'over') return; const n0 = ac.currentTime, f = game.course.featAt(game.s), k = clamp(v / 4, 0.35, 1.1), a = (stepAlt = 1 - stepAlt) ? 1 : 0.92;
+    if (f && f.type === 'bridge') { tone(150 * a, n0, 0.07, 0.11 * k, 'triangle', 110); noise(n0, 0.04, 0.05 * k, 'lowpass', 500, 0.7, 600); return; }
+    if (f && f.type === 'mud') { const fl = noise(n0, 0.12, 0.07 * k, 'bandpass', 300, 1.5, 600); fl.frequency.exponentialRampToValueAtTime(180, n0 + 0.1); return; }
+    tone(95 * a, n0, 0.06, 0.09 * k, 'sine', 70); noise(n0, 0.04, 0.05 * k, 'lowpass', 380, 0.7, 450);
+  } catch {}
+}
+function sGust() { try { if (!live()) return; const n0 = ac.currentTime; const f = noise(n0, 1.0, 0.09, 'bandpass', 260, 0.8, 700); f.frequency.exponentialRampToValueAtTime(560, n0 + 0.5); f.frequency.exponentialRampToValueAtTime(240, n0 + 1.0); } catch {} }
+function sGasp() { try { if (!live()) return; const n0 = ac.currentTime; for (let i = 0; i < 3; i++) noise(n0 + i * 0.32, 0.14, 0.05, 'bandpass', 650, 1.2, 900); } catch {} }
+function sStop() { try { if (!live()) return; const n0 = ac.currentTime; tone(330, n0, 0.5, 0.06, 'triangle', 165); tone(247, n0 + 0.18, 0.6, 0.05, 'sine', 123); } catch {} }
+function sMile(m) { try { if (!live()) return; const n0 = ac.currentTime + 0.05; tone(m % 100 ? 392 : 523, n0, 0.3, 0.05); tone(m % 100 ? 494 : 659, n0 + 0.1, 0.35, 0.045); } catch {} }
+function sChime() { try { if (!live()) return; const n0 = ac.currentTime + 0.1; [[523, 0], [659, 0.1], [784, 0.2]].forEach(([f, t]) => tone(f, n0 + t, 0.45, 0.05)); } catch {} }
+
+/* ---------- ループ ---------- */
+let lastTs = performance.now();
+function frame() {
+  const now = performance.now();
+  const dt = Math.min(0.1, (now - lastTs) / 1000); lastTs = now;
+  step(dt);
+  render(Math.max(dt, 1 / 240));
+  soundFrame();
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 入力: 押している間＝走る。押したまま左右にずらした量＝風車の向き（ずらした距離だけで決まる）。時刻つきで物理へ ---------- */
+const AIM_W = 0.36;   // 画面の幅の 36% ずらすと 90°
+const aimPerPx = () => (90 * DEG) / (AIM_W * W);
+function start() {
+  wakeAudio(); state = 'play';
+  seed = upcomingSeed(); sessionPlays++;
+  $('title').hidden = true; $('over').hidden = true;
+  const bn = HASH.has('debug') && HASH.get('bot') && SKILLS[HASH.get('bot')] ? HASH.get('bot') : null;
+  botStart = !!bn;   // #bot=… で始めたプレイは記録しない（撮影・確認用）
+  newGame(nextSeed(), bn); frozen = false;
+  // #debug&skip=秒: はじめにその秒数だけ一気に進め、菜の花の道を走り・風車がよく回り・こいのぼりが見える瞬間で止める（OGP 撮影・確認用。bot=good と組み合わせる。freeze=1 で止めたまま）
+  if (HASH.has('debug') && +HASH.get('skip') > 0) skipTo(game.t + +HASH.get('skip'), HASH.get('pose') || 'nice');
+  if (HASH.has('debug') && HASH.get('ff') === '1') ff = true;   // #debug&ff=1: ずっと早送り（長いプレイの確認用。結果は同じ）
+}
+// pose=nice: 指定の秒数のあと、菜の花の土手（ぬかるみ・橋でない）を速く走っていて、風車がよく回り、こいのぼりが少し先に見えるところまで進める
+function skipTo(t1, pose = 'none') {
+  const quiet = state; state = 'skip';
+  const lim = t1 + 90, c = game.course;
+  while (game.phase !== 'over' && game.t < lim) {
+    if (bot) bot.step(); stepGame(game);
+    if (game.events.length) handleEvents();
+    if (game.t >= t1) {
+      if (pose !== 'nice') break;
+      const kd = ((game.s - 35) % 65 + 65) % 65, ahead = 65 - kd;
+      if (game.phase === 'go' && game.om > 3.2 && game.v > 2.0 && Math.abs(game.a) < 55 * DEG && !c.featAt(game.s) && !c.featAt(game.s + 6) && ahead > 7 && ahead < 16 && game.W.U > 1.2) break;
+    }
+  }
+  state = quiet;
+  pops = []; failAt = game.phase === 'over' ? tt : -1; shake = 0; cam.init = true;
+  trail = trail.filter(p => p.t <= game.t); lastSample = game.t;
+  base = performance.now() / 1000 - game.t - LAG; windNow = game.W;
+  for (const p of petP) p.y = -99;
+  if (HASH.get('freeze') === '1') frozen = true;
+}
+fxc.addEventListener('pointerdown', e => {
+  e.preventDefault(); wakeAudio();
+  if (state !== 'play' || !game) return;
+  if (game.phase === 'over') { if (failAt >= 0) showOver(); return; }
+  if (!(game.phase === 'go' || game.phase === 'ready') || drag) return;
+  try { fxc.setPointerCapture(e.pointerId); } catch {}
+  aimUI = game.aT;
+  drag = { id: e.pointerId, x0: e.clientX, a0: aimUI };
+  pressing = true; input('run', true, evTime(e));
+});
+fxc.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id || !game) return;
+  const a = clamp(drag.a0 + (e.clientX - drag.x0) * aimPerPx(), -PH.AIM_MAX, PH.AIM_MAX);
+  if (Math.abs(a - aimUI) > 0.2 * DEG) { aimUI = a; dragged = true; input('aim', a, evTime(e)); }
+});
+const ptrUp = e => {
+  if (!drag || e.pointerId !== drag.id) return;
+  drag = null; pressing = false;
+  input('run', false, evTime(e));
+};
+addEventListener('pointerup', ptrUp);
+addEventListener('pointercancel', ptrUp);
+fxc.addEventListener('contextmenu', e => e.preventDefault());
+for (const id of ['title', 'over']) {
+  $(id).addEventListener('pointerdown', e => {
+    if (e.target.closest('button, a') || state === 'loading') return;
+    if (id === 'over' && performance.now() - overShownAt < 400) return;
+    e.preventDefault(); start();
+  });
+}
+// キーボード: スペース / ↑ = 走る（押している間）、← → / A D = 風車の向きを回す（押している間）
+const KEYS = { ArrowLeft: 'l', KeyA: 'l', ArrowRight: 'r', KeyD: 'r' };
+const keyAim = ms => input('key', (keyDir.r ? 1 : 0) - (keyDir.l ? 1 : 0), ms);
+addEventListener('keydown', e => {
+  const c = e.code;
+  if (state === 'play') {
+    if (game.phase === 'over' && (c === 'Space' || c === 'Enter')) { e.preventDefault(); if (!e.repeat && failAt >= 0) showOver(); return; }
+    const k = KEYS[c];
+    if (k) { e.preventDefault(); if (e.repeat) return; wakeAudio(); keyDir[k] = true; keyAim(evTime(e)); return; }
+    if (c === 'Space' || c === 'ArrowUp' || c === 'KeyW') { e.preventDefault(); if (e.repeat) return; wakeAudio(); keyRun = true; input('run', true, evTime(e)); }
+    return;
+  }
+  if (c !== 'Space' && c !== 'Enter') return;
+  if (state === 'loading' || state === 'skip') return;
+  const el = document.activeElement;
+  if (el && el !== $('retryBtn') && el !== $('startBtn') && el.matches('button, a, input')) return;
+  if (state === 'over' && performance.now() - overShownAt < 400) { e.preventDefault(); return; }
+  e.preventDefault(); if (!e.repeat) start();
+});
+addEventListener('keyup', e => {
+  if (state !== 'play') return;
+  const k = KEYS[e.code];
+  if (k) { keyDir[k] = false; keyAim(evTime(e)); return; }
+  if ((e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') && keyRun) { keyRun = false; if (!drag) input('run', false, evTime(e)); }
+});
+addEventListener('blur', () => { if (state === 'play' && game) { drag = null; pressing = false; keyRun = false; keyDir = { l: false, r: false }; input('run', false, performance.now()); input('key', 0, performance.now()); } });
+$('startBtn').addEventListener('click', start);
+$('retryBtn').addEventListener('click', start);
+$('copyBtn').addEventListener('click', () => {
+  const text = `${shareText(rec.last, rec.lastM)} ${gameUrl()}`;
+  const msg = $('copyMsg');
+  const fallback = () => { msg.textContent = text; const r = document.createRange(); r.selectNodeContents(msg); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.style.userSelect = 'text'; };
+  try { navigator.clipboard.writeText(text).then(() => { msg.textContent = 'コピーしました'; }, fallback); } catch { fallback(); }
+});
+
+/* ---------- 調整・検証用（#debug のときだけ） ---------- */
+if (HASH.has('debug')) {
+  const q = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(p * (s.length - 1))]; };
+  // 同じ「押した・離した・ずらした」の時刻の列を、いろいろなコマ割りで物理に流して、結果がそろうか（lag = 物理の遅れ。ゲームは LAG 秒）
+  const replay = (log, seedR, fps, lag = LAG, quant = false) => {
+    const g = makeGame(seedR); let i = 0, tNow = 0;
+    while ((g.phase === 'go' || g.phase === 'ready') && tNow < 1500) {
+      tNow += 1 / fps;
+      while (i < log.length && log[i].t <= tNow) { gInput(g, Math.max(g.t, quant ? tNow - lag : log[i].t), log[i].kind, log[i].v); i++; }   // そのコマまでに届いた入力（quant: 時刻を使わずコマの時刻で効かせた場合）
+      while (g.t + PH.DT <= tNow - lag && (g.phase === 'go' || g.phase === 'ready')) { stepGame(g); g.events.length = 0; }
+    }
+    return { T: r3(g.T), m: r2(g.s), cause: g.cause };
+  };
+  const ideal = () => { const g = game, tr = terrOf(g.course.featAt(g.s)); return clamp(apparent(g.W, g.psi, g.v, g.a, tr.uk).beta, -PH.AIM_MAX, PH.AIM_MAX); };
+  const scr = (x, y, z) => { const s = project(x, y, z); return { x: Math.round(s.x), y: Math.round(s.y) }; };
+  window.__kazaguruma = {
+    info: () => {
+      if (!game) return null;
+      const g = game, tr = terrOf(g.course.featAt(g.s)), id = ideal(), f = g.course.featAt(g.s);
+      const uWalk = (() => { const ap = apparent(g.W, g.psi, PH.V_WALK * tr.wk, 0, tr.uk), al = clamp(ap.beta, -PH.AIM_MAX, PH.AIM_MAX); return apparent(g.W, g.psi, PH.V_WALK * tr.wk, al, tr.uk).u; })();
+      return {
+        state, phase: g.phase, t: r3(g.t), t0: r3(g.t0), T: r2(g.phase === 'go' ? g.t - g.t0 : g.T), s: r2(g.s), v: r2(g.v), B: r3(g.B), tired: g.tired, run: g.run,
+        om: r2(g.om), u: r2(g.u), apparent: { speed: r2(g.Am), fromDeg: Math.round(g.beta / DEG) },
+        wind: { U: r2(g.W.U), fromDeg: Math.round(wrapA(g.W.chi - g.psi) / DEG), tail: r2(g.W.wx * Math.cos(g.psi) + g.W.wz * Math.sin(g.psi)), ev: g.W.ev ? (g.W.ev.lull ? 'lull' : 'gust') : null },
+        aimDeg: r1(g.a / DEG), aimTargetDeg: r1(g.aT / DEG), deltaDeg: r1(g.delta / DEG),
+        meyasu: { idealAimDeg: r1(id / DEG), dragPx: Math.round((id - g.aT) / aimPerPx()), uWalkAligned: r2(uWalk), walkOK: uWalk > 2.0, omStop: PH.W_STOP },
+        feat: f ? f.type : null, curve: r3(g.course.pieceAt(g.s).k), cause: g.cause,
+        bot: !!bot, botStart, ff, frozen, rec, seed: g.seed, queue: g.queue.length, pressing, aimUI: r1(aimUI / DEG),
+      };
+    },
+    // 物理だけでボットに N 回遊ばせる: sim('first', 100) → [秒...]。opts.seed0、opts.tMax
+    sim: (skill = 'first', N = 50, opts = {}) => Array.from({ length: N }, (_, i) => r1(runBot(SKILLS[skill], (opts.seed0 ?? 1000) + i, opts).T)),
+    stats: (skill = 'first', N = 100, opts = {}) => {
+      const R = Array.from({ length: N }, (_, i) => runBot(SKILLS[skill], (opts.seed0 ?? 1000) + i, opts)), T = R.map(r => r.T), causes = {};
+      for (const r of R) causes[r.cause] = (causes[r.cause] || 0) + 1;
+      return { skill, N, p10: r1(q(T, 0.1)), p25: r1(q(T, 0.25)), p50: r1(q(T, 0.5)), p75: r1(q(T, 0.75)), p90: r1(q(T, 0.9)), min: r1(Math.min(...T)), max: r1(Math.max(...T)), ge10: R.filter(r => r.T >= 10).length / N, ge60: R.filter(r => r.T >= 60).length / N, ge120: R.filter(r => r.T >= 120).length / N, ge300: R.filter(r => r.T >= 300).length / N, mean: r1(T.reduce((a, b) => a + b, 0) / N), m50: Math.round(q(R.map(r => r.m), 0.5)), runShare50: r2(q(R.map(r => r.runT / Math.max(1, r.T)), 0.5)), causes };
+    },
+    // ボットの入力の列（時刻つき）を記録して、13 / 30 / 60 / 144 fps のコマ割りで流しなおす（frameQuantized は時刻を使わなかった場合のくらべ）
+    fpsCheck: (skill = 'good', seedR = 4242) => {
+      const r = runBot(SKILLS[skill], seedR, { log: true });
+      return { live: { T: r3(r.T), m: r2(r.m), cause: r.cause }, fps13: replay(r.log, seedR, 13), fps30: replay(r.log, seedR, 30), fps60: replay(r.log, seedR, 60), fps144: replay(r.log, seedR, 144), fps30frameQuantized: replay(r.log, seedR, 30, LAG, true), fps60frameQuantized: replay(r.log, seedR, 60, LAG, true), inputs: r.log.length };
+    },
+    // いまのプレイをボットに任せる（記録はしない）
+    autoplay: (skill = 'good') => { if (game && state === 'play') { bot = makeBot(game, SKILLS[skill], mulberry(nextSeed())); botStart = true; } },
+    skip: (s, pose = 'none') => skipTo(game.t + s, pose),
+    freeze: (on = true) => { frozen = on; },
+    ff: (on = true) => { ff = on; },
+    // 画面の座標（Playwright で押すため）
+    pinwheelScreen: () => { const v = myPin.g.getWorldPosition(new THREE.Vector3()); return scr(v.x, v.y, v.z); },
+    kidScreen: () => scr(kidA.x, kidA.y + 0.7, kidA.z),
+    koinoboriScreen: () => { const L = koinobori.filter(k => k.g.visible).map(k => ({ k, p: project(k.g.position.x, GY + 6.5, k.g.position.z) })).filter(o => o.p.front && o.p.x > 0 && o.p.x < W && o.p.y > 0 && o.p.y < H).sort((a, b) => Math.abs(a.k.s - game.s) - Math.abs(b.k.s - game.s)); return L.length ? { x: Math.round(L[0].p.x), y: Math.round(L[0].p.y), s: L[0].k.s } : null; },
+    dialScreen: () => { const L = hudLayout(); return { x: Math.round(L.dial.x), y: Math.round(L.dial.y), r: Math.round(L.dial.r) }; },
+    tapPoint: () => ({ x: Math.round(W / 2), y: Math.round(H * 0.5) }),
+    // 風車の向きを deg にするための指の動き（押す点 from → 動かす先 to）
+    dragFor: (deg, from = null) => { const f = from || { x: Math.round(W / 2), y: Math.round(H * 0.5) }; return { from: f, to: { x: Math.round(f.x + (deg * DEG - game.aT) / aimPerPx()), y: f.y } }; },
+    // 調べる用: 近くのこいのぼり（i 番目）を横から見る。null で戻す
+    lookKoi: (i = 0, d = 9) => { if (i == null) { camOver = null; return; } const kb = koinobori[i], P = kb.g.position; camOver = [P.x + d, GY + 4, P.z + d * 0.4, P.x, GY + 5.5, P.z]; return { s: kb.s, U: r2(windNow.U) }; },
+    gl: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles }),
+    PH, SKILLS, makeGame, runBot, stepGame, gInput, windAt, apparent, game: () => game,
+  };
+}
+
+/* ---------- はじめ ---------- */
+try { await Promise.race([Promise.all([document.fonts.load(`40px "Dela Gothic One"`, '0123456789.m秒最高！突風風がやんだ息切れとまった…自己ベスト更新押している間走る指を←→にずらすと風車の向きぬかるみのぼり坂くだり坂橋早送り▶'), document.fonts.load(`700 16px "Zen Kaku Gothic New"`, '0123456789m最高秒うしろから…走っても回りにくい風車を風に向けて！走って風を作れ少し歩いて息をととのえる速く走れない息が切れやすい速く走れる川の上は風が強い右へ左へ曲がる°白い矢印（見かけの風）に面を向ける離すと歩いて息がもどるぴったりずれ風がないぜえぜえ全力はしるあるくいきかいてん歩いているだけでは足りないやんで止まった追い風で息切れで走れなかった面が向いていなかったぬかるみでのぼり坂で早送り')]), new Promise(r => setTimeout(r, 1500))]); } catch {}
+resize();
+newDemo();
+state = 'title';
+fillTitle();
+$('startBtn').disabled = false; $('startBtn').textContent = '風車をもって走る';
+$('startBtn').focus({ preventScroll: true });
+requestAnimationFrame(frame);
+</script>
+<a class="hub-back" id="hubBack" href="/" aria-label="あそび横丁（ゲーム一覧）にもどる" style="top: calc(env(safe-area-inset-top, 0px) + 10px); bottom: auto;">← 横丁</a>
+<script>
+// プレイ中でもゲーム一覧に戻れるボタン。押してもゲームの入力（タップ・ドラッグ）に伝わらないようにする
+for (const ev of ['pointerdown', 'touchstart', 'mousedown']) document.getElementById('hubBack').addEventListener(ev, e => e.stopPropagation(), { passive: true });
+</script>
+</body>
+</html>
