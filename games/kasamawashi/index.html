@@ -1,0 +1,1450 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>傘まわし</title>
+<meta name="description" content="お正月の寄席、紅白幕の舞台で太神楽の傘回し。指でくるくる円をかくと和傘が回り、指をずらすと傘が傾く。回る張りの上で毬が「回っているのに止まって見える」ように、回転と傾きを保ち続けろ。毬が二つ・三つ、升・茶碗・金輪と、いつもより多く回しております。転がる毬とジャイロ効果を計算する3D物理のブラウザゲーム。ログイン不要。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="傘まわし">
+<meta property="og:description" content="いつもより多く回しております！ 指でくるくる、和傘の上で毬を転がし続けろ。何秒回せる？">
+<meta property="og:url" content="https://asobi.enludus.com/games/kasamawashi/">
+<meta property="og:image" content="https://asobi.enludus.com/games/kasamawashi/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%98%82%EF%B8%8F%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+:root { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+/* 全画面 WebGL（お正月の寄席の舞台。紅白幕・一文字幕・提灯・板の間・太神楽の芸人の手と和傘）+ 2D の演出レイヤー（秒・回転の目盛り・掛け声）。タイトル/結果は下寄せのカード1枚 */
+:root {
+  --stage: #2a1714;      /* 寄席の暗がり */
+  --ink: #221a17;        /* 墨 */
+  --paper: #fbf3e4;      /* 和紙 */
+  --noren: #b3262f;      /* 紅白幕の紅ののれん */
+  --noren-ink: #fbf3e4;
+  --gold: #d9a441;       /* 金屏風・金輪 */
+  --kon: #23345a;        /* 芸人の着物の紺 */
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--stage); color: var(--ink);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+#gl, #fx { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#fx { touch-action: none; cursor: pointer; }
+
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: end center; z-index: 40;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-top: 16px; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  background: linear-gradient(to top, rgba(30, 14, 12, .62), rgba(30, 14, 12, 0) 62%);
+  touch-action: none; cursor: pointer; overflow: hidden;
+}
+#title { padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); }
+.card {
+  width: min(360px, 100%); background: var(--paper); color: var(--ink);
+  border-radius: 10px; overflow: hidden; box-shadow: 0 10px 40px rgba(20, 8, 6, .5);
+  text-align: center; cursor: default;
+}
+.noren {
+  background: var(--noren); color: var(--noren-ink);
+  display: flex; gap: 3px;
+  padding-top: 16px;
+}
+.noren span {
+  flex: 1; background: var(--noren); border-bottom: 3px solid rgba(255,255,255,.1);
+  font-family: var(--font-display); font-size: 32px; line-height: 1; padding-block: 6px 14px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.2); white-space: nowrap;
+}
+.noren span:nth-child(even) { background: #f3ece0; color: var(--noren); }
+.noren.result { padding-top: 10px; }
+.noren.result span { font-size: 26px; padding-block: 4px 10px; }
+.body { padding: 16px 20px 18px; display: grid; gap: 11px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.7; text-wrap: balance; }
+.score { font-family: var(--font-display); font-size: 58px; line-height: 1; font-variant-numeric: tabular-nums; }
+.score small { font-size: 24px; margin: 0 2px; }
+.sub2 { margin: -4px 0 0; font-size: 15px; font-weight: 700; color: var(--noren); min-height: 1.3em; }
+.meta { display: flex; justify-content: center; gap: 6px 16px; font-size: 13px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.meta b { font-size: 16px; }
+.badge {
+  justify-self: center; background: var(--gold); color: var(--ink); font-weight: 700;
+  font-size: 12px; letter-spacing: .14em; padding: 3px 10px; border-radius: 99px;
+}
+#oTrail { width: 100%; height: 46px; display: block; }
+#over .lead { font-size: 13px; line-height: 1.55; }
+#over .body { gap: 8px; padding-block: 12px 14px; }
+.btns { display: grid; gap: 8px; }
+.btns .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+button {
+  font: inherit; font-weight: 700; font-size: 16px; border: 0; border-radius: 8px;
+  padding: 13px 16px; cursor: pointer;
+  background: var(--noren); color: var(--noren-ink); box-shadow: 0 3px 0 #6e1219;
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 #6e1219; }
+button:disabled { opacity: .6; cursor: progress; }
+a.xbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font-weight: 700; font-size: 16px; border-radius: 8px; padding: 13px 16px;
+  background: #0f1419; color: #fff; box-shadow: 0 3px 0 #000;
+}
+a.xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+a.xbtn:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+a.xbtn svg { width: 16px; height: 16px; fill: currentColor; }
+button.sub { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); padding-inline: 8px; font-size: 15px; }
+button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.how { font-size: 12px; opacity: .72; margin: 0; line-height: 1.6; }
+.err { font-size: 13px; color: #b3361b; margin: 0; font-weight: 700; }
+.back { font-size: 13px; color: var(--ink); opacity: .75; }
+.back:hover { opacity: 1; }
+@media (max-height: 740px) {
+  .score { font-size: 48px; }
+  .body { gap: 8px; padding-block: 12px 14px; }
+  #over .body { gap: 6px; padding-block: 10px 12px; }
+  button, a.xbtn { padding-block: 10px; }
+  .noren span { font-size: 28px; }
+  #oTrail { height: 38px; }
+}
+@media (max-height: 620px) { #over .lead, #title .how, #oTrail { display: none; } }
+.hub-back {
+  position: fixed; z-index: 60;
+  left: calc(env(safe-area-inset-left, 0px) + 10px); bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  font: 700 12px/1 "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif; letter-spacing: .04em;
+  padding: 7px 11px; border-radius: 99px; text-decoration: none;
+  background: rgba(20, 18, 24, .55); color: #fff; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.hub-back:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<canvas id="gl" aria-hidden="true"></canvas>
+<canvas id="fx" aria-label="傘まわしのゲーム画面。指でくるくる円をかくと傘が回る。くるくるの中心をずらすと傘が傾き、毬はその向きへ転がる"></canvas>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="noren" aria-hidden="true"><span>か</span><span>さ</span><span>ま</span><span>わ</span><span>し</span></div>
+    <div class="body">
+      <p class="lead">お正月の寄席、太神楽の<b>傘回し</b>。<br>回る和傘の上で、<b>毬</b>を転がし続ける。<br>毬が傘から<b>落ちたら</b>おしまい。<b>何秒</b>回せるか。</p>
+      <div class="meta"><span>最高 <b id="tBest">—</b></span><span>遊んだ <b id="tPlays">0</b> 回</span></div>
+      <div class="btns"><button id="startBtn" disabled>よみこみ中…</button></div>
+      <p class="err" id="loadErr" hidden></p>
+      <p class="how"><b>指でくるくる円をかく＝柄を回す</b>（回した道のりのぶん回る）。下の目盛りの<b>金の帯</b>に回転を保つ。遅いと毬が転がり落ち、速すぎると押しのけられる。<br><b>くるくるの中心をずらす＝傘を傾ける</b>。毬はずらした向きへ押される。毬を<b>金の輪</b>（落ち着く点）に乗せておこう。（キー: スペース＝ひと回し、矢印＝傾ける）</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <div class="noren result" aria-hidden="true" id="oNoren"><span>お</span><span>み</span><span>ご</span><span>と</span></div>
+    <div class="body">
+      <div class="badge" id="newRec" hidden>新記録</div>
+      <div class="score" id="oScore">0<small>秒</small></div>
+      <p class="sub2" id="oSub">回した</p>
+      <canvas id="oTrail" aria-label="回転の記録"></canvas>
+      <p class="lead" id="oMsg"></p>
+      <div class="meta"><span>最高 <b id="oBest">—</b></span><span>遊んだ <b id="oPlays">0</b> 回</span><span>最多 <b id="oBestN">—</b></span></div>
+      <div class="btns">
+        <div class="two"><button id="retryBtn">もう一回</button><button class="sub" id="copyBtn">結果をコピー</button></div>
+        <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Xでシェア</a>
+      </div>
+      <p class="how" id="copyMsg">画面タップ・スペースでもう一回</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+let THREE;
+try {
+  THREE = await import(THREE_URL);
+} catch (e) {
+  $('startBtn').textContent = '読み込めませんでした';
+  $('loadErr').hidden = false;
+  $('loadErr').textContent = '3Dエンジンの読み込みに失敗しました。通信状況を確かめて、ページを再読み込みしてください。';
+  throw e;
+}
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FD = getComputedStyle(document.documentElement).getPropertyValue('--font-display');
+const FB = getComputedStyle(document.documentElement).getPropertyValue('--font-body');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const DEG = Math.PI / 180;
+const HASH = new URLSearchParams(location.hash.slice(1));
+
+/*PHYS-BEGIN*/
+/* ---------- 傘回しの物理（three には頼らない自前のモデル。単位は m・秒・rad。ω は rad/s） ----------
+   傘: 柄を握る手（支点 H）から L 先に 頭（ろくろ）。張りは 頭から ふち（軸から R）まで、ふくらんだ回転面:
+     軸からの距離 ρ のところの 張りの傾き β(ρ) = B0 + (B1 − B0)(ρ/R)^P（頭のまわりは平ら、ふちほど急）。
+     柄を回すと 軸 a のまわりに ω で回る。軸の傾き τ（横 τx・前後 τz。大きさ θ）は 指の位置で決まり、手が追いつく。
+     傘を θ 傾けると、張りの「いちばん高いところ（てっぺん）」は β(ρ*) = θ の ρ* にできる（傾けるほど ふち寄り）。
+   毬: 張りの上を すべらずに転がる球（半径 b、慣性 k·m·b²。毬 k=0.4）。
+     dv/dt = [ g_t + F + k·∂u/∂t ]/(1+k)（u は面の速さ。回転を上げ下げしたり傾けたりして 面の速さが変わると k/(1+k) だけ連れていかれる）
+     そのうえで v を 法線 n のまわりに Λ = k/(1+k)·ω(a·n) で回す（回る面の上で転がる球は、進む向きが曲げられる＝ジャイロ）。
+     → 回転が十分速いと、毬は 重力で転がり落ちる代わりに 高さのそろった道（てっぺんのまわり）を ゆっくり回る。
+       だから「てっぺん」の近くに 毬が止まって見える（回っているのに止まって見える）。遅いと ジャイロが効かず 坂を転がり落ちる。
+   空気: 回る傘は てっぺんのあたりの空気を ひとかたまりに引きずって回す（その速さ u_top）。毬はそれに向けて
+     F = E2·|u_top−v|·(u_top−v) で押され、客席の止まった空気には −D·v で引きとめられる。
+     → 押す力（速さの 2 乗）で、毬の落ち着く点は てっぺんから 回る向きの上手へずれる。速すぎると ずれすぎて 頭やふちへ。
+     → 引きとめる力は 速い ぶるぶる（ジャイロのうなり）を止めるが、てっぺんのまわりを回る ゆっくりの輪は じわじわ大きくする
+       （山のてっぺんにジャイロで乗っているものは、摩擦があると だんだん外へ回り出す＝ケルビン＝テイトの定理）。
+       回転が遅いほど ジャイロが弱く、輪が早く大きくなる。だから ときどき 毬を 金の輪（落ち着く点）へ押しもどしてやる。
+   指: くるくる回した道のり → 柄を回す（速さでなく道のりで決まる）。くるくるの中心をずらす → 傾き。
+     回っている傘を傾けると 面の速さが変わり、毬は 頭を倒した向きへ 押される（1° で約 1cm）。これで 毬を落ち着く点へ押しもどす。
+   頭（ろくろ）: 頭のまわり HEAD_R の出っぱりに当たると、回っている頭に はじかれる。
+   演目: 毬ひとつ → 二つ毬 → 升 → 茶碗と毬 → 金輪 → 三つ毬 → 升と二つ毬 → 輪と二つ毬 → そのあとは 40 秒ごとに毬が増える。
+     升・茶碗は 角で転がるので ごろんと小さく はねる。いくつも乗ると ぶつかりあう（押しもどせるのは まとめてだけ）。
+   判定: 乗せたもの（毬・升・茶碗・金輪）が ふち（ρ > R）を越えたら 落ちた＝おしまい。 */
+const DEGP = Math.PI / 180;
+const PH = {
+  DT: 1 / 240, G: 9.8,
+  R: 0.45, B0: 4 * DEGP, B1: 52 * DEGP, P: 1.6, L: 0.52, HEAD_R: 0.055, HEAD_E: 0.4, HEAD_FLICK: 1.0,   // 張りの形・支点から頭まで・頭の出っぱり
+  E2: 0.0064, D_AIR: 0.35,                                                    // 回る空気が毬を押す強さ・客席の止まった空気が毬の動きを止める強さ
+  W0: 46, C0: 1.2, C1: 0.055, C2: 0.0011, SPIN_K: 4.3, SPIN_TAU: 0.08,       // はじめの回転・柄の摩擦・指の道のり 1 あたりの回転・手が回しきるまで
+  W_MAX: 140, KEY_PUSH: 0.55,                                                 // 回転の上限・スペースひと押しの 指の道のり
+  TILT0: 26 * DEGP, TILT_MAX: 60 * DEGP, TILT_TAU: 0.12, TILT_RATE: 80 * DEGP, KEY_TILT: 12 * DEGP,   // はじめの傾き・限り・手が追いつく時間・傾ける速さの限り・キーで傾ける速さ
+  BUMP_V: 0.008,                                                              // 升・茶碗が角で転がるときの ごろん（速さの乱れ m/s）
+  E_ITEM: 0.2, MU_ITEM: 0.1, MORE_T: 40,                                      // 乗せたものどうし: はね返り・触れあうところの摩擦・最後の演目のあと 毬が増える間隔
+  READY_T: 1.0, STOP_T: 1.6,                                                  // 置くまで（後見が押さえている）・落ちてからの演出
+  BAND_LO: 32, BAND_HI: 64,                                                   // 表示用の目安（rad/s）
+};
+// 張りの形の表（ρ → 頭からの下がり f(ρ)、傾き β(ρ)）
+const SURF = (() => {
+  const N = 600, RM = PH.R * 1.25, f = new Float64Array(N + 1), bt = new Float64Array(N + 1);
+  const beta = r => PH.B0 + (PH.B1 - PH.B0) * Math.pow(Math.min(r, RM) / PH.R, PH.P);
+  for (let i = 0; i <= N; i++) { const r = i / N * RM; bt[i] = beta(r); if (i) f[i] = f[i - 1] + Math.tan(beta(r - RM / N / 2)) * RM / N; }
+  const at = (arr, r) => { const u = Math.max(0, Math.min(N - 1e-6, r / RM * N)), i = Math.floor(u); return arr[i] + (arr[i + 1] - arr[i]) * (u - i); };
+  return { f: r => at(f, r), beta: r => at(bt, r), beta0: beta, rhoOf: th => PH.R * Math.pow(Math.max(0, (th - PH.B0) / (PH.B1 - PH.B0)), 1 / PH.P) };
+})();
+// 乗せるもの: 半径 b・慣性 k（球 0.4・升 ≈0.67・輪 1）・回る空気の受け方 air・止まった空気の受け方 dmp・ごろん（角で転がる）
+const OBJ = {
+  mari:   { b: 0.042, k: 0.4,  air: 1.0,  dmp: 1.0, bump: 0,    name: '毬' },
+  masu:   { b: 0.048, k: 0.67, air: 1.3,  dmp: 1.4, bump: 0.55,  name: '升' },
+  chawan: { b: 0.046, k: 0.5,  air: 1.15, dmp: 1.2, bump: 0.35, name: '茶碗' },
+  wa:     { b: 0.07,  k: 1.0,  air: 1.0,  dmp: 2.0, bump: 0,    name: '金輪' },
+};
+// 演目: 時刻（秒）で乗せるものが入れかわる（後見が すっと置きかえる）
+const ACTS = [
+  { t: 0,   items: ['mari'], name: '毬の曲' },
+  { t: 18,  items: ['mari', 'mari'], name: '二つ毬' },
+  { t: 45,  items: ['masu'], name: '升の曲' },
+  { t: 75,  items: ['chawan', 'mari'], name: '茶碗と毬' },
+  { t: 110, items: ['wa'], name: '金輪の曲' },
+  { t: 150, items: ['mari', 'mari', 'mari'], name: '三つ毬' },
+  { t: 210, items: ['masu', 'mari', 'mari'], name: '升と二つ毬' },
+  { t: 280, items: ['wa', 'mari', 'mari'], name: '輪と二つ毬' },
+];
+// 最後の演目のあとは 60 秒ごとに 毬がひとつずつ増える（四つ毬・五つ毬…。終わりのない曲）
+const KANSU = ['', '一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
+function actOf(i) {
+  if (i < ACTS.length) return ACTS[i];
+  const k = i - ACTS.length + 4, last = ACTS[ACTS.length - 1];
+  return { t: last.t + PH.MORE_T * (i - ACTS.length + 1), items: Array(k).fill('mari'), name: `${KANSU[k] || k}つ毬` };
+}
+function mulberry(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function gaussR(r) { let u = r(); while (u < 1e-9) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+const clampP = (v, a, b) => Math.max(a, Math.min(b, v));
+const V = {
+  dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2],
+  len: a => Math.hypot(a[0], a[1], a[2]),
+  cross: (a, b, o) => { const x = a[1] * b[2] - a[2] * b[1], y = a[2] * b[0] - a[0] * b[2], z = a[0] * b[1] - a[1] * b[0]; o[0] = x; o[1] = y; o[2] = z; return o; },
+  norm: a => { const l = Math.hypot(a[0], a[1], a[2]) || 1; a[0] /= l; a[1] /= l; a[2] /= l; return a; },
+  tang: (a, n) => { const d = a[0] * n[0] + a[1] * n[1] + a[2] * n[2]; a[0] -= d * n[0]; a[1] -= d * n[1]; a[2] -= d * n[2]; return a; },
+};
+const HAND = [0, 0, 0];   // 支点（柄を握る手）。世界の原点
+// 傾き τ（横 τx・前後 τz。大きさが軸の傾き）→ 軸 a。τz > 0 は 頭が客席（+z）へ倒れる
+function axisOf(tx, tz, out) { const th = Math.hypot(tx, tz), s = th > 1e-9 ? Math.sin(th) / th : 1; out[0] = tx * s; out[1] = Math.cos(th); out[2] = tz * s; return out; }
+// 張りの上の点（軸 a・頭 A・軸からの距離 ρ・向き e）
+function surfPoint(A, a, rho, e, out) { const f = SURF.f(rho); out[0] = A[0] - a[0] * f + e[0] * rho; out[1] = A[1] - a[1] * f + e[1] * rho; out[2] = A[2] - a[2] * f + e[2] * rho; return out; }
+// 傾き τ のときの てっぺん（張りのいちばん高いところ）の位置。θ が B0 より小さいと頭、B1 より大きいと ふちの外
+function hilltop(tx, tz, out = [0, 0, 0]) {
+  const a = axisOf(tx, tz, [0, 0, 0]), th = Math.hypot(tx, tz), A = [HAND[0] + a[0] * PH.L, HAND[1] + a[1] * PH.L, HAND[2] + a[2] * PH.L];
+  const e = th > 1e-6 ? V.norm([-a[0] * a[1], 1 - a[1] * a[1], -a[2] * a[1]]) : [0, 0, -1];
+  return surfPoint(A, a, SURF.rhoOf(th), e, out);
+}
+// てっぺんを 世界の点（の水平の位置 px, pz）へ持っていく傾き（ニュートン法。ボットと 画面の指から使う）
+function tiltFor(px, pz, tx0, tz0) {
+  let tx = tx0, tz = tz0; const h = 1e-4, o = [0, 0, 0], o1 = [0, 0, 0], o2 = [0, 0, 0];
+  for (let it = 0; it < 6; it++) {
+    hilltop(tx, tz, o); hilltop(tx + h, tz, o1); hilltop(tx, tz + h, o2);
+    const j11 = (o1[0] - o[0]) / h, j21 = (o1[2] - o[2]) / h, j12 = (o2[0] - o[0]) / h, j22 = (o2[2] - o[2]) / h, det = j11 * j22 - j12 * j21;
+    const ex = px - o[0], ez = pz - o[2];
+    if (Math.abs(det) < 1e-9 || Math.hypot(ex, ez) < 1e-5) break;
+    let dx = (j22 * ex - j12 * ez) / det, dz = (-j21 * ex + j11 * ez) / det;
+    const m = Math.hypot(dx, dz); if (m > 0.2) { dx *= 0.2 / m; dz *= 0.2 / m; }
+    tx += dx; tz += dz;
+    const th = Math.hypot(tx, tz); if (th > PH.TILT_MAX) { tx *= PH.TILT_MAX / th; tz *= PH.TILT_MAX / th; }
+  }
+  return [tx, tz];
+}
+
+// 毬が止まっていられる点（てっぺんの近くで、重力と 回る空気の押しが 張りに沿って つり合うところ）。表示とボットの目安
+function eqPoint(g, air = 1, b = 0.042, prev = null) {
+  const a = g.a, A = g.A, th = Math.hypot(g.tx, g.tz);
+  const e0 = th > 1e-6 ? V.norm([-a[0] * a[1], 1 - a[1] * a[1], -a[2] * a[1]]) : [0, 0, -1], s0 = V.cross(a, e0, [0, 0, 0]);
+  const Hp = hilltop(g.tx, g.tz), uT = V.cross(a, [Hp[0] - A[0], Hp[1] - A[1], Hp[2] - A[2]], [0, 0, 0]); for (let j = 0; j < 3; j++) uT[j] *= g.om;
+  const at = (rho, ph, out) => {
+    const e = [e0[0] * Math.cos(ph) + s0[0] * Math.sin(ph), e0[1] * Math.cos(ph) + s0[1] * Math.sin(ph), e0[2] * Math.cos(ph) + s0[2] * Math.sin(ph)];
+    const q = surfPoint(A, a, rho, e, [0, 0, 0]), bt = SURF.beta(rho), n = [a[0] * Math.cos(bt) + e[0] * Math.sin(bt), a[1] * Math.cos(bt) + e[1] * Math.sin(bt), a[2] * Math.cos(bt) + e[2] * Math.sin(bt)];
+    const u = uT;
+    const ul = V.len(u), ea = PH.E2 * ul * air, f = [ea * u[0], ea * u[1] - PH.G, ea * u[2]]; V.tang(f, n);
+    const t1 = [e[0] * Math.cos(bt) - a[0] * Math.sin(bt), e[1] * Math.cos(bt) - a[1] * Math.sin(bt), e[2] * Math.cos(bt) - a[2] * Math.sin(bt)], t2 = V.cross(a, e, [0, 0, 0]);
+    out.f1 = V.dot(f, t1); out.f2 = V.dot(f, t2); out.q = q; out.n = n; return out;
+  };
+  let rho = prev ? prev.rho : SURF.rhoOf(th), ph = prev ? prev.ph : 0;
+  const o = {}, o1 = {}, o2 = {}, h = 1e-4;
+  for (let i = 0; i < 6; i++) {
+    at(rho, ph, o); at(rho + h, ph, o1); at(rho, ph + h / Math.max(0.05, rho), o2);
+    const j11 = (o1.f1 - o.f1) / h, j21 = (o1.f2 - o.f2) / h, j12 = (o2.f1 - o.f1) / h, j22 = (o2.f2 - o.f2) / h, det = j11 * j22 - j12 * j21;
+    if (Math.abs(det) < 1e-9) break;
+    const dr = -(j22 * o.f1 - j12 * o.f2) / det, ds = -(-j21 * o.f1 + j11 * o.f2) / det;
+    rho = clampP(rho + clampP(dr, -0.05, 0.05), 0, PH.R * 1.1); ph += clampP(ds, -0.05, 0.05) / Math.max(0.05, rho);
+  }
+  at(rho, ph, o);
+  return { rho, ph, q: o.q, n: o.n, p: [o.q[0] + o.n[0] * b, o.q[1] + o.n[1] * b, o.q[2] + o.n[2] * b] };
+}
+function makeItem(g, type, p, rnd) {
+  const O = OBJ[type];
+  return { type, b: O.b, k: O.k, air: O.air, dmp: O.dmp, bump: O.bump, c: p.slice(), v: [0, 0, 0], n: [0, 1, 0], rho: 0, e: [1, 0, 0], roll: 0, nextBump: O.bump ? Math.PI * O.b / 2 : 1e9, fly: false, fell: false, spin: 0, fall: null, rnd, id: g.itemSeq++ };
+}
+// てっぺんの近く（演目ごとに少しずらして並べる）に置く
+function placeItems(g, types) {
+  // 毬が落ち着く点（金の輪）のまわりに、寄せて置く（いくつもなら 触れあうくらいに）
+  const r = mulberry((g.seed * 977 + g.actI * 131 + 7) >>> 0), a = g.a, items = [];
+  const E = eqPoint(g), rho0 = E.rho, ph0 = E.ph, th = Math.hypot(g.tx, g.tz);
+  const e0 = th > 1e-6 ? V.norm([-a[0] * a[1], 1 - a[1] * a[1], -a[2] * a[1]]) : [0, 0, -1], s0 = V.cross(a, e0, [0, 0, 0]);
+  const m = types.length, bm = Math.max(...types.map(t => OBJ[t].b)), d = m === 1 ? 0.012 + 0.012 * r() : bm * (m === 2 ? 1.03 : m === 3 ? 1.18 : 1.05 / Math.sin(Math.PI / m)), spin = r() * Math.PI * 2;
+  types.forEach((ty, i) => {
+    const ang = spin + i / m * Math.PI * 2;
+    // 張りに沿って d ずらす（軸からの距離 ρ と、軸まわりの角）
+    const rr = Math.max(PH.HEAD_R + 0.06, Math.min(PH.R - 0.06, rho0 + Math.cos(ang) * d)), ph = ph0 + Math.sin(ang) * d / Math.max(0.1, rr);
+    const e = [e0[0] * Math.cos(ph) + s0[0] * Math.sin(ph), e0[1] * Math.cos(ph) + s0[1] * Math.sin(ph), e0[2] * Math.cos(ph) + s0[2] * Math.sin(ph)];
+    const bt = SURF.beta(rr), P = surfPoint(g.A, a, rr, e, [0, 0, 0]), b = OBJ[ty].b;
+    const n = [a[0] * Math.cos(bt) + e[0] * Math.sin(bt), a[1] * Math.cos(bt) + e[1] * Math.sin(bt), a[2] * Math.cos(bt) + e[2] * Math.sin(bt)];
+    const it = makeItem(g, ty, [P[0] + n[0] * b, P[1] + n[1] * b, P[2] + n[2] * b], mulberry((g.seed * 31 + g.itemSeq * 101 + 3) >>> 0));
+    it.e = e.slice(); projectItem(g, it, true);
+    items.push(it);
+  });
+  g.items = items;
+}
+function makeGame(seed = 1) {
+  const g = {
+    seed, t: 0, t0: PH.READY_T, phase: 'ready', T: 0, pt: 0,
+    om: PH.W0, om0: PH.W0, buf: 0, tx: 0, tz: PH.TILT0, txT: 0, tzT: PH.TILT0,
+    a: [0, 0, 0], a0: [0, 0, 0], A: [0, 0, 0], A0: [0, 0, 0], wt: [0, 0, 0], wt0: [0, 0, 0], kx: 0, kz: 0, keySpin: false,
+    queue: [], events: [], items: [], itemSeq: 0, actI: 0, maxItems: 1, cause: null, fellItem: null, spinIn: 0, rot: 0,
+    minOm: 1e9, maxOm: 0, lastHead: -9, uTop: [0, 0, 0], ema: { om: PH.W0, tilt: PH.TILT0 }, log: null,
+  };
+  setAxis(g); g.a0 = g.a.slice(); g.A0 = g.A.slice();
+  placeItems(g, ACTS[0].items);
+  return g;
+}
+function setAxis(g) { axisOf(g.tx, g.tz, g.a); g.A[0] = HAND[0] + g.a[0] * PH.L; g.A[1] = HAND[1] + g.a[1] * PH.L; g.A[2] = HAND[2] + g.a[2] * PH.L; }
+// 入力: 時刻つき。kind = 'spin'（v: 指の道のり。画面の短い辺を 1）・'tilt'（v: [τx, τz] の目標）・'ktilt'（v: [−1..1, −1..1]）・'kspin'（v: スペースを押している）
+function gInput(g, t, kind, v) { if (g.log) g.log.push({ t, kind, v }); const q = g.queue; let i = q.length; while (i > 0 && q[i - 1].t > t) i--; q.splice(i, 0, { t, kind, v }); }
+function applyInput(g, e) {
+  if (e.kind === 'spin') { const d = clampP(e.v, 0, 0.5); g.buf += d; g.spinIn += d; }
+  else if (e.kind === 'tilt') { g.txT = e.v[0]; g.tzT = e.v[1]; clampTilt(g); }
+  else if (e.kind === 'ktilt') { g.kx = e.v[0]; g.kz = e.v[1]; }
+  else if (e.kind === 'kspin') { if (e.v && !g.keySpin) { g.buf += PH.KEY_PUSH; g.spinIn += PH.KEY_PUSH; } g.keySpin = !!e.v; }   // スペースを押すたびに ひと回し（押しっぱなしでは回らない）
+}
+function clampTilt(g) { const m = Math.hypot(g.txT, g.tzT); if (m > PH.TILT_MAX) { g.txT *= PH.TILT_MAX / m; g.tzT *= PH.TILT_MAX / m; } }
+const _u = [0, 0, 0], _p = [0, 0, 0], _w = [0, 0, 0], _f = [0, 0, 0], _q = [0, 0, 0], _d = [0, 0, 0];
+function stepGame(g, dt = PH.DT) {
+  g.t += dt; g.pt += dt;
+  const q = g.queue;
+  while (q.length && q[0].t <= g.t) applyInput(g, q.shift());
+  if (g.phase === 'over') return;
+  // ---- 柄（回転）: 指の道のりを、手が少しずつ回しきる ----
+  g.om0 = g.om; for (let j = 0; j < 3; j++) { g.a0[j] = g.a[j]; g.A0[j] = g.A[j]; g.wt0[j] = g.wt[j]; }
+  const dB = g.buf * Math.min(1, dt / PH.SPIN_TAU); g.buf -= dB;
+  g.om += PH.SPIN_K * dB - (PH.C0 + PH.C1 * g.om + PH.C2 * g.om * g.om) * dt;
+  g.om = clampP(g.om, 0, PH.W_MAX);
+  g.rot += g.om * dt;
+  // ---- 傾き: 手が目標へ追いつく（速さに限りあり）----
+  if (g.kx || g.kz) { g.txT += g.kx * PH.KEY_TILT * dt; g.tzT += g.kz * PH.KEY_TILT * dt; clampTilt(g); }
+  const kT = Math.min(1, dt / PH.TILT_TAU), mx = PH.TILT_RATE * dt;
+  let dx = (g.txT - g.tx) * kT, dz = (g.tzT - g.tz) * kT; const dm = Math.hypot(dx, dz); if (dm > mx) { dx *= mx / dm; dz *= mx / dm; }
+  g.tx += dx; g.tz += dz;
+  setAxis(g);
+  V.cross(g.a0, g.a, g.wt); g.wt[0] /= dt; g.wt[1] /= dt; g.wt[2] /= dt;   // 傾けている角速度（支点のまわり）
+  // ---- 演目 ----
+  if (g.phase === 'go') {
+    const tg = g.t - g.t0;
+    const nx = actOf(g.actI + 1);
+    if (tg >= nx.t) { g.actI++; placeItems(g, nx.items); g.maxItems = Math.max(g.maxItems, g.items.length); g.events.push({ type: 'act', act: nx, i: g.actI }); }
+  }
+  // てっぺんのあたりの 回る空気の速さ（てっぺんでの 面の速さ）
+  { const Hp = hilltop(g.tx, g.tz, _q); _d[0] = Hp[0] - g.A[0]; _d[1] = Hp[1] - g.A[1]; _d[2] = Hp[2] - g.A[2]; V.cross(g.a, _d, g.uTop); g.uTop[0] *= g.om; g.uTop[1] *= g.om; g.uTop[2] *= g.om; }
+  for (const it of g.items) stepItem(g, it, dt);
+  collideItems(g);
+  const E = g.ema, ke = dt / 2.0;
+  E.om += (g.om - E.om) * ke; E.tilt += (Math.hypot(g.tx, g.tz) - E.tilt) * ke;
+  if (g.phase === 'ready') {
+    if (g.t >= PH.READY_T) { g.phase = 'go'; g.t0 = g.t; g.events.push({ type: 'go' }); }
+  } else if (g.phase === 'go') {
+    const f = g.items.find(it => it.fell);
+    if (f) stopGame(g, f);
+    else { if (g.om < g.minOm) g.minOm = g.om; if (g.om > g.maxOm) g.maxOm = g.om; }
+  } else if (g.phase === 'stop' && g.pt >= PH.STOP_T) { g.phase = 'over'; g.events.push({ type: 'over' }); }
+}
+// 毬の中心を 張りの上（法線方向に b 浮いたところ）へのせる。ρ・e・n を求める。戻り値は 張りからの浮き
+function projectItem(g, it, snap) {
+  const a = g.a, A = g.A, c = it.c;
+  _d[0] = c[0] - A[0]; _d[1] = c[1] - A[1]; _d[2] = c[2] - A[2];
+  const h = V.dot(_d, a); let ex = _d[0] - a[0] * h, ey = _d[1] - a[1] * h, ez = _d[2] - a[2] * h; const rc = Math.hypot(ex, ey, ez);
+  if (rc > 1e-9) { ex /= rc; ey /= rc; ez /= rc; } else { ex = it.e[0]; ey = it.e[1]; ez = it.e[2]; }
+  // 中心の軸からの距離 rc = ρ + b·sinβ(ρ) を ρ について解く（ニュートン法）
+  let rho = Math.max(0, rc - it.b * Math.sin(SURF.beta(rc)));
+  for (let i = 0; i < 4; i++) { const bt = SURF.beta(rho), db = (SURF.beta(rho + 1e-4) - bt) * 1e4; rho -= (rho + it.b * Math.sin(bt) - rc) / (1 + it.b * Math.cos(bt) * db); if (rho < 0) rho = 0; }
+  const bt = SURF.beta(rho), cb = Math.cos(bt), sb = Math.sin(bt);
+  const n = it.n; n[0] = a[0] * cb + ex * sb; n[1] = a[1] * cb + ey * sb; n[2] = a[2] * cb + ez * sb;
+  it.e[0] = ex; it.e[1] = ey; it.e[2] = ez; it.rho = rho;
+  surfPoint(A, a, rho, it.e, _q);
+  const tx = _q[0] + n[0] * it.b, ty = _q[1] + n[1] * it.b, tz = _q[2] + n[2] * it.b;
+  const gap = (c[0] - tx) * n[0] + (c[1] - ty) * n[1] + (c[2] - tz) * n[2];
+  if (snap || gap < 0) { c[0] = tx; c[1] = ty; c[2] = tz; }
+  return gap;
+}
+function stepItem(g, it, dt) {
+  const v = it.v;
+  if (it.fall) {
+    const f = it.fall; f.v[1] -= PH.G * dt; f.p[0] += f.v[0] * dt; f.p[1] += f.v[1] * dt; f.p[2] += f.v[2] * dt;
+    if (f.p[1] < f.floor) { if (!f.landed) { f.landed = true; g.events.push({ type: 'land', it }); } f.p[1] = f.floor; f.v[1] = Math.abs(f.v[1]) * 0.2; f.v[0] *= 0.6; f.v[2] *= 0.6; }
+    return;
+  }
+  const c = it.c, k = it.k, b = it.b, a = g.a, om = g.om, ready = g.phase === 'ready';
+  if (ready) { projectItem(g, it, true); v[0] = v[1] = v[2] = 0; return; }   // 置いているあいだは 後見が手で押さえている
+  if (it.fly) {
+    v[1] -= PH.G * dt; c[0] += v[0] * dt; c[1] += v[1] * dt; c[2] += v[2] * dt;
+    const gap = projectItem(g, it, false);
+    if (it.rho > PH.R) { fallOff(g, it); return; }
+    if (gap <= 0) { V.tang(v, it.n); it.fly = false; g.events.push({ type: 'bounce', it }); }
+    return;
+  }
+  projectItem(g, it, true);
+  const n = it.n;
+  // 面の速さ（いま と ひとつ前の ω・軸・傾きの速さで、同じ点 q について）
+  _q[0] = c[0] - n[0] * b; _q[1] = c[1] - n[1] * b; _q[2] = c[2] - n[2] * b;
+  _d[0] = _q[0] - g.A[0]; _d[1] = _q[1] - g.A[1]; _d[2] = _q[2] - g.A[2]; V.cross(a, _d, _u);
+  _d[0] = _q[0] - HAND[0]; _d[1] = _q[1] - HAND[1]; _d[2] = _q[2] - HAND[2]; V.cross(g.wt, _d, _w);
+  _u[0] = om * _u[0] + _w[0]; _u[1] = om * _u[1] + _w[1]; _u[2] = om * _u[2] + _w[2];
+  _d[0] = _q[0] - g.A0[0]; _d[1] = _q[1] - g.A0[1]; _d[2] = _q[2] - g.A0[2]; V.cross(g.a0, _d, _p);
+  _d[0] = _q[0] - HAND[0]; _d[1] = _q[1] - HAND[1]; _d[2] = _q[2] - HAND[2]; V.cross(g.wt0, _d, _w);
+  _p[0] = g.om0 * _p[0] + _w[0]; _p[1] = g.om0 * _p[1] + _w[1]; _p[2] = g.om0 * _p[2] + _w[2];
+  // 空気・重力・面の速さの変化（回る空気は てっぺんのあたりで ひとかたまりに回っている: その速さ g.uTop へ引っぱる）
+  const ut = g.uTop, rx = ut[0] - v[0], ry = ut[1] - v[1], rz = ut[2] - v[2], ea = PH.E2 * Math.hypot(rx, ry, rz) * it.air, kd = k / dt;
+  const da = PH.D_AIR * it.dmp;
+  _f[0] = ea * rx - da * v[0] + kd * (_u[0] - _p[0]); _f[1] = ea * ry - PH.G - da * v[1] + kd * (_u[1] - _p[1]); _f[2] = ea * rz - da * v[2] + kd * (_u[2] - _p[2]);
+  V.tang(_f, n);
+  const ik = 1 / (1 + k), Lam = k * ik * om * V.dot(a, n), cs = Math.cos(Lam * dt), sn = Math.sin(Lam * dt);
+  V.cross(n, v, _w);
+  v[0] = v[0] * cs + _w[0] * sn + _f[0] * ik * dt; v[1] = v[1] * cs + _w[1] * sn + _f[1] * ik * dt; v[2] = v[2] * cs + _w[2] * sn + _f[2] * ik * dt;
+  c[0] += v[0] * dt; c[1] += v[1] * dt; c[2] += v[2] * dt;
+  projectItem(g, it, true);
+  V.tang(v, it.n);
+  // 頭（ろくろ）: 出っぱりに当たると はね返り、回っている頭に はじかれる
+  const hr = PH.HEAD_R + b * 0.5;
+  if (it.rho < hr) {
+    const e = it.e, ve = V.dot(v, e);
+    if (ve < 0) {
+      const s = -ve; for (let j = 0; j < 3; j++) v[j] -= (1 + PH.HEAD_E) * ve * e[j];
+      V.cross(a, e, _w); const fl = om * PH.HEAD_R * PH.HEAD_FLICK * Math.min(1, s * 4 + 0.3);
+      for (let j = 0; j < 3; j++) v[j] += _w[j] * fl;
+      g.events.push({ type: 'head', it, s }); g.lastHead = g.t;
+    }
+    for (let j = 0; j < 3; j++) c[j] += it.e[j] * (hr - it.rho);
+    projectItem(g, it, true); V.tang(v, it.n);
+  }
+  // 升・茶碗: 角で転がる（ころがった道のりで ごろん）
+  const sl = Math.hypot(v[0] - _u[0], v[1] - _u[1], v[2] - _u[2]);
+  it.spin += sl * dt / b;
+  if (it.bump) {
+    it.roll += sl * dt;
+    if (it.roll >= it.nextBump) {
+      it.nextBump += Math.PI * b / 2;
+      const r = it.rnd, an = r() * Math.PI * 2, mag = it.bump * (0.5 + r()) * PH.BUMP_V;
+      V.cross(it.n, it.e, _w);
+      for (let j = 0; j < 3; j++) v[j] += mag * (Math.cos(an) * it.e[j] + Math.sin(an) * _w[j]);
+      V.tang(v, it.n);
+      if (!ready) g.events.push({ type: 'gon', it });
+    }
+  }
+  if (it.rho > PH.R) { fallOff(g, it); return; }
+}
+function fallOff(g, it) {
+  if (it.fell) return;
+  it.fell = true; it.fly = false;
+  it.fall = { p: it.c.slice(), v: it.v.slice(), floor: -1.05 + it.b, landed: false };
+  if (!g.fellItem) g.fellItem = it;
+  g.events.push({ type: 'fall', it });
+}
+// 乗せたものどうしが ぶつかる（転がるぶん 重く感じる: 1+k）
+function collideItems(g) {
+  const L = g.items;
+  for (let i = 0; i < L.length; i++) for (let j = i + 1; j < L.length; j++) {
+    const A = L[i], B = L[j]; if (A.fall || B.fall || A.fly || B.fly) continue;
+    const dx = B.c[0] - A.c[0], dy = B.c[1] - A.c[1], dz = B.c[2] - A.c[2], d = Math.hypot(dx, dy, dz), md = A.b + B.b;
+    if (d >= md || d < 1e-9) continue;
+    const ex = dx / d, ey = dy / d, ez = dz / d, mA = 1 + A.k, mB = 1 + B.k;
+    const rv = (B.v[0] - A.v[0]) * ex + (B.v[1] - A.v[1]) * ey + (B.v[2] - A.v[2]) * ez;
+    if (rv < 0) {
+      // ぶつかる（布の毬なので ほとんど はねない: E_ITEM）。触れあうところの すべりも 摩擦で止める（ころがりあう）
+      const J = -(1 + PH.E_ITEM) * rv / (1 / mA + 1 / mB);
+      A.v[0] -= J / mA * ex; A.v[1] -= J / mA * ey; A.v[2] -= J / mA * ez;
+      B.v[0] += J / mB * ex; B.v[1] += J / mB * ey; B.v[2] += J / mB * ez;
+      if (-rv > 0.05) g.events.push({ type: 'clack', s: -rv, it: A });
+    }
+    {
+      const tx = B.v[0] - A.v[0], ty = B.v[1] - A.v[1], tz = B.v[2] - A.v[2], tn = tx * ex + ty * ey + tz * ez;
+      const sx = tx - tn * ex, sy = ty - tn * ey, sz = tz - tn * ez, k = PH.MU_ITEM / (1 / mA + 1 / mB);
+      A.v[0] += k / mA * sx; A.v[1] += k / mA * sy; A.v[2] += k / mA * sz; B.v[0] -= k / mB * sx; B.v[1] -= k / mB * sy; B.v[2] -= k / mB * sz;
+    }
+    const ov = (md - d) / 2;
+    A.c[0] -= ex * ov; A.c[1] -= ey * ov; A.c[2] -= ez * ov; B.c[0] += ex * ov; B.c[1] += ey * ov; B.c[2] += ez * ov;
+    for (const It of [A, B]) { projectItem(g, It, true); V.tang(It.v, It.n); }
+  }
+}
+function causeOf(g, it) {
+  const E = g.ema;
+  if (g.spinIn < 0.3) return 'nospin';
+  if (E.om < PH.BAND_LO - 2) return 'slow';
+  if (E.om > PH.BAND_HI + 3) return 'fast';
+  if (g.t - g.lastHead < 1.5) return 'head';
+  if (E.tilt > 44 * DEGP) return 'tilt';
+  if (g.items.length > 1) return 'crowd';
+  if (it && it.bump) return 'bump';
+  return 'wobble';
+}
+function stopGame(g, it) {
+  g.phase = 'stop'; g.pt = 0; g.T = Math.max(0, g.t - g.t0); g.cause = causeOf(g, it);
+  g.events.push({ type: 'stop', cause: g.cause, T: g.T });
+}
+/*PHYS-END*/
+
+/*BOT-BEGIN*/
+/* ---------- ボット（調整・タイトルのデモ・OGP 用）: 人と同じく「指の動いた量（くるくる）」と「傾き（指をずらした先）」だけを入力する ----------
+   none : なにもしない。hold: 押したまま 指を動かさない（回らない）。keyhold: スペースを押しっぱなし（ひと回しだけ）。
+   spin : 回転だけ 完ぺきに保つ（くるくるの速さを加減）。傾きは さわらない（毬がずれても 押しもどさない）。
+   first: はじめての人。人それぞれの速さで くるくる回しっぱなし（ときどき手が止まる・速さが変わる）。
+          傾きは 雑（くるくるの中心がふらふらずれる。毬が 金の輪から離れたのに 遅れて気づいて 押しもどす。押しすぎ・逆向きもある）。
+   good : 回転を 目安の帯の まんなかに保つよう くるくるの速さを加減し、
+          毬が落ち着く点（毬の位置の数秒のならし）へ 毬を そっと押しもどす（反応の遅れ react・手のぶれ aimSd）。 */
+const PUSH_M = 0.6;   // 傾き 1rad で 毬が動くおよその量（m）
+const SKILLS = {
+  none: { kind: 'none' },
+  hold: { kind: 'hold' },
+  keyhold: { kind: 'keyhold' },
+  first: { kind: 'first', rate: [0.9, 2.3], rateSd: 0.3, pause: [4, 12], pauseLen: [0.3, 1.8], wander: 6, react: [0.5, 1.2], notice: 0.08, fix: [0.2, 0.8], wrong: 0.2, maxStep: 2.5 },
+  spin: { kind: 'good', notilt: true, omGoal: 46, rateSd: 0.08 },
+  good: { kind: 'good', every: 0.2, react: [0.2, 0.4], omGoal: 46, rateSd: 0.12, aimSd: 0.01, gain: 0.2, back: 0.1, maxStep: 2, eqT: 3, look: 0.05 },
+};
+function makeBot(g, sk, rnd) {
+  const R = a => a[0] + (a[1] - a[0]) * rnd();
+  const b = { rate: sk.rate ? R(sk.rate) : 0, cur: 0, pauseAt: 0, pauseEnd: -1, tx: g.txT, tz: g.tzT, look: -9, last: 0, wx: 0, wz: 0, ox: 0, oz: 0 };
+  if (sk.kind === 'first') b.pauseAt = R(sk.pause);
+  const tilt = (t, x, z) => { b.tx = x; b.tz = z; gInput(g, t, 'tilt', [x, z]); };
+  const SPIN_DT = 1 / 30;   // 指の動きは 1/30 秒ごとに入る（人の指の動きと同じく、こまかく）
+  b.step = () => {
+    if (g.phase === 'stop' || g.phase === 'over') return;
+    if (sk.kind === 'none' || sk.kind === 'hold') return;
+    if (sk.kind === 'keyhold') { if (!g.keySpin && g.t > 0.3) gInput(g, g.t, 'kspin', true); return; }
+    if (g.t - b.last < SPIN_DT) return;
+    const dt = g.t - b.last; b.last = g.t;
+    if (sk.kind === 'first') {
+      // くるくる（人によって速さがちがう。ときどき手が止まる・速さが変わる）
+      if (g.t >= b.pauseAt) { b.pauseEnd = g.t + R(sk.pauseLen); b.pauseAt = b.pauseEnd + R(sk.pause); b.rate = clampP(b.rate + gaussR(rnd) * sk.rateSd, 0.7, 2.6); }
+      if (!(g.t < b.pauseEnd)) gInput(g, g.t, 'spin', b.rate * dt * (0.75 + 0.5 * rnd()));
+      // 傾き: くるくるの中心がふらふら（指がずれた向きへ 毬が転がる）
+      b.wx += (gaussR(rnd) * sk.wander - b.wx * 1.5) * dt; b.wz += (gaussR(rnd) * sk.wander - b.wz * 1.5) * dt;
+      if (sk.notilt) return;
+      let tx = b.tx + b.wx * dt * DEGP, tz = b.tz + b.wz * dt * DEGP;
+      // 毬が 光る輪（てっぺん）から離れたら（遅れて）押しもどす。押しすぎたり、逆に追いかけてしまったりする
+      if (g.t >= b.look) {
+        b.look = g.t + R(sk.react);
+        const L = g.items.filter(it => !it.fall);
+        if (L.length) {
+          let mx = 0, mz = 0; for (const it of L) { mx += it.c[0]; mz += it.c[2]; } mx /= L.length; mz /= L.length;
+          const E = eqPoint(g).p, ex = E[0] - mx, ez = E[2] - mz, d = Math.hypot(ex, ez);   // 見えている 金の輪 へ
+          if (d > sk.notice) {
+            const k = R(sk.fix) * (rnd() < sk.wrong ? -0.7 : 1);
+            const m = Math.min(sk.maxStep * DEGP, d / PUSH_M * k);
+            tx += ex / d * m; tz += ez / d * m;
+          }
+        }
+      }
+      if (Math.hypot(tx - b.tx, tz - b.tz) > 0.1 * DEGP) tilt(g.t, tx, tz);
+      return;
+    }
+    // good: くるくるの速さを 回転に合わせて加減（目安: 摩擦に見合う速さ ＋ ずれの分）
+    const omGoal = sk.omGoal + (g.items.length > 1 ? 4 : 0);
+    const fr = (PH.C0 + PH.C1 * omGoal + PH.C2 * omGoal * omGoal) / PH.SPIN_K;
+    b.cur = clampP(fr + (omGoal - g.om) * 0.06 - g.buf * 2, 0, 3.2) * (1 + gaussR(rnd) * sk.rateSd);
+    gInput(g, g.t, 'spin', Math.max(0, b.cur) * dt);
+    if (sk.notilt || g.t - b.look < sk.every) return;
+    b.look = g.t;
+    // 毬を てっぺんへ押しもどす: 傾けた向きへ 毬が ついてくる（1° で約 1cm）。乗せたもののまんなかを見る
+    const L = g.items.filter(it => !it.fall); if (!L.length) return;
+    let mx = 0, mz = 0; for (const it of L) { mx += it.c[0]; mz += it.c[2]; }
+    mx /= L.length; mz /= L.length;
+    // 目で追うのは ならした位置（細かいぶるぶるには 反応しない）
+    if (b.sx == null) { b.sx = mx; b.sz = mz; }
+    const ks = 1 - Math.exp(-sk.every / sk.look); b.sx += (mx - b.sx) * ks; b.sz += (mz - b.sz) * ks; mx = b.sx; mz = b.sz;
+    // 毬が落ち着く点（てっぺんから 回る空気で少し押しのけられたところ）は、毬の位置の ならし（数秒）で見当をつける
+    const H = hilltop(g.tx, g.tz), ke = sk.every / sk.eqT;
+    b.ox += (mx - H[0] - b.ox) * ke; b.oz += (mz - H[2] - b.oz) * ke;
+    const ex = H[0] + b.ox - mx + gaussR(rnd) * sk.aimSd, ez = H[2] + b.oz - mz + gaussR(rnd) * sk.aimSd;
+    let dx = ex / PUSH_M * sk.gain, dz = ez / PUSH_M * sk.gain;
+    // 傾きそのものは まんなか（TILT0 あたり）へ ゆっくり戻す
+    const back = sk.back * sk.every;
+    dx += (0 - b.tx) * back; dz += (PH.TILT0 - b.tz) * back;
+    const m = Math.hypot(dx, dz), mm = sk.maxStep * DEGP; if (m > mm) { dx *= mm / m; dz *= mm / m; }
+    if (m > 0.15 * DEGP) tilt(g.t + R(sk.react), b.tx + dx, b.tz + dz);
+  };
+  return b;
+}
+function runBot(sk, seed, opts = {}) {
+  const g = makeGame(seed), r = mulberry((seed * 7919 + 13) >>> 0), log = opts.log ? [] : null;
+  const bot = makeBot(g, sk, r), tMax = opts.tMax || 900;
+  g.log = log;
+  while ((g.phase === 'go' || g.phase === 'ready') && g.t < tMax) { bot.step(); stepGame(g); g.events.length = 0; }
+  if (log) log.sort((a, b2) => a.t - b2.t);
+  return { T: g.phase === 'go' || g.phase === 'ready' ? g.t - g.t0 : g.T, cause: g.cause, items: g.maxItems, act: g.actI, minOm: g.minOm, maxOm: g.maxOm, log };
+}
+/*BOT-END*/
+
+/* ---------- 記録（このブラウザだけ） ---------- */
+const KEY = 'kasamawashi:v1';
+const DEF = () => ({ ver: 1, best: 0, plays: 0, total: 0, last: 0, bestN: 0, lastN: 0 });
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || '{}');
+    if (d && d.ver === 1) { const r = { ...DEF(), ...d }; for (const k of ['best', 'total', 'last']) r[k] = Math.max(0, Math.round((+r[k] || 0) * 10) / 10); for (const k of ['plays', 'bestN', 'lastN']) r[k] = Math.max(0, Math.floor(+r[k] || 0)); return r; }
+  } catch {}
+  return DEF();
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch {} }
+let rec = load();
+// 乱数の種（毬の置き方・升の転がり）。#seed=数字 で固定できる（何回目のプレイかまで同じなら同じ）
+let seed = (Math.random() * 2 ** 32) >>> 0, sessionPlays = 0;
+function upcomingSeed() { return HASH.has('seed') ? ((+HASH.get('seed') >>> 0) + 7919 * sessionPlays) >>> 0 : seed; }
+function nextSeed() { const s = seed; seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return s; }
+const r1 = v => Math.round(v * 10) / 10, r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
+
+/* ---------- three.js ---------- */
+const glc = $('gl'), fxc = $('fx'), fx = fxc.getContext('2d');
+const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, powerPreference: 'high-performance' });
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#2a1714');
+const camera = new THREE.PerspectiveCamera(50, 1, 0.05, 60);
+let W = 0, H = 0, dpr = 1, safeT = 0, safeB = 0;
+function resize() {
+  W = innerWidth; H = innerHeight; dpr = Math.min(devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(Math.min(dpr, 1.6)); renderer.setSize(W, H, false);
+  fxc.width = Math.round(W * dpr); fxc.height = Math.round(H * dpr);
+  camera.aspect = W / H;
+  camera.fov = W / H < 0.75 ? 50 : 38;
+  camera.updateProjectionMatrix();
+  const cs = getComputedStyle(document.documentElement);
+  safeT = parseFloat(cs.paddingTop) || 0; safeB = parseFloat(cs.paddingBottom) || 0;
+}
+addEventListener('resize', resize);
+function canvasTex(w, h, draw, repeat) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
+  t.anisotropy = 4;
+  return t;
+}
+const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
+let srnd = 11; const prand = () => (srnd = (srnd * 9301 + 49297) % 233280) / 233280;
+
+// 光: 舞台の照明（正面の上から）と、客席からの照り返し
+scene.add(new THREE.HemisphereLight('#fff4e4', '#5a3426', 1.25));
+const key = new THREE.DirectionalLight('#fff0d8', 1.5); key.position.set(0.8, 3, 2.4); scene.add(key);
+const FLOOR_Y = -1.05;
+
+/* 舞台: 紅白幕・一文字幕（金の松）・提灯・板の間 */
+{
+  const kohaku = canvasTex(1024, 256, (g, w, h) => {
+    const n = 16;
+    for (let i = 0; i < n; i++) { g.fillStyle = i % 2 ? '#f4ede2' : '#c22b33'; g.fillRect(i * w / n, 0, w / n + 1, h); }
+    // ひだ（明るさのうねり）
+    for (let x = 0; x < w; x += 2) { const k = Math.sin(x / w * Math.PI * 2 * 22) * 0.5 + 0.5; g.fillStyle = `rgba(40,10,10,${0.06 + 0.16 * k})`; g.fillRect(x, 0, 2, h); }
+    const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, 'rgba(0,0,0,.25)'); gr.addColorStop(0.3, 'rgba(0,0,0,0)'); gr.addColorStop(1, 'rgba(0,0,0,.18)'); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+  });
+  const curtain = new THREE.Mesh(new THREE.PlaneGeometry(9, 3.4, 48, 1), lam('#ffffff', { map: kohaku }));
+  // 幕のひだ（少し波打たせる）
+  const p = curtain.geometry.attributes.position;
+  for (let i = 0; i < p.count; i++) p.setZ(i, Math.sin(p.getX(i) * 9.8) * 0.06);
+  curtain.geometry.computeVertexNormals();
+  curtain.position.set(0, 0.55, -2.4); scene.add(curtain);
+  // 一文字幕（紺に金の松）
+  const valTex = canvasTex(1024, 128, (g, w, h) => {
+    g.fillStyle = '#1d2a4a'; g.fillRect(0, 0, w, h);
+    g.fillStyle = 'rgba(217,164,65,.9)';
+    for (let i = 0; i < 7; i++) { const x = 70 + i * 150; for (let k = 0; k < 3; k++) { g.beginPath(); g.ellipse(x + (k - 1) * 26, 58 - Math.abs(k - 1) * 8, 30, 12, 0, 0, 7); g.fill(); } g.fillRect(x - 3, 66, 6, 30); }
+    g.fillStyle = '#d9a441'; g.fillRect(0, h - 8, w, 4);
+  });
+  const val = new THREE.Mesh(new THREE.PlaneGeometry(9, 0.7), lam('#ffffff', { map: valTex })); val.position.set(0, 1.95, -2.3); scene.add(val);
+  // 提灯（寿）
+  const chTex = canvasTex(256, 128, (g, w, h) => {
+    const gr = g.createLinearGradient(0, 0, 0, h); gr.addColorStop(0, '#d8473c'); gr.addColorStop(0.5, '#f06a4c'); gr.addColorStop(1, '#c0362f'); g.fillStyle = gr; g.fillRect(0, 0, w, h);
+    g.strokeStyle = 'rgba(80,20,10,.35)'; g.lineWidth = 2; for (let y = 8; y < h; y += 11) { g.beginPath(); g.moveTo(0, y); g.lineTo(w, y); g.stroke(); }
+    g.fillStyle = '#1a1210'; g.font = `64px ${FD}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('寿', w * 0.25, h / 2 + 2); g.fillText('寿', w * 0.75, h / 2 + 2);
+  });
+  const chGeo = new THREE.LatheGeometry(Array.from({ length: 9 }, (_, i) => { const u = i / 8; return new THREE.Vector2(0.06 + 0.13 * Math.sin(u * Math.PI), 0.36 * u); }), 16);
+  const chMat = new THREE.MeshLambertMaterial({ map: chTex, emissive: '#ff7a40', emissiveIntensity: 0.35 }), capMat = lam('#1a1210');
+  for (const [x, y, z] of [[-1.05, 0.86, -1.3], [1.05, 0.86, -1.3], [-2.3, 1.2, -2.0], [2.3, 1.2, -2.0]]) {
+    const g = new THREE.Group(); g.position.set(x, y, z);
+    const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 1.2, 4), capMat); cord.position.y = 0.96; g.add(cord);
+    g.add(new THREE.Mesh(chGeo, chMat));
+    for (const y of [0, 0.36]) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.03, 12), capMat); c.position.y = y; g.add(c); }
+    scene.add(g);
+  }
+  // 板の間（ひのき）と、スポットの明かり
+  const floorTex = canvasTex(512, 512, (g, w, h) => {
+    g.fillStyle = '#c99a62'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? 'rgba(120,70,30,.10)' : 'rgba(255,230,190,.06)'; g.fillRect(0, i * h / 8, w, h / 8); g.fillStyle = 'rgba(60,30,10,.35)'; g.fillRect(0, i * h / 8, w, 2); }
+    for (let k = 0; k < 300; k++) { g.fillStyle = `rgba(110,60,25,${0.05 + prand() * 0.1})`; g.fillRect(prand() * w, prand() * h, 30 + prand() * 120, 1); }
+  }, [3, 3]);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(9, 6), lam('#ffffff', { map: floorTex })); floor.rotation.x = -Math.PI / 2; floor.position.set(0, FLOOR_Y, -0.4); scene.add(floor);
+  const spotTex = canvasTex(128, 128, (g) => { const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,240,200,.45)'); gr.addColorStop(1, 'rgba(255,240,200,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); });
+  const spot = new THREE.Mesh(new THREE.PlaneGeometry(2.6, 2.0), new THREE.MeshBasicMaterial({ map: spotTex, transparent: true, depthWrite: false })); spot.rotation.x = -Math.PI / 2; spot.position.set(0, FLOOR_Y + 0.004, 0); scene.add(spot);
+  // 舞台の縁（黒い框）
+  const edge = new THREE.Mesh(new THREE.BoxGeometry(9, 0.08, 0.08), lam('#20140f')); edge.position.set(0, FLOOR_Y - 0.03, 2.6); scene.add(edge);
+}
+
+/* 和傘（蛇の目）: 張りは物理と同じ形（SURF）の回転体。頭（ろくろ）・柄・ふちの糸 */
+const VIS_SPIN = 0.16;   // 見た目の回り（本当の回転のままだと コマ落ちで止まって見えるので ゆっくりめに）
+const umb = new THREE.Group(); scene.add(umb);           // 軸の向き（世界）
+const canopyG = new THREE.Group(); umb.add(canopyG);     // 頭を原点に、軸まわりに回る
+const canopyTex = canvasTex(1024, 256, (g, w, h) => {
+  // v（縦）が 頭→ふち。u（横）が まわり
+  const band = (v0, v1, col) => { g.fillStyle = col; g.fillRect(0, (1 - v1) * h, w, (v1 - v0) * h + 1); };   // v: 0 が頭、1 がふち（絵の上がふち）
+  band(0, 1, '#c42a2f');
+  band(0, 0.15, '#2b2340');           // 頭紙
+  band(0.15, 0.18, '#d9a441');
+  band(0.52, 0.7, '#f5efe2');         // 蛇の目の白
+  band(0.94, 1, '#7e1a20');
+  // 和紙のむら
+  for (let i = 0; i < 2200; i++) { g.fillStyle = `rgba(${prand() < 0.5 ? '255,240,220' : '60,10,10'},${0.03 + prand() * 0.05})`; g.fillRect(prand() * w, prand() * h, 2 + prand() * 6, 1 + prand() * 2); }
+  // 骨（40本）
+  for (let i = 0; i < 40; i++) { const x = i / 40 * w; g.fillStyle = 'rgba(70,10,10,.22)'; g.fillRect(x, 0, 2, 0.85 * h); g.fillStyle = 'rgba(255,230,210,.12)'; g.fillRect(x + 2, 0, 1, 0.85 * h); }
+  // ふちの かがり糸
+  for (let i = 0; i < 80; i++) { g.fillStyle = i % 2 ? '#f5efe2' : '#2b2340'; g.fillRect(i / 80 * w, 0.025 * h, w / 80, 0.02 * h); }
+});
+canopyTex.wrapS = THREE.RepeatWrapping; canopyTex.flipY = false;
+{
+  const pts = []; const N = 26;
+  for (let i = N; i >= 0; i--) { const r = PH.R * (i / N); pts.push(new THREE.Vector2(r, -SURF.f(r))); }   // ふち→頭の順（外がわが表）
+  const geo = new THREE.LatheGeometry(pts, 56);
+  const top = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: canopyTex, side: THREE.FrontSide }));
+  const under = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ color: '#7c2226', side: THREE.BackSide }));
+  canopyG.add(top); canopyG.add(under);
+  // 頭（ろくろの出っぱり）と 石突
+  const head = new THREE.Mesh(new THREE.CylinderGeometry(PH.HEAD_R * 0.75, PH.HEAD_R, 0.03, 20), lam('#2b2340')); head.position.y = 0.012; canopyG.add(head);
+  const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.016, 0.06, 10), lam('#d9a441')); knob.position.y = 0.05; canopyG.add(knob);
+  // ふち
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(PH.R, 0.005, 6, 64), lam('#5a1418')); rim.rotation.x = Math.PI / 2; rim.position.y = -SURF.f(PH.R); canopyG.add(rim);
+  // 内がわの骨（下からちらりと）
+  const ribMat = lam('#b48a56');
+  for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2, r0 = 0.04, r1 = PH.R * 0.95, y0 = -SURF.f(r0) - 0.01, y1 = -SURF.f(r1) - 0.01; const rib = new THREE.Mesh(new THREE.CylinderGeometry(0.003, 0.003, Math.hypot(r1 - r0, y1 - y0), 4), ribMat); rib.position.set(Math.cos(a) * (r0 + r1) / 2, (y0 + y1) / 2, Math.sin(a) * (r0 + r1) / 2); rib.lookAt(Math.cos(a) * r1, y1, Math.sin(a) * r1); rib.rotateX(Math.PI / 2); canopyG.add(rib); }
+}
+// 柄（竹）: 支点（手）の少し下から 頭まで
+const shaftMat = lam('#c8a26a');
+const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.013, PH.L + 0.26, 8), shaftMat); shaft.position.y = (PH.L - 0.26) / 2; umb.add(shaft);
+const butt = new THREE.Mesh(new THREE.SphereGeometry(0.02, 8, 6), lam('#3a2418')); butt.position.y = -0.26; umb.add(butt);
+
+/* 芸人の手元（からくり人形ふう: 胡粉の白い手、紺の袖に白い襦袢） */
+const handG = new THREE.Group(); scene.add(handG);
+{
+  const skin = lam('#f3e9dc'), kon = lam('#23345a'), white = lam('#f4f1ea'), red = lam('#b3262f');
+  const fist = new THREE.Mesh(new THREE.SphereGeometry(0.05, 12, 10), skin); fist.scale.set(1.1, 1.25, 1); fist.position.set(0.02, -0.02, 0.02); handG.add(fist);
+  const thumb = new THREE.Mesh(new THREE.CapsuleGeometry(0.014, 0.04, 4, 8), skin); thumb.position.set(-0.03, 0.03, 0.04); thumb.rotation.z = 0.9; handG.add(thumb);
+  // 前腕は 手から 右下へ（袖口から 白い襦袢と 紅の裏地がのぞく）
+  const arm = (r0, r1, len, mat, d0) => { const m = new THREE.Mesh(new THREE.CylinderGeometry(r0, r1, len, 14), mat); const dir = new THREE.Vector3(0.55, -0.83, 0.12).normalize(); m.position.copy(dir.clone().multiplyScalar(d0 + len / 2)); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir); handG.add(m); return m; };
+  arm(0.035, 0.04, 0.12, skin, 0.03);
+  arm(0.072, 0.07, 0.05, white, 0.14);
+  arm(0.08, 0.078, 0.025, red, 0.185);
+  arm(0.095, 0.15, 0.7, kon, 0.2);
+}
+
+/* 乗せるもの（毬・升・茶碗・金輪）の見た目 */
+const temariTex = (cA, cB, cC) => canvasTex(256, 128, (g, w, h) => {
+  g.fillStyle = cA; g.fillRect(0, 0, w, h);
+  // 地巻きの糸
+  for (let y = 0; y < h; y += 3) { g.fillStyle = `rgba(255,255,255,${0.05 + prand() * 0.06})`; g.fillRect(0, y, w, 1); }
+  // 帯と菱かがり
+  for (const [y0, col] of [[0.3, cB], [0.5, cC], [0.7, cB]]) { g.fillStyle = col; g.fillRect(0, y0 * h - 5, w, 10); }
+  g.strokeStyle = cC; g.lineWidth = 3;
+  for (let i = 0; i < 8; i++) { const x = i / 8 * w; g.beginPath(); g.moveTo(x, 0); g.lineTo(x + w / 16, h * 0.3); g.lineTo(x, h * 0.5); g.lineTo(x + w / 16, h * 0.7); g.lineTo(x, h); g.stroke(); }
+  g.fillStyle = '#f4d24a'; g.beginPath(); g.arc(w * 0.1, 3, 6, 0, 7); g.fill();
+});
+const TEMARI = [temariTex('#e8e2d4', '#c22b33', '#2a5aa0'), temariTex('#2a3f78', '#e9a43a', '#f4efe4'), temariTex('#c22b33', '#f4efe4', '#3a8a5a')];
+const masuTex = canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#d8b07a'; g.fillRect(0, 0, w, h); for (let i = 0; i < 40; i++) { g.fillStyle = `rgba(120,80,40,${0.1 + prand() * 0.15})`; g.fillRect(0, prand() * h, w, 1); } g.strokeStyle = '#8a6036'; g.lineWidth = 8; g.strokeRect(4, 4, w - 8, h - 8); g.fillStyle = '#2a1a10'; g.font = `44px ${FD}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('福', w / 2, h / 2 + 3); });
+function makeItemMesh(it, idx) {
+  const g = new THREE.Group(), b = it.b; let body;
+  if (it.type === 'mari') body = new THREE.Mesh(new THREE.SphereGeometry(b, 18, 12), new THREE.MeshLambertMaterial({ map: TEMARI[idx % TEMARI.length] }));
+  else if (it.type === 'masu') { body = new THREE.Mesh(new THREE.BoxGeometry(b * 1.45, b * 1.45, b * 1.45), new THREE.MeshLambertMaterial({ map: masuTex })); }
+  else if (it.type === 'chawan') {
+    const pts = []; for (let i = 0; i <= 10; i++) { const u = i / 10; pts.push(new THREE.Vector2(b * (0.45 + 0.55 * Math.sin(u * Math.PI / 2)), -b + 1.6 * b * u)); }
+    pts.push(new THREE.Vector2(b * 0.9, 0.6 * b)); pts.push(new THREE.Vector2(0.001, 0.6 * b));
+    body = new THREE.Mesh(new THREE.LatheGeometry(pts, 18), new THREE.MeshLambertMaterial({ color: '#3d5f7a', side: THREE.DoubleSide }));
+    const band = new THREE.Mesh(new THREE.TorusGeometry(b * 0.88, b * 0.06, 6, 18), lam('#f0e6d0')); band.rotation.x = Math.PI / 2; band.position.y = b * 0.3; body.add(band);
+  } else {
+    body = new THREE.Mesh(new THREE.TorusGeometry(b * 0.86, b * 0.14, 8, 28), new THREE.MeshLambertMaterial({ color: '#e0ad3c', emissive: '#5a3a08', emissiveIntensity: 0.4 }));
+  }
+  g.add(body); scene.add(g);
+  return { g, body, q: new THREE.Quaternion(), drop: 0.25, fade: 0 };
+}
+const itemMeshes = new Map();
+let ghosts = [];   // 演目替えで 後見がさげていくもの
+// 毬が落ち着く点の しるし（金の輪）
+const eqRing = new THREE.Mesh(new THREE.RingGeometry(0.06, 0.074, 32), new THREE.MeshBasicMaterial({ color: '#ffd76a', transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide }));
+scene.add(eqRing);
+// 紙吹雪（演目替え・自己ベスト）
+const CF_N = 90, cfGeo = new THREE.BufferGeometry(), cfPos = new Float32Array(CF_N * 3), cfCol = new Float32Array(CF_N * 3);
+cfGeo.setAttribute('position', new THREE.BufferAttribute(cfPos, 3)); cfGeo.setAttribute('color', new THREE.BufferAttribute(cfCol, 3));
+const confetti = new THREE.Points(cfGeo, new THREE.PointsMaterial({ size: 0.035, vertexColors: true, transparent: true, depthWrite: false }));
+confetti.frustumCulled = false; scene.add(confetti);
+const cfP = Array.from({ length: CF_N }, () => ({ x: 0, y: -9, z: 0, vx: 0, vy: 0, vz: 0, ph: 0 }));
+{ const cols = ['#c22b33', '#f4efe4', '#d9a441', '#2a5aa0', '#e07a9a'].map(c => new THREE.Color(c)); for (let i = 0; i < CF_N; i++) { const c = cols[i % cols.length]; cfCol.set([c.r, c.g, c.b], i * 3); } }
+function burstConfetti(n = 60) { let k = 0; for (const p of cfP) { if (k >= n) break; if (p.y > FLOOR_Y + 0.02 && p.y < 5) continue; p.x = (Math.random() - 0.5) * 2.4; p.y = 1.9 + Math.random() * 0.6; p.z = -0.6 + Math.random() * 1.4; p.vx = (Math.random() - 0.5) * 0.2; p.vy = -0.35 - Math.random() * 0.3; p.vz = 0; p.ph = Math.random() * 6; k++; } }
+function stepConfetti(dt, t) {
+  for (let i = 0; i < CF_N; i++) { const p = cfP[i]; if (p.y > -5) { p.x += (p.vx + Math.sin(t * 3 + p.ph) * 0.15) * dt; p.y += p.vy * dt; if (p.y < FLOOR_Y + 0.01) p.y = -9; } cfPos[i * 3] = p.x; cfPos[i * 3 + 1] = p.y; cfPos[i * 3 + 2] = p.z; }
+  cfGeo.attributes.position.needsUpdate = true;
+}
+
+/* ---------- ゲーム状態 ---------- */
+let game = null, bot = null, botStart = false, state = 'loading';    // loading | title | play | over | skip
+let tt = 0, overShownAt = 0, failAt = -1, pops = [], frozen = false, ff = false, newShown = false, base = 0, demoEnd = -1;
+let shake = 0, trail = [], lastSample = -1, drag = null, keyDir = { l: false, r: false, u: false, d: false }, lastAdv = 0, fingerTrail = [], eqNow = null, eqPrev = null, spinShown = 0;
+const LAG = 0.08, FF = 4;   // 物理は画面より 0.08 秒うしろを進む（指の動いた時刻をそのまま使うため）。早送りは 4 倍
+const evTime = e => (e.timeStamp > 1e3 && Math.abs(e.timeStamp - performance.now()) < 5000 ? e.timeStamp : performance.now());
+function newGame(s, botSkill) {
+  game = makeGame(s);
+  bot = botSkill ? makeBot(game, SKILLS[botSkill], mulberry((s * 7 + 3) >>> 0)) : null;
+  pops = []; failAt = -1; newShown = false; trail = []; lastSample = -1; shake = 0; drag = null; keyDir = { l: false, r: false, u: false, d: false }; fingerTrail = []; eqPrev = null;
+  base = performance.now() / 1000 + LAG; lastAdv = performance.now() / 1000; cam.init = true;
+  for (const [, m] of itemMeshes) disposeItemMesh(m); itemMeshes.clear();
+  for (const gh of ghosts) disposeItemMesh(gh.m); ghosts = [];
+  syncItems(true);
+}
+function disposeItemMesh(m) { scene.remove(m.g); m.g.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); }   // 模様の絵（テクスチャ）は使いまわすので残す
+
+/* ---------- 1ステップ（物理は 1/240 秒きざみ。描画のコマ数によらない。入力は指の動いた時刻で物理に入る） ---------- */
+function advancePhys() {
+  if (!game) return;
+  const now = performance.now() / 1000;
+  if (frozen) { base = now - game.t - LAG; lastAdv = now; return; }
+  if (ff && state === 'play') base -= (now - lastAdv) * (FF - 1);   // 早送り（時間が速く進むだけ。入力は物理の時刻で効くので結果は同じ）
+  lastAdv = now;
+  let target = now - base - LAG;
+  if (target - game.t > 0.25 * (ff ? FF : 1)) { base += target - game.t - 0.25 * (ff ? FF : 1); target = now - base - LAG; }   // タブを離れていた・重かった: 置いていかない
+  let k = 0;
+  while (game.t + PH.DT <= target && k < 6000) { if (bot) bot.step(); stepGame(game); if (game.events.length) handleEvents(); k++; }
+}
+function gameTimeOf(ms) { return Math.max(game.t, ms / 1000 - base); }
+function input(kind, v, ms) { if (!game || bot || state !== 'play' || !(game.phase === 'go' || game.phase === 'ready')) return; gInput(game, gameTimeOf(ms), kind, v); }
+function step(dt) {
+  tt += dt;
+  advancePhys();
+  if (state === 'title') demoStep();
+  if (state === 'play' && failAt >= 0) showOver();
+  if (state === 'play' && game && (game.phase === 'go' || game.phase === 'stop') && game.t - lastSample >= 0.25) { lastSample = game.t; trail.push({ t: game.t - game.t0, om: game.om, act: game.actI }); if (trail.length > 8000) trail.splice(0, 2); }
+  if (shake > 0) shake -= dt;
+  if (!frozen) for (const p of pops) p.life += dt;
+  pops = pops.filter(p => p.life < p.dur);
+  const now = performance.now();
+  fingerTrail = fingerTrail.filter(p => now - p.t < 450);
+}
+function addPop(text, opt = {}) {
+  if (opt.kind !== 'onoma') pops = pops.filter(p => p.kind !== (opt.kind || 'mid'));
+  pops.push({ text, sub: opt.sub, life: 0, dur: opt.dur || 1.4, kind: opt.kind || 'mid', size: opt.size || 26, col: opt.col, wx: opt.wx, wy: opt.wy, wz: opt.wz });
+  if (pops.length > 8) pops.shift();
+}
+const lastSnd = { head: -9, clack: -9, gon: -9 };   // 同じ音を 続けて鳴らしすぎない
+const STOP_TEXT = { nospin: '柄を回さなかった', slow: '回転が足りなかった', fast: '回しすぎた', head: '頭に当たって はじかれた', tilt: '傾けすぎた', crowd: '毬どうしが ぶつかった', bump: '角で ごろんと はねた', wobble: '毬の輪が 大きくなった' };
+const ACT_CALL = ['はいっ！', 'もうひとつ、毬！', 'お次は 升！', '茶碗と 毬！', 'お次は 金輪！', 'いつもより多く回しております！', '升と 毬ふたつ！', '輪と 毬ふたつ！'];
+function handleEvents() {
+  const loud = state === 'play';
+  for (const e of game.events) {
+    if (e.type === 'over') { failAt = tt; continue; }
+    if (!loud) continue;
+    if (e.type === 'go') { addPop('はいっ！', { size: 34, dur: 1.0, col: '#ffe08a' }); sHyoshigi(1); }
+    else if (e.type === 'act') {
+      const c = ACT_CALL[e.i] || 'いつもより多く回しております！';
+      addPop(c, { sub: e.act.name, size: e.i >= 5 && e.i !== 6 && e.i !== 7 ? 26 : 30, dur: 2.4, col: '#ffe08a', kind: 'call' }); sHyoshigi(2); sClap(1.6); burstConfetti(e.i >= 5 ? 90 : 50);
+    }
+    else if (e.type === 'head') { if (e.s > 0.05 && tt - lastSnd.head > 0.15) { lastSnd.head = tt; sKotsun(e.s); addPop('こつん', { kind: 'onoma', size: 15, dur: 0.6, col: '#fbf3e4', wx: e.it.c[0], wy: e.it.c[1] + 0.08, wz: e.it.c[2] }); } }
+    else if (e.type === 'clack') { if (tt - lastSnd.clack > 0.08) { lastSnd.clack = tt; sClack(e.s); } }
+    else if (e.type === 'gon') { if (tt - lastSnd.gon > 0.16) { lastSnd.gon = tt; sGon(); } }
+    else if (e.type === 'fall') { addPop('ぽろっ', { kind: 'onoma', size: 20, dur: 0.8, col: '#fbf3e4', wx: e.it.c[0], wy: e.it.c[1] + 0.1, wz: e.it.c[2] }); }
+    else if (e.type === 'land') { sPoton(); shake = 0.25; }
+    else if (e.type === 'stop') { addPop('おっとっと…', { sub: STOP_TEXT[e.cause], size: 34, dur: 2.2, col: '#fbf3e4' }); if (navigator.vibrate) try { navigator.vibrate([10, 40, 10]); } catch {} }
+  }
+  if (state === 'play' && game.phase === 'go' && rec.best > 0 && !newShown && !botStart && game.t - game.t0 > rec.best && rec.plays > 0) { newShown = true; addPop('自己ベスト更新！', { kind: 'hot', size: 24, dur: 1.8, col: '#ffe08a' }); sChime(); burstConfetti(40); }
+  if (state !== 'play' && game.events.some(e => e.type === 'over')) failAt = tt;
+  game.events.length = 0;
+}
+// タイトル背景のデモ: ボットが回している（音なし）
+function newDemo() { newGame(nextSeed(), 'good'); demoEnd = -1; }
+function demoStep() { if (game.phase === 'over' || game.t > 60) { if (demoEnd < 0) demoEnd = tt; if (tt - demoEnd > 1.0) newDemo(); } }
+
+/* ---------- 描画 ---------- */
+const cam = { x: 0, y: 1, z: 2, lx: 0, ly: 0.3, lz: 0, init: true };
+function camTarget() {
+  const ui = state === 'title' || state === 'over', port = W / H < 0.75;
+  if (port) return ui ? { x: 0.4, y: 1.15, z: 2.3, lx: 0.02, ly: 0.02, lz: 0 } : { x: 0, y: 1.55, z: 1.85, lx: 0, ly: 0.18, lz: -0.05 };
+  return ui ? { x: 0.5, y: 0.9, z: 2.4, lx: 0.1, ly: 0.3, lz: 0 } : { x: 0, y: 0.9, z: 2.1, lx: 0, ly: 0.3, lz: 0 };
+}
+function updateCamera(dt) {
+  const T = camTarget(), k = cam.init ? 1 : Math.min(1, dt * 3);
+  cam.init = false;
+  for (const key of ['x', 'y', 'z', 'lx', 'ly', 'lz']) cam[key] = lerp(cam[key], T[key], k);
+  let sx = 0, sy = 0;
+  if (shake > 0 && !reduceMotion) { const a = shake * 0.04; sx = (Math.random() - 0.5) * a; sy = (Math.random() - 0.5) * a; }
+  camera.position.set(cam.x + sx, cam.y + sy, cam.z);
+  camera.lookAt(cam.lx, cam.ly, cam.lz);
+}
+const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), Yv = new THREE.Vector3(0, 1, 0), tmpV = new THREE.Vector3();
+function project(x, y, z) { tmpV.set(x, y, z).project(camera); return { x: (tmpV.x + 1) / 2 * W, y: (1 - tmpV.y) / 2 * H, front: tmpV.z < 1 }; }
+function syncUmbrella() {
+  const g = game;
+  _v1.set(g.a[0], g.a[1], g.a[2]);
+  umb.quaternion.setFromUnitVectors(Yv, _v1);
+  umb.position.set(HAND[0], HAND[1], HAND[2]);
+  canopyG.position.set(0, PH.L, 0);
+  canopyG.rotation.y = (g.rot * VIS_SPIN) % (Math.PI * 2);
+  // 手は 柄を握ったまま、傾きに合わせて少しひねる
+  handG.position.set(HAND[0], HAND[1], HAND[2]);
+  handG.quaternion.copy(umb.quaternion);
+}
+// 物理の乗せたもの ↔ 見た目
+function syncItems(snap) {
+  const g = game, alive = new Set();
+  g.items.forEach((it, i) => {
+    alive.add(it.id);
+    let m = itemMeshes.get(it.id);
+    if (!m) { m = makeItemMesh(it, i + g.actI); itemMeshes.set(it.id, m); if (snap) m.drop = 0; }
+  });
+  for (const [id, m] of itemMeshes) if (!alive.has(id)) { ghosts.push({ m, life: 0 }); itemMeshes.delete(id); }
+}
+function renderItems(dt) {
+  const g = game;
+  syncItems(false);
+  g.items.forEach(it => {
+    const m = itemMeshes.get(it.id); if (!m) return;
+    if (it.fall) { m.g.position.set(it.fall.p[0], it.fall.p[1], it.fall.p[2]); m.body.rotateX(dt * 6); return; }
+    m.drop = Math.max(0, m.drop - dt);
+    const dy = m.drop > 0 ? (m.drop / 0.25) ** 2 * 0.25 : 0;
+    m.g.position.set(it.c[0], it.c[1] + dy, it.c[2]);
+    // 転がる向き（面が下を通り抜ける向き）と、回る速さ（見た目はゆっくりめ）
+    const n = it.n;
+    const ux = g.om * (g.a[1] * (it.c[2] - g.A[2]) - g.a[2] * (it.c[1] - g.A[1])), uy = g.om * (g.a[2] * (it.c[0] - g.A[0]) - g.a[0] * (it.c[2] - g.A[2])), uz = g.om * (g.a[0] * (it.c[1] - g.A[1]) - g.a[1] * (it.c[0] - g.A[0]));
+    let sx = it.v[0] - ux, sy = it.v[1] - uy, sz = it.v[2] - uz; const sl = Math.hypot(sx, sy, sz) || 1; sx /= sl; sy /= sl; sz /= sl;
+    if (it.type === 'wa') {
+      // 金輪: 面に立って、すべる向きに転がる
+      _v1.set(n[0], n[1], n[2]); _v2.set(sx, sy, sz);
+      const ax = new THREE.Vector3().crossVectors(_v1, _v2).normalize();
+      const M = new THREE.Matrix4().makeBasis(_v2, _v1, ax);
+      m.g.quaternion.setFromRotationMatrix(M);
+      m.spinA = ((m.spinA || 0) - sl * dt * 0.05 / it.b) % (Math.PI * 2);
+      m.body.rotation.set(0, 0, m.spinA);
+      m.g.position.set(it.c[0] + n[0] * it.b * 0.0, it.c[1] + dy, it.c[2]);
+    } else {
+      // 転がる軸 = n × すべる向き
+      _v1.set(n[1] * sz - n[2] * sy, n[2] * sx - n[0] * sz, n[0] * sy - n[1] * sx).normalize();
+      _qa.setFromAxisAngle(_v1, -sl * dt * 0.05 / it.b);
+      m.q.premultiply(_qa);
+      m.g.quaternion.copy(m.q);
+    }
+  });
+  // 後見がさげていくもの: すっと上へ
+  for (const gh of ghosts) { gh.life += dt; gh.m.g.position.y += dt * 1.6; gh.m.g.scale.setScalar(Math.max(0.01, 1 - gh.life * 2.2)); }
+  ghosts = ghosts.filter(gh => { if (gh.life > 0.45) { disposeItemMesh(gh.m); return false; } return true; });
+}
+function renderEq(dt) {
+  const g = game;
+  if (state === 'over' || !(g.phase === 'go' || g.phase === 'ready' || g.phase === 'stop')) { eqRing.visible = false; return; }
+  if (!frozen || !eqNow) { eqNow = eqPoint(g, 1, 0.042, eqPrev); eqPrev = eqNow; }
+  const E = eqNow;
+  eqRing.visible = E.rho < PH.R;
+  eqRing.position.set(E.q[0] + E.n[0] * 0.004, E.q[1] + E.n[1] * 0.004, E.q[2] + E.n[2] * 0.004);
+  _v1.set(E.n[0], E.n[1], E.n[2]); eqRing.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), _v1);
+  const danger = E.rho > PH.R - 0.07 || E.rho < PH.HEAD_R + 0.05;
+  eqRing.material.color.set(danger ? '#ff7a5a' : '#ffd76a');
+  eqRing.material.opacity = (0.45 + 0.25 * Math.sin(tt * 4)) * (state === 'title' ? 0.6 : 1);
+}
+let lastRenderDt = 1 / 60;
+function render(dt) {
+  if (!game) return;
+  lastRenderDt = dt;
+  const rdt = frozen ? 0 : dt;
+  updateCamera(dt);
+  syncUmbrella();
+  renderItems(rdt);
+  renderEq(rdt);
+  stepConfetti(rdt, tt);
+  renderer.render(scene, camera);
+  drawFx();
+}
+function txt(s, x, y, size, fill = '#fbf3e4', stroke = 'rgba(30,12,10,.88)', lw = 6, font = FD) {
+  const wt = /^\d00 /.exec(font);
+  fx.font = wt ? `${wt[0]}${size}px ${font.slice(wt[0].length)}` : `${size}px ${font}`; fx.lineJoin = 'round'; fx.lineWidth = lw; fx.strokeStyle = stroke; fx.strokeText(s, x, y); fx.fillStyle = fill; fx.fillText(s, x, y);
+}
+const fmtT = t => t.toFixed(1);
+const OM_VIS = 90;
+// HUD の置き場（画面の座標）
+function hudLayout() {
+  const sc = Math.min(1, W / 390 + 0.05), w = Math.min(320, W - 64), y = H - safeB - 44 * sc - 22;
+  return { sc, gauge: { x0: W / 2 - w / 2, x1: W / 2 + w / 2, y, h: 12 * sc } };
+}
+function drawFx() {
+  fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fx.clearRect(0, 0, W, H);
+  if (!game || state === 'loading') return;
+  const g = game, Lh = hudLayout(), sc = Lh.sc;
+  fx.textAlign = 'center';
+  if (state === 'play' || state === 'skip') {
+    // 毬がふちに寄った・回転が帯の外: まわりが少し赤く
+    const near = g.items.reduce((m, it) => it.fall ? m : Math.max(m, it.rho), 0), out = g.om < PH.BAND_LO ? (PH.BAND_LO - g.om) / 8 : g.om > PH.BAND_HI ? (g.om - PH.BAND_HI) / 10 : 0;
+    const dk = clamp(Math.max((near - (PH.R - 0.09)) / 0.07, out), 0, 1);
+    if (g.phase === 'go' && dk > 0.02) { const k = dk * (0.6 + 0.4 * Math.sin(tt * 8)); const gr = fx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * 0.35, W / 2, H / 2, Math.max(W, H) * 0.75); gr.addColorStop(0, 'rgba(140,20,20,0)'); gr.addColorStop(1, `rgba(140,20,20,${0.38 * k})`); fx.fillStyle = gr; fx.fillRect(0, 0, W, H); }
+    const T = g.phase === 'go' ? g.t - g.t0 : g.phase === 'ready' ? 0 : g.T;
+    txt(fmtT(T), W / 2 - 10 * sc, safeT + 62, 50 * sc, '#fbf3e4');
+    fx.textAlign = 'left'; txt('秒', W / 2 + fx.measureText(fmtT(T)).width / 2 - 4 * sc, safeT + 62, 18 * sc, '#fbf3e4', 'rgba(30,12,10,.85)', 5); fx.textAlign = 'center';
+    const act = actOf(g.actI), nm = g.items.length;
+    txt(`${act.name}・${nm === 1 ? OBJ[g.items[0].type].name + ' ひとつ' : `${nm}つ のせ`}`, W / 2, safeT + 86, 13 * sc, '#ffe7b0', 'rgba(30,12,10,.85)', 4, `700 ${FB}`);
+    if (rec.best > 0) { fx.textAlign = 'right'; txt(`最高 ${fmtT(rec.best)}秒`, W - 12, safeT + 24, 12 * sc, '#fbf3e4', 'rgba(30,12,10,.8)', 4, `700 ${FB}`); fx.textAlign = 'center'; }
+    if (ff) txt('早送り ▶▶', W / 2, safeT + 106, 12 * sc, '#ffe7b0', 'rgba(30,12,10,.85)', 4, `700 ${FB}`);
+    drawEqMark(sc);
+    drawGauge(Lh);
+    drawFinger();
+    // はじめの説明
+    if ((g.phase === 'ready' || (g.phase === 'go' && g.t - g.t0 < 10)) && !bot && rec.plays < 3) {
+      const tg = g.phase === 'go' ? g.t - g.t0 : 0, a = clamp((10 - tg) / 1.2, 0, 1);
+      const ph = reduceMotion ? 1 : 0.8 + 0.2 * Math.sin(tt * 4);
+      fx.globalAlpha = a * ph;
+      const y0 = Lh.gauge.y - 74 * sc;
+      txt(tg < 5 ? '指で くるくる 円をかく！' : '指をずらすと 毬がその向きへ', W / 2, y0, 19 * sc, '#ffe08a', 'rgba(30,12,10,.9)', 6);
+      txt(tg < 5 ? '回転を 金の帯に保つ' : '金の輪に 毬を乗せておく', W / 2, y0 + 24 * sc, 13 * sc, '#fbf3e4', 'rgba(30,12,10,.85)', 4, `700 ${FB}`);
+      fx.globalAlpha = 1;
+    }
+  }
+  for (const p of pops) {
+    const k = clamp(p.life / 0.12, 0, 1), out = clamp((p.dur - p.life) / 0.25, 0, 1);
+    fx.globalAlpha = Math.min(k, out);
+    if (p.kind === 'onoma') { const s = project(p.wx, p.wy, p.wz); if (s.front) txt(p.text, s.x, s.y - p.life * 30, p.size * sc, p.col, 'rgba(30,12,10,.9)', 5); }
+    else {
+      const y = p.kind === 'hot' ? safeT + 140 * sc : p.kind === 'call' ? safeT + 132 * sc : H * 0.3 - p.life * 6;
+      const sz = p.kind === 'call' ? Math.min(p.size * sc, (W - 24) / Math.max(4, p.text.length) * 1.0) : p.size * sc;
+      txt(p.text, W / 2, y, sz, p.col || '#fbf3e4');
+      if (p.sub) txt(p.sub, W / 2, y + 28 * sc, 15 * sc, '#fbf3e4', 'rgba(30,12,10,.85)', 4, `700 ${FB}`);
+    }
+    fx.globalAlpha = 1;
+  }
+  fx.textAlign = 'start';
+}
+// 金の輪（毬が落ち着く点）のしるしと、毬がずれたときの「こっちへ押す」矢印
+function drawEqMark(sc) {
+  const g = game, E = eqNow;
+  if (!E || !(g.phase === 'go' || g.phase === 'ready') || E.rho > PH.R) return;
+  const c = project(E.p[0], E.p[1], E.p[2]), e2 = project(E.p[0] + 0.075, E.p[1], E.p[2]);
+  if (!c.front) return;
+  const r = Math.max(10, Math.abs(e2.x - c.x)), danger = E.rho > PH.R - 0.07 || E.rho < PH.HEAD_R + 0.05;
+  fx.save();
+  fx.setLineDash([5, 4]); fx.lineDashOffset = -tt * 12; fx.lineWidth = 2.2;
+  fx.strokeStyle = danger ? 'rgba(255,120,90,.85)' : 'rgba(255,215,106,.85)';
+  fx.beginPath(); fx.ellipse(c.x, c.y, r, r * 0.55, 0, 0, Math.PI * 2); fx.stroke();
+  fx.restore();
+  // 一番ずれている毬から 金の輪へ（指をずらす向き）
+  let worst = null, wd = 0;
+  for (const it of g.items) { if (it.fall) continue; const d = Math.hypot(it.c[0] - E.p[0], it.c[2] - E.p[2]); if (d > wd) { wd = d; worst = it; } }
+  if (worst && wd > 0.045 && g.phase === 'go') {
+    const b = project(worst.c[0], worst.c[1], worst.c[2]), dx = c.x - b.x, dy = c.y - b.y, L = Math.hypot(dx, dy);
+    if (L > 14) {
+      const ux = dx / L, uy = dy / L, x0 = b.x + ux * 14, y0 = b.y + uy * 14, x1 = b.x + ux * Math.min(L - 6, 70 * sc), y1 = b.y + uy * Math.min(L - 6, 70 * sc);
+      const a = clamp((wd - 0.045) / 0.04, 0, 1) * (rec.plays < 5 ? 0.9 : 0.55);
+      fx.globalAlpha = a; fx.strokeStyle = '#ffe7b0'; fx.fillStyle = '#ffe7b0'; fx.lineWidth = 3; fx.lineCap = 'round';
+      fx.beginPath(); fx.moveTo(x0, y0); fx.lineTo(x1, y1); fx.stroke();
+      fx.beginPath(); fx.moveTo(x1 + ux * 8, y1 + uy * 8); fx.lineTo(x1 - uy * 6, y1 + ux * 6); fx.lineTo(x1 + uy * 6, y1 - ux * 6); fx.closePath(); fx.fill();
+      fx.globalAlpha = 1;
+    }
+  }
+}
+// 回転の目盛り（金の帯＝ちょうどいい）
+function drawGauge(Lh) {
+  const g = game, { x0, x1, y, h } = Lh.gauge, sc = Lh.sc, X = om => x0 + (x1 - x0) * clamp(om / OM_VIS, 0, 1);
+  fx.fillStyle = 'rgba(30,12,10,.55)'; fx.beginPath(); fx.roundRect(x0 - 8, y - h / 2 - 8, x1 - x0 + 16, h + 16, 10); fx.fill();
+  fx.fillStyle = 'rgba(251,243,228,.18)'; fx.beginPath(); fx.roundRect(x0, y - h / 2, x1 - x0, h, 5); fx.fill();
+  fx.fillStyle = 'rgba(217,164,65,.85)'; fx.beginPath(); fx.roundRect(X(PH.BAND_LO), y - h / 2, X(PH.BAND_HI) - X(PH.BAND_LO), h, 4); fx.fill();
+  spinShown += (g.om - spinShown) * Math.min(1, lastRenderDt * 12);
+  const xn = X(spinShown), inBand = g.om >= PH.BAND_LO && g.om <= PH.BAND_HI;
+  fx.fillStyle = inBand ? '#fbf3e4' : `rgba(255,120,90,${0.75 + 0.25 * Math.sin(tt * 12)})`;
+  fx.beginPath(); fx.moveTo(xn, y - h / 2 - 3); fx.lineTo(xn - 7 * sc, y - h / 2 - 13 * sc); fx.lineTo(xn + 7 * sc, y - h / 2 - 13 * sc); fx.closePath(); fx.fill();
+  fx.fillRect(xn - 1.5, y - h / 2, 3, h);
+  fx.textAlign = 'center';
+  txt('ゆるい', x0 + 22 * sc, y + h / 2 + 17 * sc, 11 * sc, '#fbf3e4', 'rgba(30,12,10,.85)', 3.5, `700 ${FB}`);
+  txt('ちょうど', (X(PH.BAND_LO) + X(PH.BAND_HI)) / 2, y + h / 2 + 17 * sc, 11 * sc, '#ffe7b0', 'rgba(30,12,10,.85)', 3.5, `700 ${FB}`);
+  txt('速すぎ', x1 - 22 * sc, y + h / 2 + 17 * sc, 11 * sc, '#fbf3e4', 'rgba(30,12,10,.85)', 3.5, `700 ${FB}`);
+  const lab = g.om < PH.BAND_LO ? 'もっと回して！' : g.om > PH.BAND_HI ? 'ゆるめて！' : `${(g.om / (2 * Math.PI)).toFixed(1)} 回/秒`;
+  txt(lab, xn, y - h / 2 - 17 * sc, 12 * sc, inBand ? '#fbf3e4' : '#ffd0c0', 'rgba(30,12,10,.85)', 4, `700 ${FB}`);
+}
+// 指のくるくるの あと
+function drawFinger() {
+  if (fingerTrail.length < 2) return;
+  const now = performance.now();
+  fx.lineCap = 'round'; fx.lineJoin = 'round';
+  for (let i = 1; i < fingerTrail.length; i++) {
+    const a = fingerTrail[i - 1], b = fingerTrail[i], k = 1 - (now - b.t) / 450;
+    fx.strokeStyle = `rgba(255,231,176,${0.55 * k})`; fx.lineWidth = 6 * k + 1; fx.beginPath(); fx.moveTo(a.x, a.y); fx.lineTo(b.x, b.y); fx.stroke();
+  }
+}
+
+/* ---------- 結果 ---------- */
+function advice(g) {
+  const c = g.cause;
+  if (g.T < 5 && c === 'nospin') return '回さないと、回転が落ちて 毬が転がり落ちる。画面を指で くるくる、円をかき続けよう。';
+  if (c === 'nospin') return '柄を回さなかった。押すだけでは回らない。指で くるくる 円をかくと、かいた道のりのぶん回る。';
+  if (c === 'slow') return '回転が足りなかった。遅いと 回る張りが毬を支えきれず、坂を転がり落ちる。くるくるを続けて、目盛りの金の帯へ。';
+  if (c === 'fast') return '回しすぎた。速すぎると 回る空気に毬が押しのけられる。くるくるを ゆるめて、金の帯の中へ。';
+  if (c === 'head') return '毬が まんなかの頭（ろくろ）に当たって はじかれた。毬がずれたら、指をずらして 金の輪へ押しもどそう。';
+  if (c === 'tilt') return '傾けすぎた。傘を倒すほど 毬の落ち着く点が ふちに寄る。くるくるの中心を 少し戻そう。';
+  if (c === 'crowd') return '毬どうしが ぶつかって はみ出した。いくつも乗っているときは、まとめて 金の輪へ押しもどそう。';
+  if (c === 'bump') return '升・茶碗は 角で ごろんと はねる。少しずつ、こまめに 金の輪へ押しもどそう。';
+  return '毬のまわる輪が だんだん大きくなって、ふちから落ちた。毬がずれたら、指をずらした向きへ 毬が押される。金の輪へ押しもどそう。';
+}
+function showOver() {
+  if (state !== 'play') return;
+  state = 'over';
+  const T = r1(game.T), n = game.maxItems, isNew = T > rec.best;
+  if (!botStart) { rec.plays++; rec.total = r1(rec.total + T); rec.last = T; rec.lastN = n; if (isNew) rec.best = T; if (n > rec.bestN) rec.bestN = n; save(); }
+  $('oScore').innerHTML = `${T.toFixed(1)}<small>秒</small>`;
+  $('oSub').textContent = T >= 5 ? `回した（毬${n}個・${actOf(game.actI).name}まで）` : `で 毬がぽとん（毬${n}個）`;
+  $('oMsg').textContent = advice(game);
+  $('oNoren').innerHTML = (T >= 300 ? ['大', '入', '満', '員'] : T >= 150 ? ['い', 'つ', 'も', 'よ', 'り'] : T >= 90 ? ['お', 'み', 'ご', 'と'] : T >= 45 ? ['あ', 'っ', 'ぱ', 'れ'] : T >= 20 ? ['よ', 'っ', 'と'] : T >= 5 ? ['お', 'っ', 'と', 'と'] : ['ぽ', 'と', 'ん']).map(c => `<span>${c}</span>`).join('');
+  $('oBest').textContent = rec.plays ? `${rec.best.toFixed(1)}秒` : '—'; $('oPlays').textContent = rec.plays; $('oBestN').textContent = rec.bestN ? `毬${rec.bestN}個` : '—';
+  $('newRec').hidden = !(isNew && T > 0 && rec.plays > 1 && !botStart);
+  $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({ text: `${shareText(T, n)}${isNew && T > 0 && rec.plays > 1 ? ' 自己ベスト！' : ''}\n`, url: gameUrl(), hashtags: '傘まわし' });
+  $('copyMsg').textContent = '画面タップ・スペースでもう一回';
+  $('over').hidden = false;
+  drawTrail();
+  overShownAt = performance.now();
+  $('retryBtn').focus({ preventScroll: true });
+}
+// 結果画面: 回転の記録（金の帯・演目の替わり目）
+function drawTrail() {
+  const c = $('oTrail'), r = c.getBoundingClientRect(), w = Math.max(1, Math.round(r.width)), h = Math.max(1, Math.round(r.height));
+  c.width = Math.round(w * dpr); c.height = Math.round(h * dpr);
+  const g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+  const T = Math.max(5, game.T + 1), X = t => 10 + (w - 20) * t / T, Y = om => h - 5 - (h - 12) * clamp(om / OM_VIS, 0, 1);
+  g.fillStyle = 'rgba(217,164,65,.25)'; g.fillRect(10, Y(PH.BAND_HI), w - 20, Y(PH.BAND_LO) - Y(PH.BAND_HI));
+  for (const a of ACTS) if (a.t > 0 && a.t < game.T) { g.strokeStyle = 'rgba(179,38,47,.5)'; g.setLineDash([3, 3]); g.beginPath(); g.moveTo(X(a.t), 0); g.lineTo(X(a.t), h); g.stroke(); g.setLineDash([]); }
+  g.strokeStyle = '#23345a'; g.lineWidth = 2; g.lineJoin = 'round'; g.beginPath();
+  trail.forEach((p, i) => { if (i) g.lineTo(X(p.t), Y(p.om)); else g.moveTo(X(p.t), Y(p.om)); }); g.stroke();
+  g.fillStyle = '#b3262f'; g.font = `11px ${FD}`; g.textAlign = 'center'; g.fillText('ぽとん', clamp(X(game.T), 30, w - 30), 11);
+  if (trail.length < 3) { g.fillStyle = 'rgba(34,26,23,.5)'; g.font = `700 12px ${FB}`; g.fillText('くるくる… の前に 落ちた', w / 2, h / 2 + 4); }
+}
+const shareText = (T, n) => T >= 5 ? `☂️傘まわし ${T.toFixed(1)}秒 回した（毬${n}個）！` : `☂️傘まわし ${T.toFixed(1)}秒で 毬がぽとん…`;
+
+/* ---------- シェア ---------- */
+// 公開先のURL。ローカルで開いたときもこれをシェアする
+const PUBLIC_URL = 'https://asobi.enludus.com/games/kasamawashi/';
+function gameUrl() {
+  try {
+    if (/^https?:$/.test(location.protocol) && location.hostname !== 'localhost') return location.origin + location.pathname;
+  } catch {}
+  return PUBLIC_URL;
+}
+function fillTitle() { $('tBest').textContent = rec.plays ? `${rec.best.toFixed(1)}秒` : '—'; $('tPlays').textContent = rec.plays; }
+
+/* ---------- 音（布と竹と木の低い音。2kHz 以上は使わない。最後に 1.9kHz のローパス） ---------- */
+let ac = null, master = null, noiseBuf = null, rollSrc = null, rollBP = null, rollGain = null, nextRib = 0, nextKoro = 0;
+function wakeAudio() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1900; lp.Q.value = 0.5;
+      master = ac.createDynamicsCompressor(); master.threshold.value = -16; master.ratio.value = 5;
+      master.connect(lp).connect(ac.destination);
+      const len = ac.sampleRate * 2; noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0); let b = 0;
+      for (let i = 0; i < len; i++) { b = b * 0.75 + (Math.random() * 2 - 1) * 0.25; d[i] = b * 2; }
+      // 毬が張りの上を転がる「ごろごろ」: こもった低いノイズを ずっと流して、回転で開け閉めする
+      rollSrc = ac.createBufferSource(); rollSrc.buffer = noiseBuf; rollSrc.loop = true;
+      rollBP = ac.createBiquadFilter(); rollBP.type = 'bandpass'; rollBP.frequency.value = 220; rollBP.Q.value = 1.1;
+      const rl = ac.createBiquadFilter(); rl.type = 'lowpass'; rl.frequency.value = 500;
+      rollGain = ac.createGain(); rollGain.gain.value = 0;
+      rollSrc.connect(rollBP).connect(rl).connect(rollGain).connect(master); rollSrc.start();
+    }
+    if (ac.state === 'suspended') ac.resume();
+  } catch {}
+}
+const live = () => ac && state === 'play';
+function tone(freq, at, dur, vol, type = 'sine', f1) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at); if (f1) o.frequency.exponentialRampToValueAtTime(f1, at + dur);
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  o.connect(g).connect(master); o.start(at); o.stop(at + dur + 0.05);
+}
+function noise(at, dur, vol, type, freq, q = 1, lpf = 1500) {
+  const s = ac.createBufferSource(); s.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = lpf;
+  const g = ac.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.006); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  s.connect(f).connect(lp).connect(g).connect(master); s.start(at, Math.random() * 1.5); s.stop(at + dur + 0.05);
+  return f;
+}
+// 毎コマ: ごろごろ（転がる毬）・ころころ（毬の糸のふし）・からから（傘の骨。回転が速いほど間隔がつまる）
+function soundFrame() {
+  try {
+    if (!ac) return;
+    const on = live() && game && (game.phase === 'go' || game.phase === 'ready') && !frozen, n0 = ac.currentTime;
+    const nIt = on ? game.items.filter(it => !it.fall && !it.fly).length : 0;
+    rollGain.gain.setTargetAtTime(on ? clamp(0.02 * Math.sqrt(nIt) * game.om / 46, 0, 0.06) : 0, n0, 0.12);
+    rollBP.frequency.setTargetAtTime(on ? clamp(150 + game.om * 1.8, 150, 380) : 220, n0, 0.2);
+    if (!on || game.om < 8) { nextRib = n0 + 0.05; nextKoro = n0 + 0.05; return; }
+    if (nextRib < n0) nextRib = n0;
+    const rate = clamp(game.om / (2 * Math.PI) * 1.6, 3, 16), vol = 0.022 * clamp(game.om / 46, 0.4, 1.3);
+    let k = 0;
+    while (nextRib < n0 + 0.12 && k++ < 8) {
+      noise(nextRib, 0.02, vol, 'bandpass', 380 + Math.random() * 90, 2.4, 800);
+      tone(170 + Math.random() * 20, nextRib, 0.022, vol * 0.4, 'triangle');
+      nextRib += (1 / rate) * (0.85 + Math.random() * 0.3);
+    }
+    if (nextKoro < n0) nextKoro = n0;
+    const kr = clamp(4 + game.om / 10, 4, 11) * Math.max(1, nIt * 0.7);
+    k = 0;
+    while (nextKoro < n0 + 0.12 && k++ < 8) {
+      tone(200 + Math.random() * 60, nextKoro, 0.035, 0.018 * Math.sqrt(nIt), 'sine', 160);
+      nextKoro += (1 / kr) * (0.7 + Math.random() * 0.6);
+    }
+  } catch {}
+}
+function sKotsun(s) { try { if (!live()) return; const n0 = ac.currentTime, v = clamp(0.05 + s * 0.12, 0.05, 0.14); tone(520, n0, 0.06, v, 'triangle', 380); tone(260, n0, 0.08, v * 0.6, 'sine'); } catch {} }
+function sClack(s) { try { if (!live()) return; const n0 = ac.currentTime; noise(n0, 0.04, clamp(0.04 + s * 0.1, 0.04, 0.12), 'bandpass', 520, 1.6, 900); tone(330, n0, 0.04, 0.03, 'triangle'); } catch {} }
+function sGon() { try { if (!live()) return; const n0 = ac.currentTime; tone(240 + Math.random() * 40, n0, 0.05, 0.035, 'triangle', 180); } catch {} }
+function sPoton() { try { if (!ac) return; const n0 = ac.currentTime; tone(150, n0, 0.28, 0.16, 'sine', 62); noise(n0, 0.1, 0.08, 'lowpass', 280, 0.7, 400); tone(110, n0 + 0.2, 0.18, 0.06, 'sine', 70); } catch {} }
+// 拍子木（カン・カン）: 木の乾いた音。上は 1.4kHz まで
+function sHyoshigi(n = 2) { try { if (!live()) return; const n0 = ac.currentTime + 0.02; for (let i = 0; i < n; i++) { const t = n0 + i * 0.16; tone(940, t, 0.09, 0.07, 'triangle', 900); tone(1400, t, 0.05, 0.025, 'sine'); noise(t, 0.03, 0.05, 'bandpass', 1000, 2, 1500); } } catch {} }
+// 拍手（低めの ぽふぽふ）
+function sClap(dur = 1.5) {
+  try {
+    if (!live()) return; const n0 = ac.currentTime + 0.15;
+    let t = 0;
+    while (t < dur) { const k = 1 - t / dur; noise(n0 + t, 0.05, (0.025 + Math.random() * 0.03) * (0.4 + 0.6 * k), 'bandpass', 600 + Math.random() * 350, 0.9, 1100); t += 0.018 + Math.random() * 0.035; }
+  } catch {}
+}
+function sChime() { try { if (!live()) return; const n0 = ac.currentTime + 0.1; [[523, 0], [587, 0.1], [784, 0.2]].forEach(([f, t]) => tone(f, n0 + t, 0.45, 0.05)); } catch {} }
+
+/* ---------- ループ ---------- */
+let lastTs = performance.now();
+function frame() {
+  const now = performance.now();
+  const dt = Math.min(0.1, (now - lastTs) / 1000); lastTs = now;
+  step(dt);
+  render(Math.max(dt, 1 / 240));
+  soundFrame();
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 入力: 指でくるくる＝柄を回す（動いた道のりで回る。速さではない）。くるくるの中心をずらした量＝傾き。時刻つきで物理へ ---------- */
+const TILT_PX = 11;          // くるくるの中心を 11px ずらすと 1°
+const CENTER_TAU = 0.35;     // くるくるの中心（指の位置の ならし。秒）
+const SETTLE = 0.45;         // 押してから この秒数は 中心が決まるのを待つ（傾けない）
+function start() {
+  wakeAudio(); state = 'play';
+  seed = upcomingSeed(); sessionPlays++;
+  $('title').hidden = true; $('over').hidden = true;
+  const bn = HASH.has('debug') && HASH.get('bot') && SKILLS[HASH.get('bot')] ? HASH.get('bot') : null;
+  botStart = !!bn;   // #bot=… で始めたプレイは記録しない（撮影・確認用）
+  newGame(nextSeed(), bn); frozen = false;
+  sHyoshigi(2);
+  // #debug&skip=秒: はじめにその秒数だけ一気に進め、毬が金の輪に乗って よく回っている瞬間で止める（OGP 撮影・確認用。bot=good と組み合わせる。freeze=1 で止めたまま）
+  if (HASH.has('debug') && +HASH.get('skip') > 0) skipTo(game.t + +HASH.get('skip'), HASH.get('pose') || 'nice');
+  if (HASH.has('debug') && HASH.get('ff') === '1') ff = true;   // #debug&ff=1: ずっと早送り（長いプレイの確認用。結果は同じ）
+}
+// pose=nice: 指定の秒数のあと、毬（乗せたもの）が いくつか乗って、落ち着く点の近くで ふち寄りを回っていて、回転が帯の中のところまで進める
+function skipTo(t1, pose = 'none') {
+  const quiet = state; state = 'skip';
+  const lim = t1 + 90;
+  while (game.phase !== 'over' && game.t < lim) {
+    if (bot) bot.step(); stepGame(game);
+    if (game.events.length) handleEvents();
+    if (game.t >= t1) {
+      if (pose !== 'nice') break;
+      if (game.phase === 'go' && game.om > PH.BAND_LO + 6 && game.om < PH.BAND_HI - 6 && game.items.every(it => !it.fall && !it.fly && it.rho > 0.2 && Math.hypot(it.v[0], it.v[1], it.v[2]) < 0.6) && game.items.some(it => it.rho > 0.27)) break;
+    }
+  }
+  state = quiet;
+  pops = []; failAt = game.phase === 'over' ? tt : -1; shake = 0; cam.init = true; eqPrev = null;
+  trail = trail.filter(p => p.t <= game.t); lastSample = game.t;
+  base = performance.now() / 1000 - game.t - LAG;
+  syncItems(true); for (const [, m] of itemMeshes) m.drop = 0;
+  // call=1: 掛け声の文字を出したまま（OGP 撮影用）
+  if (HASH.get('call') === '1' && game.phase === 'go') addPop(ACT_CALL[game.actI] || 'いつもより多く回しております！', { sub: actOf(game.actI).name, size: 30, dur: 1e9, col: '#ffe08a', kind: 'call' }), pops[pops.length - 1].life = 0.3;
+  for (const gh of ghosts) disposeItemMesh(gh.m); ghosts = [];
+  if (HASH.get('freeze') === '1') frozen = true;
+}
+fxc.addEventListener('pointerdown', e => {
+  e.preventDefault(); wakeAudio();
+  if (state !== 'play' || !game) return;
+  if (game.phase === 'over') { if (failAt >= 0) showOver(); return; }
+  if (!(game.phase === 'go' || game.phase === 'ready') || drag) return;
+  try { fxc.setPointerCapture(e.pointerId); } catch {}
+  const t = evTime(e);
+  drag = { id: e.pointerId, lx: e.clientX, ly: e.clientY, lt: t, t0: t, cx: e.clientX, cy: e.clientY, ox: e.clientX, oy: e.clientY, ax: game.txT, az: game.tzT, sx: game.txT, sz: game.tzT };
+  fingerTrail.push({ x: e.clientX, y: e.clientY, t: performance.now() });
+});
+fxc.addEventListener('pointermove', e => {
+  if (!drag || e.pointerId !== drag.id || !game) return;
+  const t = evTime(e), x = e.clientX, y = e.clientY, dtE = Math.max(0, (t - drag.lt) / 1000);
+  const d = Math.hypot(x - drag.lx, y - drag.ly) / Math.max(1, Math.min(W, H));
+  drag.lx = x; drag.ly = y; drag.lt = t;
+  if (d > 0) input('spin', Math.min(0.25, d), t);
+  const k = 1 - Math.exp(-dtE / CENTER_TAU);
+  drag.cx += (x - drag.cx) * k; drag.cy += (y - drag.cy) * k;
+  if ((t - drag.t0) / 1000 < SETTLE) { drag.ox = drag.cx; drag.oy = drag.cy; }   // 中心が決まるまでは 傾けない
+  const tx = drag.ax + (drag.cx - drag.ox) / TILT_PX * DEG, tz = drag.az + (drag.cy - drag.oy) / TILT_PX * DEG;
+  if (Math.hypot(tx - drag.sx, tz - drag.sz) > 0.05 * DEG) { drag.sx = tx; drag.sz = tz; input('tilt', [tx, tz], t); }
+  fingerTrail.push({ x, y, t: performance.now() });
+  if (fingerTrail.length > 60) fingerTrail.shift();
+});
+const ptrUp = e => { if (!drag || e.pointerId !== drag.id) return; drag = null; };
+addEventListener('pointerup', ptrUp);
+addEventListener('pointercancel', ptrUp);
+fxc.addEventListener('contextmenu', e => e.preventDefault());
+for (const id of ['title', 'over']) {
+  $(id).addEventListener('pointerdown', e => {
+    if (e.target.closest('button, a') || state === 'loading') return;
+    if (id === 'over' && performance.now() - overShownAt < 400) return;
+    e.preventDefault(); start();
+  });
+}
+// キーボード: スペース / Enter = ひと回し（押すたび）、矢印 / WASD = 傾ける（押している間）
+const KEYS = { ArrowLeft: 'l', KeyA: 'l', ArrowRight: 'r', KeyD: 'r', ArrowUp: 'u', KeyW: 'u', ArrowDown: 'd', KeyS: 'd' };
+const keyTilt = ms => input('ktilt', [(keyDir.r ? 1 : 0) - (keyDir.l ? 1 : 0), (keyDir.d ? 1 : 0) - (keyDir.u ? 1 : 0)], ms);
+addEventListener('keydown', e => {
+  const c = e.code;
+  if (state === 'play') {
+    if (game.phase === 'over' && (c === 'Space' || c === 'Enter')) { e.preventDefault(); if (!e.repeat && failAt >= 0) showOver(); return; }
+    const k = KEYS[c];
+    if (k) { e.preventDefault(); if (e.repeat) return; wakeAudio(); keyDir[k] = true; keyTilt(evTime(e)); return; }
+    if (c === 'Space' || c === 'Enter') { e.preventDefault(); if (e.repeat) return; wakeAudio(); input('kspin', true, evTime(e)); }
+    return;
+  }
+  if (c !== 'Space' && c !== 'Enter') return;
+  if (state === 'loading' || state === 'skip') return;
+  const el = document.activeElement;
+  if (el && el !== $('retryBtn') && el !== $('startBtn') && el.matches('button, a, input')) return;
+  if (state === 'over' && performance.now() - overShownAt < 400) { e.preventDefault(); return; }
+  e.preventDefault(); if (!e.repeat) start();
+});
+addEventListener('keyup', e => {
+  if (state !== 'play') return;
+  const k = KEYS[e.code];
+  if (k) { keyDir[k] = false; keyTilt(evTime(e)); return; }
+  if (e.code === 'Space' || e.code === 'Enter') input('kspin', false, evTime(e));
+});
+addEventListener('blur', () => { if (state === 'play' && game) { drag = null; keyDir = { l: false, r: false, u: false, d: false }; input('ktilt', [0, 0], performance.now()); input('kspin', false, performance.now()); } });
+$('startBtn').addEventListener('click', start);
+$('retryBtn').addEventListener('click', start);
+$('copyBtn').addEventListener('click', () => {
+  const text = `${shareText(rec.last, rec.lastN || 1)} ${gameUrl()}`;
+  const msg = $('copyMsg');
+  const fallback = () => { msg.textContent = text; const r = document.createRange(); r.selectNodeContents(msg); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.style.userSelect = 'text'; };
+  try { navigator.clipboard.writeText(text).then(() => { msg.textContent = 'コピーしました'; }, fallback); } catch { fallback(); }
+});
+
+/* ---------- 調整・検証用（#debug のときだけ） ---------- */
+if (HASH.has('debug')) {
+  const q = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(p * (s.length - 1))]; };
+  // 同じ「指の動き・傾き」の時刻の列を、いろいろなコマ割りで物理に流して、結果がそろうか（lag = 物理の遅れ。ゲームは LAG 秒）
+  const replay = (log, seedR, fps, lag = LAG, quant = false) => {
+    const g = makeGame(seedR); let i = 0, tNow = 0;
+    while ((g.phase === 'go' || g.phase === 'ready') && tNow < 1500) {
+      tNow += 1 / fps;
+      while (i < log.length && log[i].t <= tNow) { gInput(g, Math.max(g.t, quant ? tNow - lag : log[i].t), log[i].kind, log[i].v); i++; }   // そのコマまでに届いた入力（quant: 時刻を使わずコマの時刻で効かせた場合）
+      while (g.t + PH.DT <= tNow - lag && (g.phase === 'go' || g.phase === 'ready')) { stepGame(g); g.events.length = 0; }
+    }
+    return { T: r3(g.T), cause: g.cause, items: g.maxItems };
+  };
+  const scr = (x, y, z) => { const s = project(x, y, z); return { x: Math.round(s.x), y: Math.round(s.y) }; };
+  window.__kasamawashi = {
+    info: () => {
+      if (!game) return null;
+      const g = game, E = eqPoint(g), th = Math.hypot(g.tx, g.tz);
+      const omGoal = 46, need = (PH.C0 + PH.C1 * omGoal + PH.C2 * omGoal * omGoal) / PH.SPIN_K;
+      return {
+        state, phase: g.phase, t: r3(g.t), T: r2(g.phase === 'go' ? g.t - g.t0 : g.T), act: actOf(g.actI).name, actI: g.actI,
+        om: r2(g.om), revPerSec: r2(g.om / (2 * Math.PI)), band: [PH.BAND_LO, PH.BAND_HI], inBand: g.om >= PH.BAND_LO && g.om <= PH.BAND_HI,
+        tiltDeg: { x: r1(g.tx / DEG), z: r1(g.tz / DEG), total: r1(th / DEG) }, tiltTargetDeg: { x: r1(g.txT / DEG), z: r1(g.tzT / DEG) },
+        eq: { rho: r3(E.rho), p: E.p.map(r3) },
+        items: g.items.map(it => ({ type: it.type, rho: r3(it.rho), dEq: r3(Math.hypot(it.c[0] - E.p[0], it.c[2] - E.p[2])), dx: r3(it.c[0] - E.p[0]), dz: r3(it.c[2] - E.p[2]), v: r2(Math.hypot(...it.v)), fly: it.fly, fell: it.fell })),
+        meyasu: { spinPerSec: r2(need), circlePxPerSec: Math.round(need * Math.min(W, H)), pushPxPerCm: Math.round(TILT_PX / (PUSH_M * 100 * DEG) * 10) / 10, rim: PH.R, head: PH.HEAD_R },
+        cause: g.cause, bot: !!bot, botStart, ff, frozen, rec, seed: g.seed, queue: g.queue.length, drag: !!drag,
+      };
+    },
+    // 物理だけでボットに N 回遊ばせる: sim('first', 100) → [秒...]。opts.seed0、opts.tMax
+    sim: (skill = 'first', N = 50, opts = {}) => Array.from({ length: N }, (_, i) => r1(runBot(SKILLS[skill], (opts.seed0 ?? 1000) + i, opts).T)),
+    stats: (skill = 'first', N = 60, opts = {}) => {
+      const R = Array.from({ length: N }, (_, i) => runBot(SKILLS[skill], (opts.seed0 ?? 1000) + i, { tMax: 600, ...opts })), T = R.map(r => r.T), causes = {}, acts = {};
+      for (const r of R) { causes[r.cause || 'still'] = (causes[r.cause || 'still'] || 0) + 1; acts[actOf(r.act).name] = (acts[actOf(r.act).name] || 0) + 1; }
+      return { skill, N, p10: r1(q(T, 0.1)), p25: r1(q(T, 0.25)), p50: r1(q(T, 0.5)), p75: r1(q(T, 0.75)), p90: r1(q(T, 0.9)), min: r1(Math.min(...T)), max: r1(Math.max(...T)), ge8: R.filter(r => r.T >= 8).length / N, ge15: R.filter(r => r.T >= 15).length / N, ge60: R.filter(r => r.T >= 60).length / N, ge120: R.filter(r => r.T >= 120).length / N, ge300: R.filter(r => r.T >= 300).length / N, mean: r1(T.reduce((a, b) => a + b, 0) / N), causes, reachedAct: acts };
+    },
+    // ボットの入力の列（時刻つき）を記録して、13 / 30 / 60 / 144 fps のコマ割りで流しなおす（frameQuantized は時刻を使わなかった場合のくらべ）
+    fpsCheck: (skill = 'good', seedR = 4242, tMax = 200) => {
+      const r = runBot(SKILLS[skill], seedR, { log: true, tMax });
+      return { live: { T: r3(r.T), cause: r.cause, items: r.items }, fps13: replay(r.log, seedR, 13), fps30: replay(r.log, seedR, 30), fps60: replay(r.log, seedR, 60), fps144: replay(r.log, seedR, 144), fps30frameQuantized: replay(r.log, seedR, 30, LAG, true), fps60frameQuantized: replay(r.log, seedR, 60, LAG, true), inputs: r.log.length };
+    },
+    // いまのプレイをボットに任せる（記録はしない）
+    autoplay: (skill = 'good') => { if (game && state === 'play') { bot = makeBot(game, SKILLS[skill], mulberry(nextSeed())); botStart = true; } },
+    skip: (s, pose = 'none') => skipTo(game.t + s, pose),
+    freeze: (on = true) => { frozen = on; },
+    ff: (on = true) => { ff = on; },
+    // 画面の座標（Playwright で押すため）
+    umbrellaScreen: () => scr(game.A[0], game.A[1], game.A[2]),
+    ballScreen: (i = 0) => { const it = game.items[i]; if (!it) return null; const p = it.fall ? it.fall.p : it.c; return scr(p[0], p[1], p[2]); },
+    eqScreen: () => { const E = eqPoint(game); return scr(E.p[0], E.p[1], E.p[2]); },
+    rimScreen: () => { const a = game.a, A = game.A, e = V.norm([-a[0] * a[1], 1 - a[1] * a[1], -a[2] * a[1]]), p = surfPoint(A, a, PH.R, e, [0, 0, 0]); return scr(p[0], p[1], p[2]); },
+    gaugeScreen: () => { const L = hudLayout().gauge; return { x0: Math.round(L.x0), x1: Math.round(L.x1), y: Math.round(L.y) }; },
+    tapPoint: () => ({ x: Math.round(W / 2), y: Math.round(H * 0.62) }),
+    // くるくるの点の列（中心 cx, cy・半径 r・n 点で 1 周）。Playwright の mouse.move に順に渡す
+    circlePath: (cx = Math.round(W / 2), cy = Math.round(H * 0.62), r = 48, n = 12) => Array.from({ length: n + 1 }, (_, i) => ({ x: Math.round(cx + r * Math.cos(i / n * Math.PI * 2)), y: Math.round(cy + r * Math.sin(i / n * Math.PI * 2)) })),
+    gl: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles }),
+    PH, SKILLS, ACTS, makeGame, runBot, stepGame, gInput, eqPoint, hilltop, game: () => game,
+  };
+}
+
+/* ---------- はじめ ---------- */
+try { await Promise.race([Promise.all([document.fonts.load(`40px "Dela Gothic One"`, '0123456789.秒最高！はいっ自己ベスト更新おっとっと…もうひとつ毬お次は升茶碗と金輪いつもより多く回しておりますふたつ輪寿福こつんぽろっぽとん早送り▶'), document.fonts.load(`700 16px "Zen Kaku Gothic New"`, '0123456789最高秒回/もっと回して！ゆるめてゆるいちょうど速すぎ指でくるくる円をかくずらすと毬がその向きへ回転を金の帯に保つ輪に乗せておく早送り▶の曲二つ三つ升茶碗と金輪ひとつのせ柄を回さなかった足りなかった回しすぎた頭に当たってはじかれた傾けすぎた毬どうしがぶつかった角でごろんとはねた毬の輪が大きくなった')]), new Promise(r => setTimeout(r, 1500))]); } catch {}
+resize();
+newDemo();
+state = 'title';
+fillTitle();
+$('startBtn').disabled = false; $('startBtn').textContent = '傘を回す';
+$('startBtn').focus({ preventScroll: true });
+requestAnimationFrame(frame);
+</script>
+<a class="hub-back" id="hubBack" href="/" aria-label="あそび横丁（ゲーム一覧）にもどる" style="top: calc(env(safe-area-inset-top, 0px) + 10px); bottom: auto;">← 横丁</a>
+<script>
+// プレイ中でもゲーム一覧に戻れるボタン。押してもゲームの入力（タップ・ドラッグ）に伝わらないようにする
+for (const ev of ['pointerdown', 'touchstart', 'mousedown']) document.getElementById('hubBack').addEventListener(ev, e => e.stopPropagation(), { passive: true });
+</script>
+</body>
+</html>
