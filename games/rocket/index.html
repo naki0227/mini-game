@@ -1,0 +1,1758 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>ペットボトルロケット</title>
+<meta name="description" content="夏休みの河川敷で、ペットボトルロケットを一回勝負。長押しで水を入れ、自転車の空気入れでシュコシュコ、角度を決めて発射。水は多すぎても少なすぎても飛ばない。空気を入れすぎるとボトルが破裂。風も読んで、何メートル飛ばせるか。水と空気の噴射を計算する3D物理のブラウザゲーム。ログイン不要。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ペットボトルロケット">
+<meta property="og:description" content="水を入れて、シュコシュコ、ぷしゅーっ！入道雲の河川敷で、何メートル飛ぶ？">
+<meta property="og:url" content="https://asobi.enludus.com/games/rocket/">
+<meta property="og:image" content="https://asobi.enludus.com/games/rocket/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%9A%80%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+:root { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+/* 全画面 WebGL（夏休みの河川敷）+ 2D の演出レイヤー（目盛り・ゲージ・分度器）+ HUD。タイトル/結果は1枚のカード（結果はロケットが見えるよう下に） */
+:root {
+  --sky: #6fa9de;        /* 夏の空 */
+  --ink: #1f2a33;
+  --paper: #f8f4e8;      /* 画用紙 */
+  --noren: #1f5f8b;      /* プールの青のれん */
+  --noren-ink: #f6f1e3;
+  --sun: #e8733a;        /* 羽根の工作用紙の橙 */
+  --grass: #6f9e45;
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--sky); color: var(--ink);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+#gl, #fx { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#fx { touch-action: none; cursor: pointer; }
+
+.hud {
+  position: fixed; right: 0; top: 0; pointer-events: none;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+}
+.pill {
+  background: var(--noren); color: var(--noren-ink);
+  border-radius: 6px; padding: 5px 10px 6px;
+  font-variant-numeric: tabular-nums; line-height: 1.1; text-align: right;
+  box-shadow: 0 2px 0 rgba(0,0,0,.25);
+}
+.pill .lab { font-size: 10px; letter-spacing: .12em; opacity: .75; display: block; }
+.pill .val { font-family: var(--font-display); font-size: 18px; }
+.pill.wind { background: var(--paper); color: var(--ink); display: flex; align-items: center; gap: 7px; text-align: left; }
+.pill.wind svg { width: 26px; height: 26px; flex: none; }
+.pill.wind .val { font-size: 14px; }
+
+.ctrl {
+  position: fixed; left: 0; right: 0; z-index: 30; pointer-events: none;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  display: flex; justify-content: center;
+}
+.ctrl button { pointer-events: auto; min-width: 200px; font-size: 18px; padding: 14px 22px; }
+.ctrl button.fire { background: var(--sun); box-shadow: 0 3px 0 #9a4320; min-width: 220px; font-family: var(--font-display); font-weight: 400; font-size: 22px; letter-spacing: .1em; }
+.ctrl button.fire:active { box-shadow: 0 1px 0 #9a4320; }
+
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: center; z-index: 40;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px;
+  background: rgba(20, 40, 60, .2);
+  touch-action: none; cursor: pointer; overflow: hidden;
+}
+#over { place-items: end center; background: linear-gradient(to top, rgba(16, 34, 50, .55), rgba(16, 34, 50, 0) 70%); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); }
+.card {
+  width: min(360px, 100%); background: var(--paper); color: var(--ink);
+  border-radius: 10px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.35);
+  text-align: center; cursor: default;
+}
+.noren {
+  background: var(--noren); color: var(--noren-ink);
+  display: flex; gap: 3px;
+  padding-top: 16px;
+}
+.noren span {
+  flex: 1; background: var(--noren); border-bottom: 3px solid rgba(255,255,255,.1);
+  font-family: var(--font-display); font-size: 32px; line-height: 1; padding-block: 6px 14px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.2);
+}
+.noren.result { padding-top: 10px; }
+.noren.result span { font-size: 24px; padding-block: 4px 10px; }
+.body { padding: 16px 20px 18px; display: grid; gap: 11px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.7; text-wrap: balance; }
+.score { font-family: var(--font-display); font-size: 54px; line-height: 1; font-variant-numeric: tabular-nums; }
+.score small { font-size: 24px; margin-left: 4px; }
+.sub { font-weight: 700; font-size: 15px; margin-top: -4px; }
+.meta { display: flex; justify-content: center; gap: 6px 16px; font-size: 13px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.meta b { font-size: 16px; }
+.detail { background: #ebe4d0; border-radius: 8px; padding: 7px 10px; font-size: 12.5px; line-height: 1.55; font-variant-numeric: tabular-nums; }
+.badge {
+  justify-self: center; background: var(--sun); color: #fff; font-weight: 700;
+  font-size: 12px; letter-spacing: .14em; padding: 3px 10px; border-radius: 99px;
+}
+#over .lead { font-size: 12.5px; line-height: 1.55; }
+#over .body { gap: 9px; padding-block: 12px 14px; }
+.btns { display: grid; gap: 8px; }
+.btns .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+button {
+  font: inherit; font-weight: 700; font-size: 16px; border: 0; border-radius: 8px;
+  padding: 13px 16px; cursor: pointer;
+  background: var(--noren); color: var(--noren-ink); box-shadow: 0 3px 0 #123d5c;
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 #123d5c; }
+button:disabled { opacity: .6; cursor: progress; }
+a.xbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font-weight: 700; font-size: 16px; border-radius: 8px; padding: 13px 16px;
+  background: #0f1419; color: #fff; box-shadow: 0 3px 0 #000;
+}
+a.xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+a.xbtn:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+a.xbtn svg { width: 16px; height: 16px; fill: currentColor; }
+button.sub2 { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); padding-inline: 8px; font-size: 15px; }
+button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.how { font-size: 12px; opacity: .75; margin: 0; line-height: 1.6; }
+.err { font-size: 13px; color: #b3361b; margin: 0; font-weight: 700; }
+.back { font-size: 13px; color: var(--ink); opacity: .75; }
+.back:hover { opacity: 1; }
+@media (max-height: 700px) {
+  .score { font-size: 46px; }
+  .body { gap: 8px; padding-block: 12px 14px; }
+  button, a.xbtn { padding-block: 10px; }
+  .noren span { font-size: 28px; }
+}
+@media (max-height: 640px) { #over .lead { display: none; } }
+@media (max-height: 560px) { #over .detail, #title .how { display: none; } }
+.hub-back {
+  position: fixed; z-index: 60;
+  left: calc(env(safe-area-inset-left, 0px) + 10px); bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  font: 700 12px/1 "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif; letter-spacing: .04em;
+  padding: 7px 11px; border-radius: 99px; text-decoration: none;
+  background: rgba(20, 18, 24, .55); color: #fff; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.hub-back:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<canvas id="gl" aria-hidden="true"></canvas>
+<canvas id="fx" aria-label="ペットボトルロケットのゲーム画面。長押しで水を入れる、上下にスワイプで空気を入れる、上下にドラッグで角度を決める"></canvas>
+
+<div class="hud" id="hud" hidden>
+  <div class="pill"><span class="lab">自己ベスト</span><span class="val" id="hBest">—</span></div>
+  <div class="pill wind"><svg viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="18" fill="#e6ddc6"/><path d="M8 20h7" stroke="#9a9384" stroke-width="2" stroke-linecap="round"/><g id="hWindArrow"><path d="M20 7v26M20 7l-6 8M20 7l6 8" fill="none" stroke="#1f5f8b" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></g></svg><span><span class="lab">風</span><span class="val" id="hWind">—</span></span></div>
+</div>
+
+<div class="ctrl" id="ctrl" hidden><button id="actBtn" type="button">角度をきめる →</button></div>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="noren" aria-hidden="true"><span>水</span><span>ロ</span><span>ケ</span><span>ッ</span><span>ト</span></div>
+    <div class="body">
+      <p class="lead">夏休みの河川敷で、ペットボトルロケット。<br>水を入れて、空気を<b>シュコシュコ</b>、<br>角度を決めて<b>ぷしゅーっ</b>。何メートル飛ぶか一回勝負。</p>
+      <div class="meta"><span>最長 <b id="tBest">—</b> m</span><span>飛ばした <b id="tPlays">0</b> 回</span></div>
+      <div class="btns"><button id="startBtn" disabled>よみこみ中…</button></div>
+      <p class="err" id="loadErr" hidden></p>
+      <p class="how">① <b>長押しで水を注ぐ</b>（離したら決まり）<br>② <b>上下にスワイプ</b>で空気入れ（下へ1回＝1回）。<br>　入れるほど飛ぶけど、入れすぎると<b>破裂</b>。<br>③ <b>上下にドラッグ</b>で角度 →「発射」。風も読もう。<br>（キーボード: スペース長押し＝水・↓＝ポンプ・Enter＝つぎへ・←→＝角度）</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <div class="noren result" aria-hidden="true" id="oNoren"><span>ぷ</span><span>しゅ</span><span>ー</span></div>
+    <div class="body">
+      <div class="badge" id="newRec" hidden>新記録</div>
+      <div class="score"><span id="oScore">0</span><small>m</small></div>
+      <div class="sub" id="oSub">飛んだ</div>
+      <div class="detail" id="oDetail"></div>
+      <p class="lead" id="oMsg"></p>
+      <div class="meta"><span>最長 <b id="oBest">0</b> m</span><span>飛ばした <b id="oPlays">0</b> 回</span></div>
+      <div class="btns">
+        <div class="two"><button id="retryBtn">もう一回</button><button class="sub2" id="copyBtn">結果をコピー</button></div>
+        <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Xでシェア</a>
+      </div>
+      <p class="how" id="copyMsg">画面タップ・スペースでもう一回</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+let THREE;
+try {
+  THREE = await import(THREE_URL);
+} catch (e) {
+  $('startBtn').textContent = '読み込めませんでした';
+  $('loadErr').hidden = false;
+  $('loadErr').textContent = '3Dの読み込みに失敗しました。通信状況を確かめて、ページを再読み込みしてください。';
+  throw e;
+}
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FD = getComputedStyle(document.documentElement).getPropertyValue('--font-display');
+const FB = getComputedStyle(document.documentElement).getPropertyValue('--font-body');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const DEG = Math.PI / 180;
+const HASH = new URLSearchParams(location.hash.slice(1));
+
+/*PHYS-BEGIN*/
+/* ---------- ペットボトルロケットの物理（three には頼らない自前のモデル。m・kg・s・Pa。x = 飛ばす向き（下流）、y = 上、z = 川の側（カメラ側）が + ） ----------
+   ボトル: 1.5 L の炭酸用ペットボトル。口（ノズル）の内径 21.5 mm をそのまま噴き口にする。空のロケット（ボトル・羽根3枚・先の粘土）は 120 g。
+   水: 長押しの時間 × 毎秒 0.35 L だけ入る（離した時刻で決まる。画面のコマ数によらない）。
+   空気入れ: 1回押すと、1気圧の空気 0.25 L をボトルに押しこむ。温度はすぐ戻る（等温）ので、ゲージ圧 = 回数 × 0.25 L ÷ 空気の入る所の体積。
+     水を多く入れるほど空気の所がせまく、1回で上がる圧力が大きい。ボトルは 6.0〜7.5 気圧のどこか（回ごとにちがう）で破裂する。
+     破裂の 0.5〜1.2 気圧手前から、押すたびに「ミシッ」と鳴る。
+   噴射（水）: 空気は断熱で膨らむ（p·V^1.4 一定）。噴き出す水の速さ u = √(2Δp/ρ)、流量 Q = Cd·A·u、推力 F = ρ·Q·u。
+     水が先に空になれば、残った圧縮空気が噴く（音速でつまる流れ → ふつうの流れ。推力 = 運動量 + 圧力の差）。
+     空気の圧力が先に 1 気圧まで下がると、残った水はおもりになる（水の入れすぎ）。
+   発射台: 長さ 0.3 m のレールに沿ってだけ動く（角度はここで決まる）。
+   飛行: 重力・空気抵抗（Cd 0.36 + 迎え角で増える）・風。羽根の風見安定: ロケットの向き n は、まわりの空気に対する速度の向きへ
+     （1 m 進むごとに 0.5 rad の割合で）向き直る。だから向かい風では向かって頭を下げ（低く）、追い風では頭を上げる。横風では風上へ向く。
+   風: 回ごとに向き・強さ（0.3〜5 m/s、地上 2 m）。高いほど強い（(y/2)^0.16）。飛んでいる間、少し強弱がつく。
+   記録: ロケットが地面（川・土手）に着いた所までの、発射台からの水平距離。 */
+const PH = {
+  DT: 1 / 1000, SUB: 20, G: 9.81, RHO: 1.2, RHOW: 1000, PA: 101325, GAM: 1.4, RAIR: 287, T0: 303,
+  VB: 1.5, WMAX: 1.45, POUR: 0.35, WMIN: 0.03,   // L・L/s
+  STROKE: 0.25,                                  // 1回の空気入れで押しこむ 1気圧の空気 L
+  DN: 0.0215, CDN: 0.92, MDRY: 0.12, D: 0.092, CD0: 0.36, CDA: 1.4, KAL: 0.5, RAIL: 0.3, NOZ_H: 0.3, LEN: 0.42,
+  BURST: [6.0, 7.5], CREAK: [0.5, 1.2], GAUGE_MAX: 8, RED: 6,
+  WIND: [0.3, 5.0], ANG: [10, 85], ANG0: 45,
+  RIVER_Z: 7.5, RIVER_Y: -0.45, DOTE_Z0: -12.5, DOTE_Z1: -19, DOTE_H: 4, DOTE_Z2: -22, DOTE_Z3: -28,
+  MAXT: 900, FLYMAX: 40,
+};
+const AN = Math.PI * PH.DN * PH.DN / 4, AREF = Math.PI * PH.D * PH.D / 4;
+function mulberry(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function gaussR(r) { let u = r(); while (u < 1e-9) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+const clampP = (v, a, b) => Math.max(a, Math.min(b, v));
+// 風: 向き（0 = 追い風 +x、90° = 川へ +z）と強さ（地上 2 m）。強弱のゆらぎは「飛んでからの時間」で決まる
+function makeWind(r) {
+  const sp = PH.WIND[0] + (PH.WIND[1] - PH.WIND[0]) * Math.pow(r(), 1.15), dir = r() * Math.PI * 2;
+  return { sp, dir, x: sp * Math.cos(dir), z: sp * Math.sin(dir), p1: r() * 6.28, p2: r() * 6.28, p3: r() * 6.28 };
+}
+function windAt(W, y, tf, out) {
+  const prof = Math.pow(Math.max(y, 0.5) / 2, 0.16), gst = 1 + 0.12 * Math.sin(1.3 * tf + W.p1) + 0.08 * Math.sin(2.9 * tf + W.p2), da = 0.1 * Math.sin(0.7 * tf + W.p3);
+  const s = W.sp * prof * gst, a = W.dir + da;
+  out[0] = s * Math.cos(a); out[1] = s * Math.sin(a);
+  return out;
+}
+// 地面の高さ（河川敷 0・川の水面・土手の坂）と、そこが何か
+function groundAt(x, z) {
+  if (z > PH.RIVER_Z) return [PH.RIVER_Y, 'river'];
+  if (z < PH.DOTE_Z0) {
+    if (z > PH.DOTE_Z1) return [PH.DOTE_H * (PH.DOTE_Z0 - z) / (PH.DOTE_Z0 - PH.DOTE_Z1), 'dote'];
+    if (z > PH.DOTE_Z2) return [PH.DOTE_H, 'road'];
+    if (z > PH.DOTE_Z3) return [PH.DOTE_H * (z - PH.DOTE_Z3) / (PH.DOTE_Z2 - PH.DOTE_Z3), 'dote'];
+    return [0, 'town'];
+  }
+  return [0, 'grass'];
+}
+const gaugeOf = (pumps, water) => pumps * PH.STROKE / Math.max(0.01, PH.VB - water);
+// 発射: 水 water L・ゲージ圧 pg 気圧・角度 ang°
+function makeFlight(water, pg, ang, wind) {
+  const a = ang * DEG, Vw = Math.max(0, water) * 1e-3, V0 = PH.VB * 1e-3 - Vw, p0 = PH.PA * (1 + Math.max(0, pg));
+  const f = {
+    x: 0, y: PH.NOZ_H, z: 0, vx: 0, vy: 0, vz: 0, nx: Math.cos(a), ny: Math.sin(a), nz: 0,
+    Vw, V0, p0, p: p0, ma: 0, T: PH.T0, ph: pg <= 0 ? 'done' : Vw > 0 ? 'water' : 'air', rail: 0, t: 0, tb: 0, tw: 0,
+    wind, water, pg, ang, land: null, maxY: PH.NOZ_H, maxV: 0, u: 0, F: 0, spray: [], rec: null, W: [0, 0], fizzle: false,
+  };
+  if (f.ph === 'air') f.ma = p0 * PH.VB * 1e-3 / (PH.RAIR * PH.T0);
+  return f;
+}
+function flightStep(f, dt0) {
+  if (f.land) return;
+  const sub = f.ph !== 'done' ? PH.SUB : 1, dt = dt0 / sub, Wv = f.W;
+  for (let s = 0; s < sub; s++) {
+    let F = 0, Q = 0;
+    if (f.ph === 'water') {
+      const Va = PH.VB * 1e-3 - f.Vw; f.p = f.p0 * Math.pow(f.V0 / Va, PH.GAM);
+      const dp = f.p - PH.PA;
+      if (dp <= 0) { f.ph = 'done'; f.u = 0; }
+      else {
+        const u = Math.sqrt(2 * dp / PH.RHOW); Q = PH.CDN * AN * u; F = PH.RHOW * Q * u; f.u = u;
+        f.Vw -= Q * dt;
+        if (f.Vw <= 0) {
+          f.Vw = 0; f.tw = f.t; const k = f.V0 / (PH.VB * 1e-3);
+          f.T = PH.T0 * Math.pow(k, PH.GAM - 1); f.p = f.p0 * Math.pow(k, PH.GAM); f.ma = f.p * PH.VB * 1e-3 / (PH.RAIR * f.T);
+          f.ph = f.p > PH.PA * 1.002 ? 'air' : 'done';
+        }
+      }
+    } else if (f.ph === 'air') {
+      const rho = f.ma / (PH.VB * 1e-3); f.T = f.p / (rho * PH.RAIR);
+      let md, ve, pe;
+      if (f.p > 1.893 * PH.PA) { md = PH.CDN * AN * f.p * Math.sqrt(PH.GAM / (PH.RAIR * f.T)) * 0.5787; ve = Math.sqrt(2 * PH.GAM / (PH.GAM + 1) * PH.RAIR * f.T); pe = f.p * 0.5283; }
+      else { const r = PH.PA / f.p; ve = Math.sqrt(Math.max(0, 2 * PH.GAM / (PH.GAM - 1) * PH.RAIR * f.T * (1 - Math.pow(r, (PH.GAM - 1) / PH.GAM)))); md = PH.CDN * AN * rho * Math.pow(r, 1 / PH.GAM) * ve; pe = PH.PA; }
+      F = md * ve + (pe - PH.PA) * AN; f.u = ve;
+      const ma1 = f.ma - md * dt;
+      if (ma1 <= 0) { f.ph = 'done'; f.u = 0; }
+      else { f.p = f.p * Math.pow(ma1 / f.ma, PH.GAM); f.ma = ma1; if (f.p <= PH.PA * 1.002) { f.ph = 'done'; f.u = 0; } }
+    }
+    f.F = F;
+    const m = PH.MDRY + PH.RHOW * f.Vw;
+    windAt(f.wind, f.y, f.t, Wv);
+    const rx = f.vx - Wv[0], ry = f.vy, rz = f.vz - Wv[1], va = Math.hypot(rx, ry, rz);
+    let fx = F * f.nx, fy = F * f.ny - m * PH.G, fz = F * f.nz;
+    if (va > 1e-6) {
+      const c = (rx * f.nx + ry * f.ny + rz * f.nz) / va, s2 = Math.max(0, 1 - c * c);
+      const D = 0.5 * PH.RHO * va * AREF * (PH.CD0 + PH.CDA * s2);
+      fx -= D * rx; fy -= D * ry; fz -= D * rz;
+    }
+    if (f.rail < PH.RAIL) {
+      // 発射台のレールの上: レールの向きにだけ動く（押し戻されはしない）
+      const ap = (fx * f.nx + fy * f.ny + fz * f.nz) / m; let v = f.vx * f.nx + f.vy * f.ny + f.vz * f.nz; v = Math.max(0, v + ap * dt);
+      f.vx = v * f.nx; f.vy = v * f.ny; f.vz = v * f.nz; f.rail += v * dt;
+    } else {
+      f.vx += fx / m * dt; f.vy += fy / m * dt; f.vz += fz / m * dt;
+      // 羽根の風見安定: まわりの空気に対する速度の向きへ向き直る
+      if (va > 1e-6) {
+        const tx = rx / va, ty = ry / va, tz = rz / va, d = f.nx * tx + f.ny * ty + f.nz * tz, k2 = Math.min(0.5, PH.KAL * va * dt);
+        f.nx += k2 * (tx - d * f.nx); f.ny += k2 * (ty - d * f.ny); f.nz += k2 * (tz - d * f.nz);
+        const l = Math.hypot(f.nx, f.ny, f.nz); f.nx /= l; f.ny /= l; f.nz /= l;
+      }
+    }
+    f.x += f.vx * dt; f.y += f.vy * dt; f.z += f.vz * dt; f.t += dt;
+    if (f.ph !== 'done') f.tb = f.t;
+    if (Q > 0 && f.spray && s % 4 === 0) f.spray.push({ t: f.t, x: f.x, y: f.y, z: f.z, vx: f.vx - f.nx * f.u * 0.95, vy: f.vy - f.ny * f.u * 0.95, vz: f.vz - f.nz * f.u * 0.95, q: Q * dt * 4e6, air: false });
+    else if (f.ph === 'air' && f.spray && s % 6 === 0) f.spray.push({ t: f.t, x: f.x, y: f.y, z: f.z, vx: f.vx - f.nx * 20, vy: f.vy - f.ny * 20, vz: f.vz - f.nz * 20, q: 1, air: true });
+  }
+  const sp = Math.hypot(f.vx, f.vy, f.vz);
+  if (sp > f.maxV) f.maxV = sp;
+  if (f.y > f.maxY) f.maxY = f.y;
+  const [gy, mat] = groundAt(f.x, f.z);
+  // 飛ばずに止まった（空気が足りない・水が多すぎ）: レールの上で力が尽きた
+  if (f.ph === 'done' && f.rail < PH.RAIL && sp < 0.05 && f.t > 0.02) {
+    f.fizzle = true; f.land = { x: f.x, z: f.z, y: f.y, t: f.t, v: 0, mat: 'pad', d: Math.hypot(f.x, f.z) };
+    return;
+  }
+  if (f.y <= gy && f.t > 0.03 && f.rail >= PH.RAIL) {
+    f.y = gy;
+    f.land = { x: f.x, z: f.z, y: gy, t: f.t, v: sp, mat, d: Math.hypot(f.x, f.z) };
+    return;
+  }
+  if (f.t > PH.FLYMAX) f.land = { x: f.x, z: f.z, y: f.y, t: f.t, v: sp, mat: 'grass', d: Math.hypot(f.x, f.z) };
+}
+// 1回の発射を最後まで（ボット・目安の計算用）
+function simShot(water, pg, ang, wind, rec = false) {
+  const f = makeFlight(water, pg, ang, wind); f.spray = null;
+  if (rec) f.rec = [];
+  let next = 0;
+  while (!f.land) { flightStep(f, PH.DT); if (rec && f.t >= next) { f.rec.push([f.t, f.x, f.y, f.z]); next += 1 / 30; } }
+  return { d: f.land.d, x: f.land.x, z: f.land.z, mat: f.land.mat, t: f.land.t, maxY: f.maxY, maxV: f.maxV, tb: f.tb, fizzle: f.fizzle, wleft: f.Vw * 1e3, path: f.rec };
+}
+// その風・水・圧力での いちばんよい角度（目安）
+function bestAngle(water, pg, wind, a0 = 15, a1 = 70, step = 1) {
+  let best = -1, ba = 45;
+  for (let a = a0; a <= a1; a += step) { const d = simShot(water, pg, a, wind).d; if (d > best) { best = d; ba = a; } }
+  return { ang: ba, d: best };
+}
+// 入力は時刻つきで入れる（画面のコマとは関係なく、物理はその時刻で効く）
+function gInput(g, t, kind, a = 0) { if (g.log) g.log.push({ t, kind, a }); const q = g.queue; let i = q.length; while (i > 0 && q[i - 1].t > t) i--; q.splice(i, 0, { t, kind, a }); }
+function makeGame(seed = 1) {
+  const r = mulberry((seed * 2654435761) >>> 0);
+  const wind = makeWind(r);
+  const thr = PH.BURST[0] + (PH.BURST[1] - PH.BURST[0]) * r();
+  const creak = thr - (PH.CREAK[0] + (PH.CREAK[1] - PH.CREAK[0]) * r());
+  return {
+    seed, rnd: r, t: 0, queue: [], events: [], log: null,
+    phase: 'water', water: 0, pouring: false, pt0: 0, pw0: 0, overflow: false,
+    pumps: 0, pg: 0, thr, creak, creaks: 0, angle: PH.ANG0, wind, fl: null, res: null, phaseAt: 0, launchAt: -1,
+  };
+}
+function setPhase(g, ph) { g.phase = ph; g.phaseAt = g.t; g.events.push({ type: 'phase', phase: ph }); }
+function endPour(g, t) {
+  g.water = Math.min(PH.WMAX, g.pw0 + PH.POUR * Math.max(0, t - g.pt0)); g.pouring = false;
+  g.events.push({ type: 'pourOff', water: g.water });
+  if (g.water >= PH.WMIN) setPhase(g, 'pump');
+}
+function applyInput(g, e) {
+  const k = e.kind;
+  if (k === 'pourOn') { if (g.phase === 'water' && !g.pouring) { g.pouring = true; g.pt0 = e.t; g.pw0 = g.water; g.events.push({ type: 'pourOn' }); } return; }
+  if (k === 'pourOff') { if (g.phase === 'water' && g.pouring) endPour(g, e.t); return; }
+  if (k === 'pump') {
+    if (g.phase !== 'pump') return;
+    g.pumps++; g.pg = gaugeOf(g.pumps, g.water);
+    if (g.pg >= g.thr) { g.events.push({ type: 'pump', n: g.pumps, pg: g.pg }); burst(g); return; }
+    g.events.push({ type: 'pump', n: g.pumps, pg: g.pg });
+    if (g.pg >= g.creak) { g.creaks++; g.events.push({ type: 'creak', k: clampP((g.pg - g.creak) / (g.thr - g.creak), 0, 1) }); }
+    return;
+  }
+  if (k === 'next') { if (g.phase === 'pump' && g.pumps > 0) setPhase(g, 'aim'); return; }
+  if (k === 'angle') { if (g.phase === 'pump' || g.phase === 'aim') g.angle = clampP(Math.round(e.a), PH.ANG[0], PH.ANG[1]); return; }
+  if (k === 'launch') {
+    if (g.phase !== 'aim') return;
+    g.fl = makeFlight(g.water, g.pg, g.angle, g.wind); g.launchAt = g.t;
+    setPhase(g, 'fly'); g.events.push({ type: 'launch', pg: g.pg, water: g.water });
+  }
+}
+function burst(g) {
+  g.res = { kind: 'burst', d: 0, mat: 'pad' };
+  setPhase(g, 'burst'); g.events.push({ type: 'burst', pg: g.pg });
+}
+function stepGame(g) {
+  g.t += PH.DT;
+  const q = g.queue; while (q.length && q[0].t <= g.t) applyInput(g, q.shift());
+  if (g.phase === 'water' && g.pouring) {
+    const full = g.pt0 + (PH.WMAX - g.pw0) / PH.POUR;
+    if (g.t >= full) { g.overflow = true; g.events.push({ type: 'overflow' }); endPour(g, full); }
+    else g.water = g.pw0 + PH.POUR * (g.t - g.pt0);
+  }
+  if (g.phase === 'fly') {
+    const f = g.fl, wasPh = f.ph;
+    flightStep(f, PH.DT);
+    if (wasPh === 'water' && f.ph !== 'water') g.events.push({ type: f.ph === 'air' ? 'air' : 'dry', wleft: f.Vw * 1e3 });
+    if (f.land) {
+      g.res = { kind: f.fizzle ? 'fizzle' : 'fly', d: f.fizzle ? 0 : f.land.d, mat: f.land.mat, maxY: f.maxY, maxV: f.maxV, t: f.land.t, wleft: f.Vw * 1e3 };
+      setPhase(g, 'landed'); g.events.push({ type: 'land', v: f.land.v, mat: f.land.mat, d: g.res.d, fizzle: f.fizzle });
+    }
+  }
+}
+// 風の言い方（飛ばす向き +x から見て）
+function windLabel(W) {
+  const al = W.x, cr = W.z, s = W.sp;
+  if (s < 0.8) return { name: 'ほぼ無風', short: '無風', s };
+  if (Math.abs(al) >= Math.abs(cr) * 0.75) return { name: al > 0 ? '追い風' : '向かい風', short: al > 0 ? '追い風' : '向かい風', s };
+  return { name: cr > 0 ? '横風（川へ）' : '横風（土手へ）', short: '横風', s };
+}
+/*PHYS-END*/
+
+/*BOT-BEGIN*/
+/* ---------- ボット（調整用）: 人と同じ入力（注ぎはじめ・離す・ポンプ1回・つぎへ・角度・発射）を、時刻つきで入れる ----------
+   first: はじめて遊ぶ人。水は目分量（0.15〜0.95 L）。空気は 5〜15 回くらいで満足してやめる（ゲージが 5 気圧を超えたら こわくてやめる。ミシッと鳴ればたいていやめる）。
+     角度はなんとなく（25〜70°）。風は見ない。ポンプは 0.35〜0.6 秒に1回。
+   good: うまい人。水は 1/3 ちょうど（0.5 L ± 0.04）。ミシッと鳴るまで入れて、3回に1回はもう1回だけ攻める。
+     角度は その風・水・圧力で いちばん飛ぶ角度（± 1.5°）。 */
+const SKILLS = {
+  first: { water: [0.15, 0.95], pg: [5, 5], n: [5, 15], ang: [25, 70], iv: [0.35, 0.6], creakStop: 0.8, react: [0.6, 1.4], plan: false },
+  good: { water: [0.46, 0.54], pg: [99, 99], n: [99, 99], ang: null, iv: [0.3, 0.42], creakStop: 1, extra: 0.33, react: [0.4, 0.7], plan: true, angSd: 1.5 },
+};
+function makeBot(g, sk, rnd) {
+  const U = R => R[0] + (R[1] - R[0]) * rnd();
+  const b = { stage: 0, next: g.t + U(sk.react), wantW: U(sk.water), wantP: U(sk.pg), wantN: Math.round(U(sk.n)), extra: false, plan: null };
+  b.step = () => {
+    if (g.t < b.next) return;
+    if (g.phase === 'water' && b.stage === 0) {
+      const t0 = g.t, dur = b.wantW / PH.POUR + 0.04 * gaussR(rnd);
+      gInput(g, t0, 'pourOn'); gInput(g, t0 + Math.max(0.1, dur), 'pourOff');
+      b.stage = 1; b.next = t0 + dur + 0.3; return;
+    }
+    if (g.phase === 'pump') {
+      if (b.stage < 2) { b.stage = 2; b.next = g.t + U(sk.react) * 0.6; return; }
+      if (b.stage === 2) {
+        let stop = false;
+        if (g.creaks > 0) { if (b.extra) stop = true; else if (rnd() < sk.creakStop) { if (sk.extra && rnd() < sk.extra) b.extra = true; else stop = true; } }
+        if (g.pg >= b.wantP) stop = true;
+        if (g.pumps >= Math.min(60, b.wantN)) stop = true;
+        if (stop) { b.stage = 3; b.next = g.t + 0.5; return; }
+        gInput(g, g.t, 'pump'); b.next = g.t + U(sk.iv); return;
+      }
+      if (b.stage === 3) { gInput(g, g.t, 'next'); b.stage = 4; b.next = g.t + U(sk.react); return; }
+    }
+    if (g.phase === 'aim' && b.stage >= 3 && b.stage < 5) {
+      const a = sk.plan ? bestAngle(g.water, g.pg, g.wind, 20, 60).ang + sk.angSd * gaussR(rnd) : U(sk.ang);
+      gInput(g, g.t, 'angle', a); gInput(g, g.t + 0.6, 'launch'); b.stage = 5; b.next = g.t + 9;
+    }
+  };
+  return b;
+}
+function runBot(sk, seed, opts = {}) {
+  const g = makeGame(seed), bot = makeBot(g, sk, mulberry((seed * 7919 + 13) >>> 0));
+  if (opts.log) g.log = [];
+  while (!g.res && g.t < PH.MAXT) { bot.step(); stepGame(g); g.events.length = 0; }
+  const r = g.res || { kind: 'time', d: 0 };
+  return { d: r.d, kind: r.kind, mat: r.mat, water: g.water, pg: g.pg, pumps: g.pumps, ang: g.angle, wind: g.wind.sp, t: g.t, log: g.log };
+}
+/*BOT-END*/
+
+/* ---------- 記録（このブラウザだけ） ---------- */
+const KEY = 'rocket:v1';
+const DEF = () => ({ ver: 1, best: 0, plays: 0, total: 0, last: 0, bursts: 0, bestWater: 0, bestPumps: 0, bestAngle: 0 });
+function load() {
+  try { const d = JSON.parse(localStorage.getItem(KEY) || '{}'); if (d && d.ver === 1) { const r = { ...DEF(), ...d }; for (const k of Object.keys(DEF())) r[k] = +r[k] || 0; r.ver = 1; return r; } } catch {}
+  return DEF();
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch {} }
+let rec = load();
+let seed = HASH.has('seed') ? (+HASH.get('seed') >>> 0) : (Math.random() * 2 ** 32) >>> 0;
+function nextSeed() { const s = seed; seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return s; }
+const m1 = v => (Math.floor(v * 10 + 1e-6) / 10).toFixed(1);
+
+/* ---------- three.js ---------- */
+const glc = $('gl'), fxc = $('fx'), fx = fxc.getContext('2d');
+const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, powerPreference: 'high-performance' });
+const scene = new THREE.Scene();
+const HAZE = new THREE.Color('#cfe3ee');
+scene.background = HAZE.clone();
+scene.fog = new THREE.Fog(HAZE, 120, 700);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.03, 3000);
+let W = 0, H = 0, dpr = 1, safeT = 0, safeB = 0;
+const tmpV = new THREE.Vector3();
+function project(x, y, z) { tmpV.set(x, y, z).project(camera); return { x: (tmpV.x + 1) / 2 * W, y: (1 - tmpV.y) / 2 * H, front: tmpV.z < 1 }; }
+function resize() {
+  W = innerWidth; H = innerHeight; dpr = Math.min(devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(Math.min(dpr, 1.75)); renderer.setSize(W, H, false);
+  fxc.width = Math.round(W * dpr); fxc.height = Math.round(H * dpr);
+  camera.aspect = W / H; camera.fov = W / H < 0.75 ? 58 : 46; camera.updateProjectionMatrix();
+  const cs = getComputedStyle(document.documentElement);
+  safeT = parseFloat(cs.paddingTop) || 0; safeB = parseFloat(cs.paddingBottom) || 0;
+}
+addEventListener('resize', resize); resize();
+
+function canvasTex(w, h, draw, repeat) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
+  t.anisotropy = 4;
+  return t;
+}
+const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
+let srnd = 7; const prand = () => (srnd = (srnd * 9301 + 49297) % 233280) / 233280;
+const UPV = new THREE.Vector3(0, 1, 0);
+const tmpA = new THREE.Vector3(), tmpB = new THREE.Vector3(), tmpD = new THREE.Vector3();
+function limb(mesh, a, b) {
+  tmpD.subVectors(b, a); const L = tmpD.length() || 1e-4;
+  mesh.position.addVectors(a, b).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(UPV, tmpD.multiplyScalar(1 / L));
+  mesh.scale.set(1, L, 1);
+}
+
+// 光: 夏の昼すぎ。右上の高い太陽
+const SUN = new THREE.Vector3(0.35, 0.82, 0.45).normalize();
+const hemi = new THREE.HemisphereLight('#e4f1ff', '#7f9a5c', 1.9); scene.add(hemi);
+const sunLight = new THREE.DirectionalLight('#fff3dc', 1.9); sunLight.position.copy(SUN).multiplyScalar(100); scene.add(sunLight);
+
+/* 空: 頂点カラーのグラデーション */
+function buildSky() {
+  const g = new THREE.SphereGeometry(2400, 40, 20), pos = g.attributes.position, col = [], v = new THREE.Vector3(), c = new THREE.Color();
+  const stops = [[-0.2, '#cfe3ee'], [0, '#d6e9f2'], [0.06, '#b5d6ee'], [0.18, '#86bbe6'], [0.4, '#5c9bd9'], [1, '#2f6dc0']].map(([e, s]) => [e, new THREE.Color(s)]);
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i).normalize(); const e = v.y;
+    let k = 0; while (k < stops.length - 2 && e > stops[k + 1][0]) k++;
+    const [e0, c0] = stops[k], [e1, c1] = stops[k + 1];
+    c.copy(c0).lerp(c1, clamp((e - e0) / (e1 - e0), 0, 1));
+    c.lerp(new THREE.Color('#fffbe8'), clamp(Math.pow(Math.max(0, v.dot(SUN)), 12) * 0.6, 0, 1));
+    col.push(c.r, c.g, c.b);
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+  const sky = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+  sky.renderOrder = -10; scene.add(sky);
+}
+buildSky();
+
+/* 入道雲: 1本ずつ、やわらかい玉を重ねて描いた絵（右上から日が当たり、下はかげって青灰色・底は平ら）を遠くに立てる */
+function paintCumulus(g, w, h, opt) {
+  const base = h * 0.9, R = () => prand();
+  const puffs = [];
+  const N = opt.n || 46;
+  for (let i = 0; i < N; i++) {
+    const k = Math.pow(i / (N - 1), 0.9), spread = (1 - k * 0.45) * (k > opt.anvil ? 1.6 : 1);
+    const r = w * (0.12 - k * 0.045) * (0.75 + R() * 0.5) * (k > opt.anvil ? 0.85 : 1);
+    puffs.push([w / 2 + (R() - 0.5) * w * 0.5 * spread + opt.lean * k * w, base - r * 0.7 - k * (base - r - h * 0.04), r]);
+  }
+  for (let i = 0; i < 12; i++) { const r = w * (0.06 + R() * 0.05); puffs.push([w * (0.08 + R() * 0.84), base - r * 0.55, r]); }
+  puffs.sort((a, b) => b[1] - a[1]);
+  for (const [x, y, r] of puffs) {
+    const gr = g.createRadialGradient(x + r * 0.35, y - r * 0.4, r * 0.05, x, y, r);
+    gr.addColorStop(0, '#ffffff'); gr.addColorStop(0.55, '#f5f8fc'); gr.addColorStop(0.85, '#d9e2ee'); gr.addColorStop(1, '#bccadb');
+    g.fillStyle = gr; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  }
+  // 下のほうは かげって青っぽく、底は平ら
+  g.globalCompositeOperation = 'source-atop';
+  const sh = g.createLinearGradient(0, base - h * 0.35, 0, base);
+  sh.addColorStop(0, 'rgba(150,170,200,0)'); sh.addColorStop(1, 'rgba(140,160,192,.55)');
+  g.fillStyle = sh; g.fillRect(0, 0, w, h);
+  g.globalCompositeOperation = 'destination-out';
+  const cut = g.createLinearGradient(0, base - 6, 0, base + 4); cut.addColorStop(0, 'rgba(0,0,0,0)'); cut.addColorStop(1, 'rgba(0,0,0,1)');
+  g.fillStyle = cut; g.fillRect(0, base - 6, w, h - base + 6);
+  g.globalCompositeOperation = 'source-over';
+}
+function buildClouds() {
+  const towers = [
+    { x: -330, z: -1250, w: 520, h: 640, y: 120, lean: 0.06, anvil: 0.92 },
+    { x: 240, z: -1400, w: 760, h: 980, y: 110, lean: -0.04, anvil: 0.86, n: 60 },
+    { x: 820, z: -1300, w: 520, h: 600, y: 110, lean: 0.1, anvil: 0.95 },
+    { x: 1400, z: -1100, w: 420, h: 430, y: 120, lean: 0.0, anvil: 1.1 },
+  ];
+  for (const T of towers) {
+    const tex = canvasTex(512, Math.round(512 * T.h / T.w), (g, w, h) => paintCumulus(g, w, h, T));
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, fog: false, depthWrite: false, transparent: true }));
+    s.scale.set(T.w, T.h, 1); s.position.set(T.x, T.y + T.h / 2, T.z); s.renderOrder = -8; scene.add(s);
+  }
+  // 低いちぎれ雲
+  for (let i = 0; i < 6; i++) {
+    const w = 160 + prand() * 120, tex = canvasTex(256, 96, (g, cw, ch) => paintCumulus(g, cw, ch, { n: 14, lean: 0, anvil: 2 }));
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, fog: false, depthWrite: false, transparent: true, opacity: 0.9 }));
+    s.scale.set(w, w * 0.375, 1); s.position.set(-700 + prand() * 2400, 240 + prand() * 160, -1500 + prand() * 300); s.renderOrder = -8; scene.add(s);
+  }
+}
+buildClouds();
+
+/* 遠くの山並み（円筒の内側に貼る） */
+function buildFar() {
+  const tex = canvasTex(2048, 256, (g, w, h) => {
+    g.clearRect(0, 0, w, h);
+    g.fillStyle = 'rgba(122,154,176,.85)'; g.beginPath(); g.moveTo(0, h);
+    for (let x = 0; x <= w; x += 16) g.lineTo(x, h - 70 - 46 * Math.sin(x / 210) - 24 * Math.sin(x / 67 + 1) - 12 * Math.sin(x / 23));
+    g.lineTo(w, h); g.fill();
+    g.fillStyle = 'rgba(98,132,120,.95)'; g.beginPath(); g.moveTo(0, h);
+    for (let x = 0; x <= w; x += 12) g.lineTo(x, h - 34 - 20 * Math.sin(x / 120 + 2) - 10 * Math.sin(x / 41));
+    g.lineTo(w, h); g.fill();
+  });
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(1500, 1500, 180, 64, 1, true, Math.PI * 0.5, Math.PI), new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.BackSide, fog: false, depthWrite: false }));
+  m.position.set(200, 70, 0); m.renderOrder = -7; scene.add(m);
+}
+buildFar();
+
+/* 河川敷: 刈った芝のしま + 10m ごとの石灰の線 */
+const grassTex = canvasTex(256, 256, (g, w, h) => {
+  g.fillStyle = '#7aa64c'; g.fillRect(0, 0, w, h);
+  g.fillStyle = 'rgba(255,255,220,.07)'; g.fillRect(0, 0, w / 2, h);
+  for (let i = 0; i < 4200; i++) { g.fillStyle = prand() < 0.5 ? 'rgba(40,70,20,.16)' : 'rgba(220,240,170,.14)'; g.fillRect(prand() * w, prand() * h, 1 + prand() * 1.5, 2 + prand() * 3); }
+}, [48, 4]);
+const farTex = canvasTex(128, 128, (g, w, h) => { g.fillStyle = '#86a85a'; g.fillRect(0, 0, w, h); for (let i = 0; i < 900; i++) { g.fillStyle = prand() < 0.5 ? 'rgba(40,70,20,.14)' : 'rgba(230,240,180,.12)'; g.fillRect(prand() * w, prand() * h, 2, 2); } }, [60, 30]);
+function buildGround() {
+  // 河川敷（-12.5 < z < 7）
+  const field = new THREE.Mesh(new THREE.PlaneGeometry(480, PH.RIVER_Z + 0.3 - PH.DOTE_Z0), lam('#ffffff', { map: grassTex }));
+  field.rotation.x = -Math.PI / 2; field.position.set(180, 0, (PH.RIVER_Z + 0.3 + PH.DOTE_Z0) / 2); scene.add(field);
+  // 土手: 前の坂・上の道・うしろの坂
+  const prof = [[PH.DOTE_Z0, 0], [PH.DOTE_Z1, PH.DOTE_H], [PH.DOTE_Z2, PH.DOTE_H], [PH.DOTE_Z3, 0]];
+  const mats = [lam('#78a04a', { map: farTex }), lam('#c9b994'), lam('#6f9443')];
+  for (let i = 0; i < 3; i++) {
+    const [z0, y0] = prof[i], [z1, y1] = prof[i + 1], L = Math.hypot(z1 - z0, y1 - y0);
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(480, L), mats[i]);
+    m.rotation.x = -Math.PI / 2 + Math.atan2(y1 - y0, z0 - z1) * (z1 < z0 ? 1 : -1);
+    m.position.set(180, (y0 + y1) / 2, (z0 + z1) / 2); scene.add(m);
+    if (i === 0) m.rotation.x = -Math.PI / 2 + Math.atan2(y1 - y0, z0 - z1);
+    if (i === 1) m.rotation.x = -Math.PI / 2;
+    if (i === 2) m.rotation.x = -Math.PI / 2 - Math.atan2(y0 - y1, z0 - z1);
+  }
+  // 土手のむこうの町の地面
+  const town = new THREE.Mesh(new THREE.PlaneGeometry(2400, 900), lam('#a7b083', { map: farTex }));
+  town.rotation.x = -Math.PI / 2; town.position.set(200, -0.05, PH.DOTE_Z3 - 450); scene.add(town);
+  // 川: 岸の石・水面
+  const bank = new THREE.Mesh(new THREE.PlaneGeometry(480, 1.6), lam('#b3a68a'));
+  bank.rotation.x = -Math.PI / 2 - 0.3; bank.position.set(180, -0.22, PH.RIVER_Z + 0.5); scene.add(bank);
+  const waterTex = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#5d9ec2'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 160; i++) { g.strokeStyle = prand() < 0.5 ? 'rgba(255,255,255,.18)' : 'rgba(30,70,110,.16)'; g.lineWidth = 1.5; const x = prand() * w, y = prand() * h, l = 10 + prand() * 30; g.beginPath(); g.moveTo(x, y); g.quadraticCurveTo(x + l / 2, y - 3, x + l, y); g.stroke(); }
+  }, [40, 16]);
+  const river = new THREE.Mesh(new THREE.PlaneGeometry(2400, 600), new THREE.MeshLambertMaterial({ color: '#ffffff', map: waterTex, emissive: '#1c3a52', emissiveIntensity: 0.3 }));
+  river.rotation.x = -Math.PI / 2; river.position.set(200, PH.RIVER_Y, PH.RIVER_Z + 300); scene.add(river);
+  river.userData.tex = waterTex; ground.river = river;
+}
+const ground = {};
+buildGround();
+
+/* 距離の目印: 10m ごとの白線・地面の数字・土手の下の立て札 */
+function buildMarks() {
+  const lime = new THREE.MeshBasicMaterial({ color: '#f6f6ee', transparent: true, opacity: 0.85, depthWrite: false });
+  const lineGeo = new THREE.PlaneGeometry(0.14, PH.RIVER_Z - 0.6 - (PH.DOTE_Z0 + 1.2));
+  for (let d = 10; d <= 200; d += 10) {
+    const ln = new THREE.Mesh(lineGeo, lime); ln.rotation.x = -Math.PI / 2; ln.position.set(d, 0.012, (PH.RIVER_Z - 0.6 + PH.DOTE_Z0 + 1.2) / 2); scene.add(ln);
+    const tex = canvasTex(256, 128, (g, w, h) => {
+      g.clearRect(0, 0, w, h); g.fillStyle = 'rgba(250,250,240,.9)'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = `92px ${FD}`; g.fillText(`${d}`, w / 2 - 18, h / 2 + 6); g.font = `50px ${FD}`; g.fillText('m', w / 2 + (d >= 100 ? 92 : 66), h / 2 + 22);
+    });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 1.6), new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2; m.position.set(d + 1.9, 0.014, 4.2); scene.add(m);
+    // 立て札（横からでも読める）
+    const st = new THREE.Group(); st.position.set(d, 0, PH.DOTE_Z0 + 0.8); scene.add(st);
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 1.2, 5), lam('#d8d0c0')); pole.position.y = 0.6; st.add(pole);
+    const ptex = canvasTex(160, 96, (g, w, h) => { g.fillStyle = '#f8f4e8'; g.fillRect(0, 0, w, h); g.strokeStyle = '#1f5f8b'; g.lineWidth = 8; g.strokeRect(4, 4, w - 8, h - 8); g.fillStyle = '#1f5f8b'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `${d >= 100 ? 40 : 48}px ${FD}`; g.fillText(`${d}m`, w / 2, h / 2 + 3); });
+    const plate = new THREE.Mesh(new THREE.PlaneGeometry(1.0, 0.6), lam('#ffffff', { map: ptex })); plate.position.set(0, 1.3, 0.05); st.add(plate);
+  }
+  const zl = new THREE.Mesh(new THREE.PlaneGeometry(0.1, 3), lime); zl.rotation.x = -Math.PI / 2; zl.position.set(0, 0.012, 0); scene.add(zl);
+}
+
+/* 土手のむこうの町（家は2回の描画にまとめる）・電柱・木 */
+function buildTown() {
+  const houses = [];
+  for (let x = -90; x < 520; x += 7 + prand() * 4) houses.push([x, PH.DOTE_Z3 - 6 - prand() * 4, 5 + prand() * 3, 5 + prand() * 2, 4 + prand() * 3]);
+  for (let x = -80; x < 520; x += 8 + prand() * 5) houses.push([x + 3, PH.DOTE_Z3 - 18 - prand() * 6, 6 + prand() * 3, 6, 5 + prand() * 4]);
+  for (let x = -60; x < 520; x += 25 + prand() * 30) houses.push([x, PH.DOTE_Z3 - 40 - prand() * 20, 9 + prand() * 5, 8, 10 + prand() * 12]);   // 団地・マンション
+  const wallCols = ['#eee6d4', '#e2d4bc', '#d5dad6', '#efe2cc', '#cfc6b8', '#e8d2bc'], roofCols = ['#4f6070', '#7a4a3c', '#3e5a6a', '#5a5550', '#8a5a3a'];
+  const body = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), lam('#ffffff'), houses.length);
+  const rs = new THREE.Shape(); rs.moveTo(-0.56, 0); rs.lineTo(0, 0.42); rs.lineTo(0.56, 0); rs.closePath();
+  const rg = new THREE.ExtrudeGeometry(rs, { depth: 1.06, bevelEnabled: false }); rg.translate(0, 0, -0.53);
+  const roof = new THREE.InstancedMesh(rg, lam('#ffffff', { flatShading: true }), houses.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
+  houses.forEach(([x, z, w, d, h], i) => {
+    m4.compose(p.set(x, h / 2, z), q, sc.set(w, h, d)); body.setMatrixAt(i, m4); body.setColorAt(i, c.set(wallCols[Math.floor(prand() * wallCols.length)]));
+    const flat = h > 9; m4.compose(p.set(x, h, z), q, sc.set(w, flat ? 0.12 : w * 0.9, d)); roof.setMatrixAt(i, m4); roof.setColorAt(i, c.set(flat ? '#bdb6aa' : roofCols[Math.floor(prand() * roofCols.length)]));
+  });
+  scene.add(body, roof);
+  // 木（土手のうしろと、川上のほう）
+  const trees = [];
+  for (let x = -70; x < 500; x += 9 + prand() * 14) trees.push([x, PH.DOTE_Z3 - 2 - prand() * 3, 1 + prand() * 0.6]);
+  for (let i = 0; i < 8; i++) trees.push([-30 - prand() * 30, -6 + prand() * 12, 1.2 + prand() * 0.5]);
+  const crown = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(2, 1), lam('#4d7a3a', { flatShading: true }), trees.length);
+  const trunk = new THREE.InstancedMesh(new THREE.CylinderGeometry(0.18, 0.26, 3, 6), lam('#5b4636'), trees.length);
+  trees.forEach(([x, z, s], i) => { m4.compose(p.set(x, 3 * s + 1.5 * s, z), q, sc.set(s, s * 1.1, s)); crown.setMatrixAt(i, m4); crown.setColorAt(i, c.set('#4d7a3a').offsetHSL((prand() - 0.5) * 0.05, 0, (prand() - 0.5) * 0.1)); m4.compose(p.set(x, 1.5 * s, z), q, sc.set(s, s, s)); trunk.setMatrixAt(i, m4); });
+  scene.add(crown, trunk);
+  // 電柱と電線（土手のうしろ）
+  const poleMat = lam('#8a8580'), wire = new THREE.LineBasicMaterial({ color: '#4a4a50' });
+  const poles = [];
+  for (let x = -60; x < 500; x += 30) { const pl = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, 10, 6), poleMat); pl.position.set(x, 5, PH.DOTE_Z3 - 2.5); scene.add(pl); poles.push(x); }
+  for (const dy of [0, -0.5]) for (let i = 0; i < poles.length - 1; i++) {
+    const pts = []; for (let k = 0; k <= 10; k++) { const t = k / 10; pts.push(new THREE.Vector3(lerp(poles[i], poles[i + 1], t), 9.6 + dy - Math.sin(t * Math.PI) * 0.8, PH.DOTE_Z3 - 2.5)); }
+    scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wire));
+  }
+  // 鉄橋（ずっと下流。川をまたぐ）
+  const br = new THREE.Group(); br.position.set(330, 0, 0); scene.add(br);
+  const steel = lam('#c4553e');
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(5, 0.6, 140), lam('#6a6a6a')); deck.position.set(0, 6, 60); br.add(deck);
+  for (let z = -10; z <= 130; z += 20) {
+    const pier = new THREE.Mesh(new THREE.BoxGeometry(2, 6, 2.5), lam('#b0aca2')); pier.position.set(0, 3, z); br.add(pier);
+    for (const s of [-1, 1]) { const tr = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.35, 23), steel); tr.position.set(s * 2.3, 6.2 + 4.2 / 2 + 1, z + 10); tr.rotation.x = 0; br.add(tr); const v1 = new THREE.Mesh(new THREE.BoxGeometry(0.3, 4.6, 0.3), steel); v1.position.set(s * 2.3, 8.3, z); br.add(v1); const dg = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, 10.8), steel); dg.position.set(s * 2.3, 8.3, z + 5); dg.rotation.x = Math.atan2(4.2, 10); br.add(dg); }
+  }
+}
+buildTown();
+
+/* 子ども: 帽子・シャツ・半ズボン。腕と脚は棒 */
+const skin = lam('#f0c8a4');
+function makeKid(shirtC, shortsC, capC, sit = false, s = 1) {
+  const g = new THREE.Group(); g.scale.setScalar(s); scene.add(g);
+  const shirt = lam(shirtC), shorts = lam(shortsC);
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.38, 8), shirt); torso.position.y = sit ? 0.42 : 0.86; g.add(torso);
+  const hips = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.13, 0.16, 8), shorts); hips.position.y = sit ? 0.22 : 0.62; g.add(hips);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.12, 12, 10), skin); head.position.y = sit ? 0.75 : 1.19; g.add(head);
+  const cap = new THREE.Mesh(new THREE.SphereGeometry(0.125, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), lam(capC)); cap.position.copy(head.position); cap.position.y += 0.02; g.add(cap);
+  const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.015, 10, 1, false, 0, Math.PI), lam(capC)); brim.position.set(head.position.x + 0.1, head.position.y + 0.02, 0); brim.rotation.y = Math.PI / 2; g.add(brim);
+  const legs = [0, 1].map(i => { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.04, 1, 6), skin); g.add(m); return m; });
+  const arms = [0, 1].map(i => { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.032, 1, 6), skin); g.add(m); return m; });
+  const kid = { g, torso, head, cap, hips, legs, arms, sit, hop: 0, cheer: 0 };
+  poseKid(kid, null, 0);
+  return kid;
+}
+// 脚と腕を置く。hands = [左手, 右手] の位置（group の中の座標）か null（下ろす）
+const _a = new THREE.Vector3(), _b = new THREE.Vector3();
+function poseKid(k, hands, t) {
+  const sit = k.sit, hy = sit ? 0.2 : 0.6;
+  k.legs.forEach((m, i) => {
+    const z = i ? 0.07 : -0.07;
+    if (sit) limb(m, _a.set(0.02, hy, z), _b.set(0.38, 0.03, z * 1.4));
+    else limb(m, _a.set(0, hy, z), _b.set(0.02, 0.0, z * 1.2));
+  });
+  const sy = sit ? 0.56 : 1.0;
+  k.arms.forEach((m, i) => {
+    const z = i ? 0.15 : -0.15;
+    const h = hands ? hands[i] : null;
+    if (h) limb(m, _a.set(0, sy, z), h);
+    else if (k.cheer > 0) limb(m, _a.set(0, sy, z), _b.set(0.05, sy + 0.42, z * 1.6));
+    else limb(m, _a.set(0, sy, z), _b.set(0.03, sy - 0.4, z * 1.25));
+  });
+}
+
+/* 発射台・空気入れ・バケツ・やかん・吹き流し */
+const PIVOT = new THREE.Vector3(0, PH.NOZ_H, 0);
+const wood = lam('#b98a58'), metal = lam('#9ea4aa'), dark = lam('#3c4248');
+const launcher = new THREE.Group(); scene.add(launcher);
+const launchArm = new THREE.Group(); launchArm.position.copy(PIVOT); scene.add(launchArm);
+let protractorMesh = null;
+function buildLauncher() {
+  const base = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.04, 0.42), wood); base.position.y = 0.02; launcher.add(base);
+  for (const z of [-0.07, 0.07]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.06, PH.NOZ_H, 0.03), wood); post.position.set(0, PH.NOZ_H / 2 + 0.02, z); launcher.add(post); }
+  const axle = new THREE.Mesh(new THREE.CylinderGeometry(0.015, 0.015, 0.2, 8), metal); axle.rotation.x = Math.PI / 2; axle.position.copy(PIVOT); launcher.add(axle);
+  // 分度器（角度の目盛り板）
+  const ptex = canvasTex(256, 256, (g, w, h) => {
+    g.clearRect(0, 0, w, h); const cx = 20, cy = h - 20, R = 220;
+    g.fillStyle = 'rgba(250,246,230,.92)'; g.beginPath(); g.moveTo(cx, cy); g.arc(cx, cy, R, -Math.PI / 2, 0); g.closePath(); g.fill();
+    g.strokeStyle = '#1f2a33'; g.lineWidth = 3;
+    for (let a = 0; a <= 90; a += 5) { const r0 = a % 10 ? R - 18 : R - 34, c = Math.cos(a * DEG), s = Math.sin(a * DEG); g.beginPath(); g.moveTo(cx + c * r0, cy - s * r0); g.lineTo(cx + c * R, cy - s * R); g.stroke(); }
+    g.fillStyle = '#1f2a33'; g.font = `700 22px ${FB}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+    for (let a = 0; a <= 90; a += 30) { const r0 = R - 56, c = Math.cos(a * DEG), s = Math.sin(a * DEG); g.fillText(`${a}`, cx + c * r0, cy - s * r0); }
+  });
+  protractorMesh = new THREE.Mesh(new THREE.PlaneGeometry(0.26, 0.26), new THREE.MeshBasicMaterial({ map: ptex, transparent: true, side: THREE.DoubleSide, depthWrite: false }));
+  protractorMesh.position.set(PIVOT.x + 0.13 - 0.02, PIVOT.y + 0.13 - 0.02, -0.075); launcher.add(protractorMesh);
+  // ノズルが差さる管（ロケットといっしょに傾く）
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.1, 8), metal); tube.position.y = 0.0; launchArm.add(tube);
+  const block = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.12), dark); block.position.y = -0.03; launchArm.add(block);
+  // 発射のひも
+  const pts = [new THREE.Vector3(0, 0.25, 0.06), new THREE.Vector3(0.1, 0.04, 0.4), new THREE.Vector3(-0.3, 0.01, 0.9), new THREE.Vector3(-0.8, 0.01, 1.0)];
+  scene.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 16, 0.004, 4), lam('#e8d6a0')));
+}
+buildLauncher();
+// 空気入れ（自転車用。ハンドルが上下する）
+const PUMP = new THREE.Vector3(-0.7, 0, -0.3);
+const pump = { g: new THREE.Group(), handle: new THREE.Group(), k: 0 };
+function buildPump() {
+  const g = pump.g; g.position.copy(PUMP); scene.add(g);
+  const foot = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.03, 0.08), dark); foot.rotation.y = Math.PI / 2; foot.position.y = 0.015; g.add(foot);
+  const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.56, 10), lam('#d8423a')); barrel.position.y = 0.31; g.add(barrel);
+  const capT = new THREE.Mesh(new THREE.CylinderGeometry(0.034, 0.034, 0.03, 10), dark); capT.position.y = 0.6; g.add(capT);
+  const gauge = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.02, 14), lam('#f2f0ea')); gauge.rotation.x = Math.PI / 2; gauge.position.set(0, 0.1, 0.045); g.add(gauge);
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.045, 0.006, 6, 16), dark); ring.position.set(0, 0.1, 0.056); g.add(ring);
+  pump.needle = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.035, 0.004), lam('#c43a2a')); pump.needle.geometry.translate(0, 0.016, 0); pump.needle.position.set(0, 0.1, 0.058); g.add(pump.needle);
+  const h = pump.handle; h.position.y = 0.62; g.add(h);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 0.3, 6), metal); shaft.position.y = 0.15 - 0.3; h.add(shaft);
+  const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.32, 8), dark); bar.rotation.z = Math.PI / 2; bar.position.y = 0.0; h.add(bar);
+  shaft.position.y = -0.14;
+  // ホース（空気入れ → 発射台）
+  const pts = [new THREE.Vector3(PUMP.x + 0.02, 0.08, PUMP.z + 0.03), new THREE.Vector3(PUMP.x + 0.2, 0.02, PUMP.z + 0.2), new THREE.Vector3(-0.25, 0.02, 0.12), new THREE.Vector3(-0.06, 0.15, 0.03), new THREE.Vector3(0, PH.NOZ_H - 0.04, 0)];
+  scene.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 24, 0.007, 5), lam('#2a2a2e')));
+}
+buildPump();
+const BUCKET = new THREE.Vector3(-0.5, 0, 0.75);
+const kettle = new THREE.Group();
+let pourStream = null;
+function buildBucketKettle() {
+  const b = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.1, 0.22, 16, 1, true), lam('#3f86b8', { side: THREE.DoubleSide })); b.position.set(BUCKET.x, 0.11, BUCKET.z); scene.add(b);
+  const bw = new THREE.Mesh(new THREE.CircleGeometry(0.115, 16), lam('#7fb6d6', { emissive: '#204a66', emissiveIntensity: 0.3 })); bw.rotation.x = -Math.PI / 2; bw.position.set(BUCKET.x, 0.14, BUCKET.z); scene.add(bw);
+  const hd = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.005, 4, 16, Math.PI), metal); hd.position.set(BUCKET.x, 0.22, BUCKET.z); scene.add(hd);
+  // やかん
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 10), lam('#c9ced2')); body.scale.set(1, 0.75, 1); kettle.add(body);
+  const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.05, 0.03, 10), lam('#b0b5ba')); lid.position.y = 0.075; kettle.add(lid);
+  const spout = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.022, 0.14, 8), lam('#c9ced2')); spout.position.set(0.1, 0.02, 0); spout.rotation.z = -1.0; kettle.add(spout);
+  const hdl = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.008, 5, 12, Math.PI), dark); hdl.position.y = 0.07; kettle.add(hdl);
+  scene.add(kettle);
+  pourStream = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.006, 1, 6), new THREE.MeshLambertMaterial({ color: '#bfe3f5', emissive: '#4a8ab0', emissiveIntensity: 0.4, transparent: true, opacity: 0.8 }));
+  pourStream.visible = false; scene.add(pourStream);
+}
+buildBucketKettle();
+// 吹き流し（風下へなびく）
+const sock = { g: new THREE.Group(), cloth: null };
+function buildSock() {
+  sock.g.position.set(3.2, 0, -3.2); scene.add(sock.g);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 3.0, 6), lam('#e6e2d6')); pole.position.y = 1.5; sock.g.add(pole);
+  const tex = canvasTex(64, 64, (g, w, h) => { for (let i = 0; i < 4; i++) { g.fillStyle = i % 2 ? '#f4f1e8' : '#d8452e'; g.fillRect(0, i * h / 4, w, h / 4); } });
+  const geo = new THREE.CylinderGeometry(0.16, 0.07, 1.1, 10, 1, true); geo.translate(0, -0.55, 0); geo.rotateZ(Math.PI / 2);   // +x 向きに伸びる
+  sock.cloth = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide }));
+  sock.piv = new THREE.Group(); sock.piv.position.y = 2.95; sock.g.add(sock.piv); sock.piv.add(sock.cloth);
+  sock.cloth.geometry.rotateZ(Math.PI); // 先が +x
+}
+buildSock();
+
+/* ロケット: 1.5L ペットボトル + 羽根3枚 + 先の粘土。原点 = ノズル（口）、+y = 頭 */
+const rocket = { g: new THREE.Group(), water: null, waterTop: null, fins: [] };
+function buildRocket() {
+  const g = rocket.g; scene.add(g);
+  const bottle = new THREE.MeshLambertMaterial({ color: '#e8f4fa', transparent: true, opacity: 0.42, emissive: '#6f8fa0', emissiveIntensity: 0.15, depthWrite: false, side: THREE.DoubleSide });
+  const R = 0.046;
+  const prof = [[0.0125, 0.0], [0.0125, 0.022], [0.016, 0.03], [0.03, 0.055], [0.042, 0.08], [R, 0.1], [R, 0.3], [0.043, 0.315], [0.03, 0.325]].map(([r, y]) => new THREE.Vector2(r, y));
+  const body = new THREE.Mesh(new THREE.LatheGeometry(prof, 18), bottle); body.renderOrder = 3; g.add(body);
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.0145, 0.0145, 0.012, 12), lam('#2f7fc2')); cap.position.y = 0.028; g.add(cap);
+  const label = new THREE.Mesh(new THREE.CylinderGeometry(R + 0.001, R + 0.001, 0.07, 18, 1, true), lam('#2f7fc2')); label.position.y = 0.2; g.add(label);
+  // 頭（もう1本のボトルの上を切って粘土を詰めた）
+  const noseProf = [[0.045, 0.31], [0.04, 0.35], [0.028, 0.39], [0.012, 0.415], [0.0, 0.42]].map(([r, y]) => new THREE.Vector2(r, y));
+  const nose = new THREE.Mesh(new THREE.LatheGeometry(noseProf, 16), lam('#e8733a')); g.add(nose);
+  // 羽根（工作用紙）
+  const fs = new THREE.Shape(); fs.moveTo(0, 0); fs.lineTo(0.075, -0.02); fs.lineTo(0.075, 0.035); fs.lineTo(0, 0.13); fs.closePath();
+  const fg = new THREE.ExtrudeGeometry(fs, { depth: 0.003, bevelEnabled: false }); fg.translate(0, 0, -0.0015);
+  for (let i = 0; i < 3; i++) { const f = new THREE.Mesh(fg, lam(i === 0 ? '#f2c33a' : '#e8733a')); const a = i * Math.PI * 2 / 3 + Math.PI / 2; const holder = new THREE.Group(); holder.rotation.y = a; f.position.set(R - 0.004, 0.05, 0); holder.add(f); g.add(holder); rocket.fins.push(f); }
+  // 中の水（ノズルの側にたまる・注ぐときは頭の側）
+  const wm = new THREE.MeshLambertMaterial({ color: '#7cc4ea', transparent: true, opacity: 0.7, emissive: '#2a6c94', emissiveIntensity: 0.35, depthWrite: false });
+  rocket.water = new THREE.Mesh(new THREE.CylinderGeometry(0.043, 0.043, 1, 16), wm); rocket.water.renderOrder = 2; g.add(rocket.water);
+  // 噴き出す水のすじ（噴射の間だけ）
+  rocket.jet = new THREE.Mesh(new THREE.ConeGeometry(0.06, 1, 10, 1, true), new THREE.MeshBasicMaterial({ color: '#e6f6ff', transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide }));
+  rocket.jet.geometry.translate(0, -0.5, 0); rocket.jet.visible = false; g.add(rocket.jet);
+}
+buildRocket();
+// 水面の高さ: 1.5 L が全部の長さ（0.3 m）に入る、ざっくり
+function setWaterLevel(L, fromNose) {
+  const frac = clamp(L / PH.VB, 0, 1), h = Math.max(0.001, frac * 0.29);
+  rocket.water.visible = L > 0.005;
+  rocket.water.scale.set(1, h, 1);
+  rocket.water.position.y = fromNose ? 0.315 - h / 2 : 0.025 + h / 2;
+  const r = fromNose ? 1 : clamp(0.35 + frac * 3, 0.3, 1);
+  rocket.water.scale.x = rocket.water.scale.z = fromNose ? 1 : r;
+}
+const blobTex = canvasTex(64, 64, (c, w, h) => { const gr = c.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(30,50,20,.5)'); gr.addColorStop(1, 'rgba(30,50,20,0)'); c.fillStyle = gr; c.fillRect(0, 0, w, h); });
+const rocketBlob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: blobTex, transparent: true, depthWrite: false })); rocketBlob.rotation.x = -Math.PI / 2; rocketBlob.renderOrder = 1; scene.add(rocketBlob);
+
+/* 子どもたち: 空気を入れる子（プレイヤー）・やかんの子・見ている子・土手で見ている子 */
+const kidPump = makeKid('#e9e2cf', '#2f4a72', '#d8452e');
+kidPump.g.position.set(PUMP.x, 0, PUMP.z - 0.36); kidPump.g.rotation.y = -Math.PI / 2;
+const kidKettle = makeKid('#e8733a', '#3a5a3a', '#f2c33a', false, 0.92);
+kidKettle.g.position.set(BUCKET.x - 0.45, 0, BUCKET.z - 0.22); kidKettle.g.rotation.y = -0.3;
+const kidWatch = makeKid('#5a9fd0', '#e9e2cf', '#f4f1e8', false, 0.95);
+kidWatch.g.position.set(1.7, 0, -1.9); kidWatch.g.rotation.y = -1.9;
+const doteKids = [];
+for (const [x, sit, c1, c2, c3] of [[-6, true, '#d8452e', '#2f4a72', '#f4f1e8'], [-3.5, false, '#f2c33a', '#3a5a3a', '#1f5f8b'], [9, true, '#5a9fd0', '#e9e2cf', '#d8452e'], [24, true, '#f4f1e8', '#2f4a72', '#e8733a'], [38, false, '#e8733a', '#3a3a5a', '#f2c33a'], [55, true, '#9ad07a', '#2f4a72', '#f4f1e8'], [72, true, '#d8452e', '#3a5a3a', '#1f5f8b'], [96, false, '#5a9fd0', '#2f2f3a', '#f2c33a'], [118, true, '#f2c33a', '#2f4a72', '#d8452e'], [142, true, '#f4f1e8', '#3a5a3a', '#e8733a']]) {
+  const zz = PH.DOTE_Z0 - 2.2, yy = PH.DOTE_H * (PH.DOTE_Z0 - zz) / (PH.DOTE_Z0 - PH.DOTE_Z1);
+  const k = makeKid(c1, c2, c3, sit, 1.0); k.g.position.set(x, yy - 0.05, zz); k.g.rotation.y = -Math.PI / 2 + (prand() - 0.5) * 0.6; k.phase = prand() * 6; doteKids.push(k);
+}
+
+/* 旗: 着いた所（赤）と自己ベスト（橙） */
+function makeFlag(col) {
+  const f = new THREE.Group(); scene.add(f);
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 2.2, 6), lam('#f0ece0')); pole.position.y = 1.1; f.add(pole);
+  const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(0.95, -0.3); sh.lineTo(0, -0.6); sh.closePath();
+  const cloth = new THREE.Mesh(new THREE.ShapeGeometry(sh), lam(col, { side: THREE.DoubleSide })); cloth.position.set(0.035, 2.2, 0); f.add(cloth);
+  f.userData.cloth = cloth; f.visible = false;
+  return f;
+}
+const landFlag = makeFlag('#d8452e'), bestFlag = makeFlag('#f2a23a');
+let bestLabel = null, landLabel = null;
+function labelSprite(top, big, bg) {
+  const tex = canvasTex(256, 112, (g, w, h) => {
+    g.fillStyle = bg; g.beginPath(); g.roundRect(4, 8, w - 8, h - 16, 14); g.fill();
+    g.fillStyle = '#f8f4e8'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `700 26px ${FB}`; g.fillText(top, w / 2, 34);
+    g.font = `38px ${FD}`; g.fillText(big, w / 2, 72);
+  });
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthWrite: false, transparent: true }));
+  s.scale.set(2.2, 0.96, 1); s.position.set(0, 3.0, 0);
+  return s;
+}
+function updateBestFlag() {
+  bestFlag.visible = rec.best > 1;
+  bestFlag.position.set(rec.best, 0, PH.DOTE_Z0 + 2.2);
+  if (bestLabel) { bestFlag.remove(bestLabel); bestLabel.material.map.dispose(); }
+  bestLabel = labelSprite('ベスト', `${m1(rec.best)}m`, 'rgba(31,95,139,.94)'); bestFlag.add(bestLabel);
+}
+function setLandFlag(x, z, d) {
+  landFlag.visible = true; landFlag.position.set(x + 0.4, groundAt(x + 0.4, z - 0.8)[0], z - 0.8);
+  if (landLabel) { landFlag.remove(landLabel); landLabel.material.map.dispose(); }
+  landLabel = labelSprite('ここまで', `${m1(d)}m`, 'rgba(200,64,40,.94)'); landFlag.add(landLabel);
+}
+
+/* 水しぶき（点）とけむり（もや） */
+const DROPS = 1500;
+const drops = { n: 0, p: new Float32Array(DROPS * 3), v: new Float32Array(DROPS * 3), life: new Float32Array(DROPS), max: new Float32Array(DROPS) };
+const dropTex = canvasTex(32, 32, (g, w, h) => { const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.5, 'rgba(235,248,255,.8)'); gr.addColorStop(1, 'rgba(220,240,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+const dropGeo = new THREE.BufferGeometry(); dropGeo.setAttribute('position', new THREE.BufferAttribute(drops.p, 3)); dropGeo.setDrawRange(0, 0);
+const dropPts = new THREE.Points(dropGeo, new THREE.PointsMaterial({ map: dropTex, size: 0.06, color: '#e8f6ff', transparent: true, depthWrite: false, sizeAttenuation: true }));
+dropPts.frustumCulled = false; dropPts.renderOrder = 4; scene.add(dropPts);
+const mistTex = canvasTex(64, 64, (g, w, h) => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,.7)'); gr.addColorStop(0.6, 'rgba(240,248,255,.3)'); gr.addColorStop(1, 'rgba(240,248,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, w, h); });
+const mists = [];
+for (let i = 0; i < 18; i++) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: mistTex, transparent: true, depthWrite: false, opacity: 0 })); s.visible = false; s.renderOrder = 5; scene.add(s); mists.push({ s, life: 0, max: 1, v: new THREE.Vector3(), r0: 0.2, r1: 1 }); }
+let mistI = 0;
+function addMist(x, y, z, vx, vy, vz, r0, r1, max, op = 0.6) { const m = mists[mistI++ % mists.length]; m.s.visible = true; m.s.position.set(x, y, z); m.v.set(vx, vy, vz); m.life = 0; m.max = max; m.r0 = r0; m.r1 = r1; m.op = op; }
+function addDrop(x, y, z, vx, vy, vz, life) {
+  let i = drops.n;
+  if (i >= DROPS) { i = Math.floor(Math.random() * DROPS); } else drops.n++;
+  drops.p[i * 3] = x; drops.p[i * 3 + 1] = y; drops.p[i * 3 + 2] = z; drops.v[i * 3] = vx; drops.v[i * 3 + 1] = vy; drops.v[i * 3 + 2] = vz; drops.life[i] = 0; drops.max[i] = life;
+}
+function clearFx() { drops.n = 0; dropGeo.setDrawRange(0, 0); for (const m of mists) { m.s.visible = false; m.life = 9; } }
+// 噴射のしぶきを、物理の記録（時刻つき）から出す
+let lastSprayT = 0;
+function consumeSpray(f) {
+  if (!f || !f.spray) return;
+  for (const s of f.spray) {
+    if (s.air) { if (Math.random() < 0.5) addMist(s.x, s.y, s.z, s.vx * 0.06, s.vy * 0.06, s.vz * 0.06, 0.25, 1.6, 1.2, 0.45); continue; }
+    const n = Math.min(26, Math.max(1, Math.round(s.q * 0.22)));
+    const age = Math.max(0, f.t - s.t);
+    for (let i = 0; i < n; i++) {
+      const sp = 0.6 + Math.random() * 0.45, j = 0.14 + (Math.random() * 0.12);
+      const vx = s.vx * sp + (Math.random() - 0.5) * j * 30, vy = s.vy * sp + (Math.random() - 0.5) * j * 30, vz = s.vz * sp + (Math.random() - 0.5) * j * 30;
+      const k = Math.exp(-age * 2.5), ax = (1 - k) / 2.5;
+      addDrop(s.x + vx * ax, s.y + vy * ax - 4.9 * age * age, s.z + vz * ax, vx * k, vy * k - 9.8 * age, vz * k, 1.6 + Math.random() * 1.6);
+    }
+    if (Math.random() < 0.06) addMist(s.x, s.y, s.z, s.vx * 0.05, s.vy * 0.05 + 0.3, s.vz * 0.05, 0.3, 1.8, 1.8, 0.5);
+  }
+  f.spray.length = 0;
+}
+function stepFx(dt) {
+  const P = drops.p, V = drops.v;
+  let n = drops.n;
+  for (let i = 0; i < n; i++) {
+    drops.life[i] += dt;
+    const k = Math.exp(-dt * 2.5);
+    V[i * 3] *= k; V[i * 3 + 1] = V[i * 3 + 1] * k - 9.8 * dt; V[i * 3 + 2] *= k;
+    P[i * 3] += V[i * 3] * dt; P[i * 3 + 1] += V[i * 3 + 1] * dt; P[i * 3 + 2] += V[i * 3 + 2] * dt;
+    const gy = P[i * 3 + 2] > PH.RIVER_Z ? PH.RIVER_Y : 0;
+    if (P[i * 3 + 1] < gy || drops.life[i] > drops.max[i]) {
+      n--; P[i * 3] = P[n * 3]; P[i * 3 + 1] = P[n * 3 + 1]; P[i * 3 + 2] = P[n * 3 + 2]; V[i * 3] = V[n * 3]; V[i * 3 + 1] = V[n * 3 + 1]; V[i * 3 + 2] = V[n * 3 + 2]; drops.life[i] = drops.life[n]; drops.max[i] = drops.max[n]; i--;
+    }
+  }
+  drops.n = n; dropGeo.setDrawRange(0, n); dropGeo.attributes.position.needsUpdate = true;
+  for (const m of mists) {
+    if (!m.s.visible) continue;
+    m.life += dt; const k = m.life / m.max;
+    if (k >= 1) { m.s.visible = false; continue; }
+    m.s.position.addScaledVector(m.v, dt); m.v.multiplyScalar(Math.exp(-dt * 1.5));
+    const r = lerp(m.r0, m.r1, 1 - (1 - k) * (1 - k)); m.s.scale.set(r, r, 1); m.s.material.opacity = m.op * (1 - k) * Math.min(1, m.life * 8);
+  }
+}
+
+/* ---------- ゲーム状態 ---------- */
+let game = null, bot = null, botStart = false, state = 'loading';   // loading | title | play | over | skip
+let tt = 0, overShownAt = 0, endAt = -1, pops = [], frozen = false, ff = false, shake = 0, flipAt = -9, pumpAnimAt = -9, creakFx = 0, burstAt = -9, landAt = -9, launchFx = -9;
+let press = null, uiAngle = PH.ANG0, keyPour = false, lastPumpUi = 0, resInfo = null, wasNew = false, hintAng = null;
+const LAG = 0.05, FF = 4, LAUNCH_CAM = 0.45;
+const PUMP_PX = () => Math.max(40, H * 0.06), REARM_PX = 18, ANG_PX = 0.25;
+const evTime = e => (e && e.timeStamp > 1e3 && Math.abs(e.timeStamp - performance.now()) < 5000 ? e.timeStamp : performance.now());
+let base = 0, lastAdv = 0;
+function newGame(s, botSkill) {
+  game = makeGame(s);
+  bot = botSkill ? makeBot(game, SKILLS[botSkill], mulberry((s * 7 + 3) >>> 0)) : null;
+  pops = []; endAt = -1; press = null; keyPour = false; uiAngle = PH.ANG0; flipAt = -9; pumpAnimAt = -9; creakFx = 0; burstAt = -9; landAt = -9; launchFx = -9; shake = 0; resInfo = null; hintAng = null;
+  landFlag.visible = false; clearFx(); cam.snap = true; rocket.g.visible = true;
+  base = performance.now() / 1000 + LAG; lastAdv = performance.now() / 1000;
+  updateHud(); syncCtrl();
+}
+
+/* ---------- 1ステップ（物理は 1/1000 秒きざみ・噴射中はさらに 1/20。描画のコマ数によらない。入力は指の動いた時刻で物理に入る） ---------- */
+function advancePhys() {
+  if (!game) return;
+  const now = performance.now() / 1000;
+  if (frozen) { base = now - game.t - LAG; lastAdv = now; return; }
+  if (ff && state === 'play') base -= (now - lastAdv) * (FF - 1);
+  lastAdv = now;
+  let target = now - base - LAG;
+  if (target - game.t > 0.25 * (ff ? FF : 1)) { base += target - game.t - 0.25 * (ff ? FF : 1); target = now - base - LAG; }
+  let k = 0;
+  while (game.t + PH.DT <= target && k < 4000) { if (bot) bot.step(); stepGame(game); if (game.events.length) handleEvents(); k++; }
+}
+function gameTimeOf(ms) { return Math.max(game.t, ms / 1000 - base); }
+function input(kind, a, ms) { if (!game || bot || state !== 'play') return; gInput(game, gameTimeOf(ms), kind, a); }
+function handleEvents() {
+  const g = game, quiet = state === 'skip';
+  for (const e of g.events) {
+    if (e.type === 'pourOn') { if (!quiet) sPourStart(); }
+    else if (e.type === 'pourOff') { if (!quiet) sPourStop(); }
+    else if (e.type === 'overflow') { pops.push({ text: 'あふれた！', life: 0, dur: 1.2, size: 26, small: true, cool: true }); }
+    else if (e.type === 'phase') {
+      if (e.phase === 'pump') { flipAt = tt; if (!quiet) sFlip(); }
+      if (e.phase === 'aim') { uiAngle = g.angle; }
+      syncCtrl();
+    }
+    else if (e.type === 'pump') { pumpAnimAt = tt; if (!quiet) sPump(e.pg); if (e.n === 1) syncCtrl(); }
+    else if (e.type === 'creak') { creakFx = 1; if (!quiet) { sCreak(e.k); if (!reduceMotion) shake = 0.18; } pops.push({ text: 'ミシッ…', life: 0, dur: 1.0, size: 26, small: true, cool: true }); }
+    else if (e.type === 'burst') {
+      burstAt = tt; endAt = tt; rocket.g.visible = false;
+      const P = PIVOT, n = 260;
+      for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, b = Math.random() * Math.PI - Math.PI / 2, s = 2 + Math.random() * 6; addDrop(P.x + 0.15, P.y + 0.12, P.z, Math.cos(a) * Math.cos(b) * s, Math.abs(Math.sin(b)) * s + 1.5, Math.sin(a) * Math.cos(b) * s, 1.2 + Math.random()); }
+      for (let i = 0; i < 6; i++) addMist(P.x + 0.15, P.y + 0.15, P.z, (Math.random() - 0.5) * 2, 0.5 + Math.random(), (Math.random() - 0.5) * 2, 0.3, 2.2, 1.6, 0.6);
+      if (!quiet) { sBurst(); if (!reduceMotion) shake = 0.45; }
+      pops.push({ text: 'ぼんっ！', sub: '空気の入れすぎで破裂…', life: 0, dur: 99, size: 64, big: true });
+      onResult();
+    }
+    else if (e.type === 'launch') {
+      launchFx = tt; lastSprayT = 0;
+      if (!quiet) sLaunch(e.pg, e.water);
+      addMist(PIVOT.x, 0.15, PIVOT.z, 0.2, 0.3, 0, 0.3, 2.4, 2.2, 0.55);
+      for (const k of doteKids) k.cheer = 1.2 + Math.random();
+      kidWatch.cheer = 2; kidPump.cheer = 0;
+    }
+    else if (e.type === 'air') { if (!quiet) sAirJet(); }
+    else if (e.type === 'land') {
+      landAt = tt; endAt = tt;
+      const f = g.fl;
+      if (!e.fizzle) {
+        setLandFlag(f.land.x, f.land.z, e.d);
+        if (e.mat === 'river') { for (let i = 0; i < 70; i++) { const a = Math.random() * Math.PI * 2, s = 1 + Math.random() * 3; addDrop(f.x, PH.RIVER_Y + 0.05, f.z, Math.cos(a) * s * 0.5, 2 + Math.random() * 3, Math.sin(a) * s * 0.5, 1.5); } }
+        else for (let i = 0; i < 3; i++) addMist(f.x, f.y + 0.1, f.z, (Math.random() - 0.5), 0.3, (Math.random() - 0.5), 0.2, 0.9, 1.0, 0.35);
+      }
+      if (!quiet) sLand(e.v, e.mat, e.fizzle);
+      onResult();
+    }
+  }
+  g.events.length = 0;
+}
+function onResult() {
+  const g = game, r = g.res;
+  const d = r.kind === 'fly' ? Math.floor(r.d * 10 + 1e-6) / 10 : 0;
+  wasNew = false;
+  if (!botStart) {
+    rec.plays++; rec.total = Math.round((rec.total + d) * 10) / 10; rec.last = d;
+    if (r.kind === 'burst') rec.bursts++;
+    if (d > rec.best + 1e-9) { wasNew = rec.plays > 1 || rec.best > 0 ? true : false; rec.best = d; rec.bestWater = Math.round(g.water * 100) / 100; rec.bestPumps = g.pumps; rec.bestAngle = g.angle; wasNew = true; updateBestFlag(); }
+    save();
+  }
+  resInfo = { d, kind: r.kind, mat: r.mat, water: g.water, pumps: g.pumps, pg: g.pg, ang: g.angle, wind: windLabel(g.wind), wleft: r.wleft || 0, maxY: r.maxY || 0, maxV: r.maxV || 0, isNew: wasNew };
+  if (r.kind === 'fly') {
+    const sub = r.mat === 'river' ? '川にぽちゃん！' : r.mat === 'dote' || r.mat === 'road' ? '土手まで届いた！' : wasNew && rec.plays > 1 ? '自己ベスト！' : d >= 100 ? '100m 超え！' : '飛んだ！';
+    pops = pops.filter(p => !p.small);
+    pops.push({ text: `${d.toFixed(1)}m`, sub, life: 0, dur: 99, size: 72, big: true, hot: wasNew });
+    if (wasNew && rec.plays > 1) sFanfare(); else sChime(d);
+  } else if (r.kind === 'fizzle') {
+    pops.push({ text: 'ぷすっ…', sub: '飛ばなかった', life: 0, dur: 99, size: 60, big: true });
+  }
+  updateHud();
+}
+function step(dt) {
+  tt += dt;
+  advancePhys();
+  const g = game;
+  if (state === 'play' && g && g.res && endAt >= 0 && tt - endAt > (g.res.kind === 'fly' ? 1.7 : 1.4)) showOver();
+  if (shake > 0) shake -= dt;
+  creakFx = Math.max(0, creakFx - dt * 2.5);
+  for (const p of pops) p.life += dt;
+  pops = pops.filter(p => p.life < p.dur);
+  if (g && g.fl && !frozen) consumeSpray(g.fl);
+  if (!frozen) stepFx(Math.min(dt, 1 / 20));
+  for (const k of [...doteKids, kidWatch, kidPump, kidKettle]) if (k.cheer > 0) k.cheer -= dt;
+  if (g && g.phase === 'water' && g.pouring) pourAmb(true); else pourAmb(false);
+  if (g && g.phase === 'fly') flyWindLevel(Math.hypot(g.fl.vx, g.fl.vy, g.fl.vz)); else flyWindLevel(0);
+}
+
+/* ---------- 描画 ---------- */
+const qTmp = new THREE.Quaternion(), qTmp2 = new THREE.Quaternion(), vTmp = new THREE.Vector3(), vTmp2 = new THREE.Vector3();
+const AX_LAUNCH = new THREE.Vector3();
+function launchQuat(angDeg, out) { AX_LAUNCH.set(Math.cos(angDeg * DEG), Math.sin(angDeg * DEG), 0); return out.setFromUnitVectors(UPV, AX_LAUNCH); }
+const BUCKET_POS = new THREE.Vector3(BUCKET.x, 0.42 + 0.03, BUCKET.z), BUCKET_Q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI);
+function poseScene(dt) {
+  const g = game, ph = g ? g.phase : 'water', show = state === 'play' || state === 'skip' || state === 'over';
+  const ang = g ? (ph === 'aim' || ph === 'pump' ? g.angle : g.angle) : PH.ANG0;
+  // 発射台の腕
+  launchQuat(ang, launchArm.quaternion);
+  // ロケット
+  let fromNose = false, wl = g ? g.water : 0;
+  rocket.jet.visible = false;
+  if (!g || ph === 'water' || (state === 'title')) {
+    rocket.g.position.copy(BUCKET_POS); rocket.g.quaternion.copy(BUCKET_Q); fromNose = true;
+    if (state === 'title') { rocket.g.position.copy(PIVOT); launchQuat(PH.ANG0, rocket.g.quaternion); wl = 0.5; fromNose = false; launchQuat(PH.ANG0, launchArm.quaternion); }
+  } else if (ph === 'pump' || ph === 'aim' || ph === 'burst') {
+    const k = clamp((tt - flipAt) / 0.55, 0, 1), e = k * k * (3 - 2 * k);
+    launchQuat(ang, qTmp);
+    rocket.g.position.copy(BUCKET_POS).lerp(PIVOT, e); rocket.g.position.y += Math.sin(e * Math.PI) * 0.25;
+    rocket.g.quaternion.copy(BUCKET_Q).slerp(qTmp, e);
+    fromNose = k < 0.5;
+    // ふくらみ（ミシッ）
+    const bulge = 1 + creakFx * 0.04 + (g.pg / 8) * 0.015; rocket.g.scale.set(bulge, 1, bulge);
+  } else if (ph === 'fly' || ph === 'landed') {
+    const f = g.fl;
+    rocket.g.scale.set(1, 1, 1);
+    vTmp.set(f.nx, f.ny, f.nz);
+    rocket.g.quaternion.setFromUnitVectors(UPV, vTmp);
+    if (ph === 'landed' && f.land && !f.fizzle) {
+      // 頭から地面にささる → ゆっくり倒れる
+      const k = clamp((tt - landAt) / 0.9, 0, 1), e = k * k;
+      const gy = f.land.y;
+      vTmp2.set(f.nx, Math.min(f.ny, -0.25), f.nz).normalize();
+      const flat = vTmp.set(f.nx, 0, f.nz); if (flat.lengthSq() < 1e-4) flat.set(1, 0, 0); flat.normalize(); flat.y = -0.12; flat.normalize();
+      vTmp2.lerp(flat, f.land.mat === 'river' ? 0 : e * 0.85).normalize();
+      rocket.g.quaternion.setFromUnitVectors(UPV, vTmp2);
+      rocket.g.position.set(f.land.x - vTmp2.x * (PH.LEN - 0.05), gy - vTmp2.y * (PH.LEN - 0.05) - 0.02, f.land.z - vTmp2.z * (PH.LEN - 0.05));
+      if (f.land.mat === 'river') rocket.g.position.y = PH.RIVER_Y + 0.05 + Math.sin(tt * 3) * 0.02;
+    } else rocket.g.position.set(f.x, f.y, f.z);
+    wl = f.Vw * 1e3;
+    if (f.ph === 'water' || f.ph === 'air') { rocket.jet.visible = true; const L = f.ph === 'water' ? clamp(f.u * 0.06, 0.2, 2.2) : 0.6; rocket.jet.scale.set(f.ph === 'water' ? 1 : 1.6, L, f.ph === 'water' ? 1 : 1.6); rocket.jet.material.opacity = f.ph === 'water' ? 0.7 : 0.3; }
+  }
+  setWaterLevel(wl, fromNose);
+  // 影
+  const p = rocket.g.position, gy = groundAt(p.x, p.z)[0];
+  rocketBlob.visible = rocket.g.visible && p.y - gy < 30; const h = Math.max(0, p.y - gy);
+  rocketBlob.position.set(p.x, gy + 0.01, p.z); rocketBlob.scale.set(0.5 + h * 0.05, 0.3 + h * 0.04, 1); rocketBlob.material.opacity = clamp(1 - h / 25, 0.15, 0.8);
+  // やかんと水のすじ
+  const pouring = g && g.phase === 'water' && g.pouring;
+  const kt = pouring ? 1 : 0; kettle.userData.k = lerp(kettle.userData.k || 0, kt, Math.min(1, dt * 8));
+  const kk = kettle.userData.k;
+  kettle.visible = !g || g.phase === 'water' || tt - flipAt < 0.6;
+  kettle.position.set(BUCKET.x - 0.17, 0.66 + 0.05 * (1 - kk), BUCKET.z - 0.12); kettle.rotation.set(0, 0, -0.9 * kk);
+  pourStream.visible = !!pouring && kk > 0.6;
+  if (pourStream.visible) { const sx = kettle.position.x + Math.cos(-0.9 * kk - 0.55) * 0.17, sy = kettle.position.y + Math.sin(-0.9 * kk - 0.55) * 0.17 + 0.04; limb(pourStream, tmpA.set(sx, sy, kettle.position.z), tmpB.set(BUCKET_POS.x, BUCKET_POS.y + 0.01, BUCKET_POS.z)); }
+  // 空気入れのハンドル
+  let hk = 0; const pa = tt - pumpAnimAt;
+  if (pa < 0.1) hk = pa / 0.1; else if (pa < 0.36) hk = 1 - (pa - 0.1) / 0.26;
+  if (press && press.kind === 'pump' && press.armed) hk = Math.max(hk, clamp((press.y - press.top) / PUMP_PX(), 0, 1));
+  pump.k = hk; pump.handle.position.y = 0.62 - 0.28 * hk;
+  pump.needle.rotation.z = -(clamp((g ? g.pg : 0) / PH.GAUGE_MAX, 0, 1.05) * 4.4 - 2.2);
+  // 空気入れの子: ハンドルをにぎる
+  const hy = 0.62 - 0.28 * hk;
+  kidPump.g.position.y = -hk * 0.08; kidPump.g.updateMatrixWorld();
+  const hl = kidPump.g.worldToLocal(new THREE.Vector3(PUMP.x - 0.13, hy, PUMP.z)), hr = kidPump.g.worldToLocal(new THREE.Vector3(PUMP.x + 0.13, hy, PUMP.z));
+  kidPump.torso.rotation.z = -0.15 - hk * 0.3;
+  poseKid(kidPump, [hr, hl], tt);
+  kidKettle.g.updateMatrixWorld();
+  const showK = kettle.visible;
+  poseKid(kidKettle, showK ? [kidKettle.g.worldToLocal(new THREE.Vector3(kettle.position.x - 0.03, kettle.position.y + 0.1, kettle.position.z - 0.02)), kidKettle.g.worldToLocal(new THREE.Vector3(kettle.position.x - 0.08, kettle.position.y + 0.02, kettle.position.z))] : null, tt);
+  for (const k of [kidWatch, ...doteKids]) { poseKid(k, null, tt); k.g.position.y = (k.base ?? (k.base = k.g.position.y)) + (k.cheer > 0 && !reduceMotion ? Math.abs(Math.sin(tt * 9 + (k.phase || 0))) * 0.12 : 0); }
+  // 吹き流し: 風下へ。強いほど水平に
+  const Wd = g ? g.wind : { x: 1.5, z: -0.5, sp: 1.6, dir: -0.3 };
+  const flut = Math.sin(tt * 7) * 0.06 + Math.sin(tt * 2.3) * 0.08;
+  sock.piv.rotation.set(0, -(Wd.dir + flut * 0.5), 0);
+  sock.cloth.rotation.set(0, 0, -(1 - clamp(Wd.sp / 5, 0.05, 1)) * 1.25 + flut * 0.3);
+  // 旗がゆれる
+  landFlag.userData.cloth.rotation.y = Math.sin(tt * 3) * 0.2 - (Wd.dir) * 0.3;
+  bestFlag.userData.cloth.rotation.y = Math.sin(tt * 2.6 + 1) * 0.2;
+  if (bestLabel) bestLabel.visible = !(cam.mode === 'landed' && Math.abs(rocket.g.position.x - rec.best) < 6);
+  // 川のきらめき
+  if (ground.river) ground.river.userData.tex.offset.x = (tt * 0.01) % 1;
+}
+
+/* カメラ: 準備は近くから・飛ぶ間は横うしろから追う・着いたら斜め上から */
+const cam = { mode: '', pos: new THREE.Vector3(-2.5, 1.6, 6), look: new THREE.Vector3(2, 1.2, -2), vel: new THREE.Vector3(), lvel: new THREE.Vector3(), snap: true, tp: new THREE.Vector3(), tl: new THREE.Vector3() };
+function camTarget(mode) {
+  const port = W / H < 0.75, P = cam.tp, L = cam.tl, g = game;
+  if (mode === 'title') { P.set(-0.7, 0.55, port ? 2.9 : 2.4); L.set(0.9, port ? 1.45 : 1.0, 0.6); }
+  else if (mode === 'water') { P.set(BUCKET.x + 0.6, 0.95, BUCKET.z + (port ? 1.45 : 1.2)); L.set(BUCKET.x - 0.08, port ? 0.48 : 0.42, BUCKET.z - 0.12); }
+  else if (mode === 'pump') { P.set(-0.15, 1.2, port ? 3.3 : 2.6); L.set(-0.3, port ? 0.72 : 0.55, -0.2); }
+  else if (mode === 'aim') { P.set(0.18, 0.62, port ? 2.0 : 1.6); L.set(0.3, port ? 0.62 : 0.5, 0); }
+  else if (mode === 'burst') { P.set(-0.2, 0.9, port ? 2.4 : 2.0); L.set(0, 0.4, 0); }
+  else if (mode === 'fly') {
+    const f = g.fl, p = rocket.g.position, sp = Math.hypot(f.vx, f.vy);
+    if (f.t < LAUNCH_CAM) {
+      // 発射の瞬間: 発射台の横・少し下から、噴き上がるロケットを見上げる
+      P.set(PIVOT.x - 0.7, 0.42, port ? 3.4 : 2.8);
+      L.set(lerp(PIVOT.x, p.x, 0.55) + 0.3, Math.max(0.95, lerp(PIVOT.y, p.y, 0.55) + 0.5), p.z * 0.6);
+    } else {
+      const D = clamp(4.6 + p.y * 0.1 + sp * 0.03, 4.6, 9.5);
+      P.set(p.x - 3.4, Math.max(1.0, p.y - 1.0), p.z + D);
+      L.set(p.x + clamp(f.vx * 0.06, -1, 2.5), Math.max(0.5, p.y - 0.9 - p.y * 0.02), p.z);
+    }
+  } else if (mode === 'landed') {
+    const f = g.fl, p = f.land || f, k = reduceMotion ? 0 : Math.min(tt - landAt, 5) * 0.06;
+    if (f.fizzle) { P.set(0.1, 0.75, port ? 2.2 : 1.8); L.set(0.2, port ? 0.1 : 0.25, 0); }
+    else { P.set(p.x - 1.4 - k * 1.5, port ? 1.5 : 1.3, p.z + 2.6 - k * 0.5); L.set(p.x + 0.2, port ? -1.0 : 0.0, p.z - 0.2); }
+  }
+}
+function updateCamera(dt) {
+  const g = game;
+  const mode = state === 'title' || !g ? 'title' : g.phase;
+  if (mode !== cam.mode) { cam.mode = mode; }
+  camTarget(mode);
+  if (cam.snap) { cam.snap = false; cam.pos.copy(cam.tp); cam.look.copy(cam.tl); cam.vel.set(0, 0, 0); cam.lvel.set(0, 0, 0); }
+  else {
+    // ばねで追う（臨界減衰）。飛ぶ間は少しおくれてついていく
+    const w = mode === 'fly' ? (g.fl.t < LAUNCH_CAM ? 5 : 3.2) : mode === 'landed' ? 2.0 : 3.2, wl = mode === 'fly' ? 40 : 4;
+    const sdt = Math.min(dt, 1 / 15), n = Math.max(1, Math.ceil(sdt / (1 / 120))), h = sdt / n;
+    for (let i = 0; i < n; i++) {
+      cam.vel.addScaledVector(vTmp.subVectors(cam.tp, cam.pos), w * w * h).multiplyScalar(1 - Math.min(0.9, 2 * w * h)); cam.pos.addScaledVector(cam.vel, h);
+      cam.lvel.addScaledVector(vTmp.subVectors(cam.tl, cam.look), wl * wl * h).multiplyScalar(1 - Math.min(0.9, 2 * wl * h)); cam.look.addScaledVector(cam.lvel, h);
+    }
+  }
+  camera.position.copy(cam.pos);
+  if (shake > 0) { camera.position.x += Math.sin(tt * 70) * 0.012 * shake / 0.2; camera.position.y += Math.cos(tt * 63) * 0.01 * shake / 0.2; }
+  camera.lookAt(cam.look);
+  camera.updateMatrixWorld();
+}
+function render(dt) {
+  poseScene(dt);
+  updateCamera(dt);
+  renderer.render(scene, camera);
+  drawFx();
+}
+function txt(s, x, y, size, fill = '#fbf8ee', stroke = 'rgba(20,34,46,.85)', lw = 6, font = FD) {
+  const wt = /^\d00 /.exec(font);
+  fx.font = wt ? `${wt[0]}${size}px ${font.slice(wt[0].length)}` : `${size}px ${font}`; fx.lineJoin = 'round'; fx.lineWidth = lw; fx.strokeStyle = stroke; fx.strokeText(s, x, y); fx.fillStyle = fill; fx.fillText(s, x, y);
+}
+const B700 = () => `700 ${FB}`;
+// 画面の部品の位置（入力とフックで共通）
+function uiLayout() {
+  const sc = Math.min(1, W / 390 + 0.05);
+  return {
+    sc,
+    meter: { x: W - 40 * sc - 12, y0: safeT + 222, y1: safeT + 222 + clamp(H * 0.4, 140, 320), w: 26 * sc },
+    gauge: { x: W / 2, y: H - safeB - 96 - 92 * sc, r: 74 * sc },
+    hold: { x: Math.round(W / 2), y: Math.round(H * 0.6) },
+    swipe: { x: Math.round(W * 0.5), y0: Math.round(H * 0.38), y1: Math.round(H * 0.38 + PUMP_PX() + 24) },
+    drag: { x: Math.round(W * 0.6), y: Math.round(H * 0.5) },
+  };
+}
+function drawFx() {
+  fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fx.clearRect(0, 0, W, H);
+  fx.textAlign = 'center';
+  const g = game, L = uiLayout(), sc = L.sc, play = state === 'play' || state === 'skip';
+  if (play && g) {
+    const help = rec.plays < 2;
+    const ty = safeT + 132;
+    if (g.phase === 'water') {
+      txt('① 水を入れる', W / 2, ty, 28 * sc);
+      txt(g.pouring ? 'ちょうどいい所で、離す！' : '長押しで注ぐ（離したら決まり）', W / 2, ty + 28, 15 * sc, '#fbf8ee', 'rgba(20,34,46,.8)', 4, B700());
+      if (help) txt('水は 多すぎても 少なすぎても 飛ばない', W / 2, ty + 50, 13 * sc, '#ffe9a8', 'rgba(20,34,46,.8)', 4, B700());
+      drawMeter(L, g.water);
+      if (!g.pouring) { const p = 0.5 + 0.5 * Math.sin(tt * 4); fx.globalAlpha = 0.5 + 0.4 * p; txt('ここを長押し', L.hold.x, L.hold.y + 70, 18 * sc, '#ffe9a8', 'rgba(20,34,46,.85)', 5, B700()); fx.globalAlpha = 1; fx.strokeStyle = 'rgba(255,233,168,.8)'; fx.lineWidth = 3; fx.beginPath(); fx.arc(L.hold.x, L.hold.y + 20, 22 + p * 8, 0, Math.PI * 2); fx.stroke(); }
+    } else if (g.phase === 'burst') { drawGauge(L, g);
+    } else if (g.phase === 'pump') {
+      txt('② 空気を入れる', W / 2, ty, 28 * sc);
+      txt('上下にシュコシュコ（下へ1回＝1回）', W / 2, ty + 28, 15 * sc, '#fbf8ee', 'rgba(20,34,46,.8)', 4, B700());
+      if (help) txt('入れるほど飛ぶ。でも入れすぎると 破裂！', W / 2, ty + 50, 13 * sc, '#ffe9a8', 'rgba(20,34,46,.8)', 4, B700());
+      drawGauge(L, g);
+      drawMeter(L, g.water, true);
+      if (g.phase === 'pump' && g.pumps === 0) { const p = (tt * 1.2) % 1; fx.globalAlpha = 1 - p; txt('↓', L.swipe.x, L.swipe.y0 + p * 60, 40 * sc, '#ffe9a8'); fx.globalAlpha = 1; }
+    } else if (g.phase === 'aim') {
+      txt('③ 角度を決めて発射', W / 2, ty, 28 * sc);
+      txt('上下にドラッグで角度', W / 2, ty + 28, 15 * sc, '#fbf8ee', 'rgba(20,34,46,.8)', 4, B700());
+      if (help) txt('風を見て。追い風は高め、向かい風は低めがのびる', W / 2, ty + 50, 13 * sc, '#ffe9a8', 'rgba(20,34,46,.8)', 4, B700());
+      drawProtractor(g);
+      txt(`水 ${g.water.toFixed(2)}L・${g.pumps}回（${g.pg.toFixed(1)}気圧）`, W / 2, H - safeB - 96, 14 * sc, '#fbf8ee', 'rgba(20,34,46,.8)', 4, B700());
+    } else if ((g.phase === 'fly' || g.phase === 'landed') && g.fl) {
+      const f = g.fl;
+      if (g.phase === 'fly') {
+        const d = Math.hypot(f.x, f.z);
+        txt(`${d.toFixed(1)}`, W / 2, safeT + 154, 56 * sc);
+        fx.textAlign = 'left'; fx.font = `${56 * sc}px ${FD}`; const wdt = fx.measureText(d.toFixed(1)).width; txt('m', W / 2 + wdt / 2 + 6, safeT + 154, 22 * sc); fx.textAlign = 'center';
+        txt(`高さ ${Math.max(0, f.y).toFixed(0)}m・${(Math.hypot(f.vx, f.vy, f.vz) * 3.6).toFixed(0)}km/h`, W / 2, safeT + 180, 14 * sc, '#fbf8ee', 'rgba(20,34,46,.8)', 4, B700());
+        // 遠いときは、ロケットのまわりに輪
+        const rp = rocket.g.position, dc = camera.position.distanceTo(rp);
+        if (dc > 6 && f.t > LAUNCH_CAM) { const s2 = project(rp.x, rp.y, rp.z); if (s2.front) { fx.strokeStyle = 'rgba(255,233,168,.75)'; fx.lineWidth = 2.5; fx.beginPath(); fx.arc(s2.x, s2.y, 22, 0, Math.PI * 2); fx.stroke(); } }
+      }
+    }
+  }
+  for (const p of pops) {
+    const k = clamp(p.life / 0.18, 0, 1), out = clamp((p.dur - p.life) / 0.25, 0, 1);
+    if (p.big) {
+      if (state === 'over') continue;
+      const s = (1 + (reduceMotion ? 0 : (1 - k) * 0.5)) * sc, y = safeT + H * 0.2;
+      fx.save(); fx.translate(W / 2, y); fx.scale(s, s); fx.globalAlpha = k;
+      fx.fillStyle = 'rgba(232,115,58,.95)'; fx.font = `${p.size}px ${FD}`; fx.fillText(p.text, 4, 5);
+      txt(p.text, 0, 0, p.size, p.hot ? '#ffe2a6' : '#fbf8ee', '#14222e', 9);
+      if (p.sub) txt(p.sub, 0, 42, 22, '#fbf8ee', '#14222e', 6, B700());
+      fx.restore();
+    } else {
+      fx.globalAlpha = Math.min(k, out);
+      txt(p.text, W / 2, safeT + H * 0.3 - p.life * 18, p.size * sc, p.cool ? '#dbeaf6' : '#ffe2a6', 'rgba(20,34,46,.9)', 6);
+    }
+    fx.globalAlpha = 1;
+  }
+  fx.textAlign = 'start';
+}
+// 水の目盛り（ボトルに貼ったテープのイメージ）
+function drawMeter(L, water, small) {
+  const M = L.meter, x = M.x, y0 = M.y0, y1 = M.y1, w = M.w, sc = L.sc;
+  fx.globalAlpha = small ? 0.75 : 1;
+  const yOf = v => y1 - (y1 - y0) * v / PH.VB;
+  fx.fillStyle = 'rgba(248,244,232,.9)'; fx.beginPath(); fx.roundRect(x - w / 2 - 4, y0 - 8, w + 8, y1 - y0 + 16, 8); fx.fill();
+  fx.fillStyle = 'rgba(120,170,200,.25)'; fx.fillRect(x - w / 2, y0, w, y1 - y0);
+  fx.fillStyle = '#4fa3d6'; const yw = yOf(water); fx.fillRect(x - w / 2, yw, w, y1 - yw);
+  fx.fillStyle = 'rgba(255,255,255,.55)'; fx.fillRect(x - w / 2, yw, w, 2);
+  fx.strokeStyle = '#1f2a33'; fx.lineWidth = 1.5; fx.textAlign = 'right';
+  for (let v = 0; v <= PH.VB + 1e-6; v += 0.1) {
+    const y = yOf(v), major = Math.abs(v * 2 - Math.round(v * 2)) < 1e-6;
+    fx.beginPath(); fx.moveTo(x - w / 2, y); fx.lineTo(x - w / 2 + (major ? w * 0.6 : w * 0.3), y); fx.stroke();
+    if (major && v > 0) { fx.font = `700 ${12 * sc}px ${FB}`; fx.fillStyle = '#1f2a33'; fx.fillText(`${v.toFixed(1)}L`, x - w / 2 - 8, y + 4); }
+  }
+  fx.textAlign = 'center';
+  if (!small) { txt(`${water.toFixed(2)}`, x - 8, y1 + 40, 26 * sc, '#fbf8ee', 'rgba(20,34,46,.85)', 5); txt('L', x + 30 * sc, y1 + 40, 15 * sc, '#fbf8ee', 'rgba(20,34,46,.85)', 4); }
+  fx.globalAlpha = 1;
+}
+// 空気入れのゲージ（0〜8 気圧。6 から先が赤）
+function drawGauge(L, g) {
+  const G = L.gauge, sc = L.sc, a0 = Math.PI * 0.8, a1 = Math.PI * 2.2, aOf = v => a0 + (a1 - a0) * clamp(v / PH.GAUGE_MAX, 0, 1.04);
+  const jx = creakFx > 0 && !reduceMotion ? (Math.random() - 0.5) * 3 * creakFx : 0;
+  fx.save(); fx.translate(G.x + jx, G.y);
+  fx.fillStyle = 'rgba(248,244,232,.95)'; fx.beginPath(); fx.arc(0, 0, G.r + 10, 0, Math.PI * 2); fx.fill();
+  fx.strokeStyle = '#1f2a33'; fx.lineWidth = 4; fx.stroke();
+  fx.strokeStyle = 'rgba(216,69,46,.85)'; fx.lineWidth = 12; fx.beginPath(); fx.arc(0, 0, G.r - 8, aOf(PH.RED), aOf(PH.GAUGE_MAX)); fx.stroke();
+  fx.strokeStyle = '#1f2a33'; fx.lineWidth = 2; fx.textAlign = 'center'; fx.textBaseline = 'middle';
+  for (let v = 0; v <= PH.GAUGE_MAX; v += 0.5) {
+    const a = aOf(v), major = v % 1 === 0, r0 = G.r - (major ? 16 : 9);
+    fx.beginPath(); fx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0); fx.lineTo(Math.cos(a) * (G.r - 2), Math.sin(a) * (G.r - 2)); fx.stroke();
+    if (major) { fx.fillStyle = v >= PH.RED ? '#c0392b' : '#1f2a33'; fx.font = `700 ${13 * sc}px ${FB}`; fx.fillText(`${v}`, Math.cos(a) * (G.r - 28), Math.sin(a) * (G.r - 28)); }
+  }
+  fx.fillStyle = '#1f2a33'; fx.font = `700 ${11 * sc}px ${FB}`; fx.fillText('気圧', 0, G.r * 0.42);
+  const a = aOf(g.pg);
+  fx.strokeStyle = '#c0392b'; fx.lineWidth = 4; fx.lineCap = 'round'; fx.beginPath(); fx.moveTo(-Math.cos(a) * 10, -Math.sin(a) * 10); fx.lineTo(Math.cos(a) * (G.r - 12), Math.sin(a) * (G.r - 12)); fx.stroke(); fx.lineCap = 'butt';
+  fx.fillStyle = '#1f2a33'; fx.beginPath(); fx.arc(0, 0, 6, 0, Math.PI * 2); fx.fill();
+  fx.textBaseline = 'alphabetic';
+  fx.restore();
+  txt(`${g.pg.toFixed(1)}`, G.x - 14 * sc, G.y - G.r - 22, 30 * sc);
+  txt('気圧', G.x + 38 * sc, G.y - G.r - 22, 14 * sc, '#fbf8ee', 'rgba(20,34,46,.85)', 4, B700());
+  txt(`シュコ ${g.pumps}回`, G.x, G.y + G.r + 34, 18 * sc, '#fbf8ee', 'rgba(20,34,46,.85)', 5, B700());
+}
+// 分度器（発射台のまわり）
+function drawProtractor(g) {
+  const pv = project(PIVOT.x, PIVOT.y, PIVOT.z), R = Math.min(W, H) * 0.42;
+  const dirOf = a => { const q = project(PIVOT.x + Math.cos(a * DEG), PIVOT.y + Math.sin(a * DEG), PIVOT.z); const l = Math.hypot(q.x - pv.x, q.y - pv.y) || 1; return [(q.x - pv.x) / l, (q.y - pv.y) / l]; };
+  fx.lineWidth = 2; fx.strokeStyle = 'rgba(251,248,238,.55)'; fx.setLineDash([4, 6]);
+  fx.beginPath(); for (let a = 0; a <= 90; a += 2) { const [dx, dy] = dirOf(a); if (a === 0) fx.moveTo(pv.x + dx * R, pv.y + dy * R); else fx.lineTo(pv.x + dx * R, pv.y + dy * R); } fx.stroke(); fx.setLineDash([]);
+  for (let a = 0; a <= 90; a += 10) { const [dx, dy] = dirOf(a), r0 = a % 30 ? R - 10 : R - 18; fx.strokeStyle = 'rgba(251,248,238,.8)'; fx.beginPath(); fx.moveTo(pv.x + dx * r0, pv.y + dy * r0); fx.lineTo(pv.x + dx * R, pv.y + dy * R); fx.stroke(); if (a % 30 === 0) txt(`${a}°`, pv.x + dx * (R + 18), pv.y + dy * (R + 18) + 5, 13, '#fbf8ee', 'rgba(20,34,46,.8)', 4, B700()); }
+  const [dx, dy] = dirOf(g.angle);
+  fx.strokeStyle = 'rgba(255,233,168,.95)'; fx.lineWidth = 3; fx.setLineDash([8, 6]); fx.beginPath(); fx.moveTo(pv.x + dx * 40, pv.y + dy * 40); fx.lineTo(pv.x + dx * R, pv.y + dy * R); fx.stroke(); fx.setLineDash([]);
+  txt(`${g.angle}°`, pv.x + dx * R * 0.7 + 34, pv.y + dy * R * 0.7 - 8, 34, '#ffe9a8');
+}
+
+/* ---------- 結果 ---------- */
+function advice(r) {
+  if (r.kind === 'burst') return 'ミシッと鳴ったら もう限界が近い。そこで やめておこう。破裂する気圧は ボトルごとに少しちがう。';
+  if (r.kind === 'fizzle') return r.water > 1.0 ? '水が多すぎて、空気がすぐ足りなくなった。水はボトルの 1/3（0.5L）くらいが目安。' : '空気が少なくて、ぷすっ…。もっとシュコシュコしよう。';
+  if (r.water < 0.08) return '水なしだと、空気だけでは軽く飛ぶだけ。水を少し入れると、反動でぐんと飛ぶ。';
+  if (r.wleft > 0.02) return `水が多すぎて、${r.wleft.toFixed(2)}L 残ったまま飛んだ（重い）。水は 1/3（0.5L）くらいが目安。`;
+  if (r.water < 0.25) return '水が少なめで、噴射がすぐ終わった。もう少し入れると、長く押してくれる。';
+  if (r.water > 0.8) return '水が多くて重かった。ボトルの 1/3（0.5L）くらいが いちばん飛ぶ。';
+  if (r.pg < 4) return '空気をもっと入れると、もっと飛ぶ（ミシッと鳴るまでなら 大丈夫）。';
+  if (hintAng != null && Math.abs(hintAng - r.ang) >= 7) return `この風なら、角度は ${hintAng}°くらいが いちばん のびた。${r.wind.short === '追い風' ? '追い風は少し高め、' : r.wind.short === '向かい風' ? '向かい風は低め、' : ''}45°より低めが のびやすい。`;
+  return r.d >= 100 ? '水・空気・角度、ぜんぶそろった！あとは追い風の日をねらおう。' : 'いい組み合わせ！空気をもう少し攻めるか、風に合わせて角度をもう一工夫。';
+}
+const shareText = r => r.kind === 'burst' ? '🚀ペットボトルロケット 空気を入れすぎて破裂…（ぼんっ）' : r.kind === 'fizzle' ? '🚀ペットボトルロケット ぷすっ…飛ばなかった' : `🚀ペットボトルロケット ${r.d.toFixed(1)}m 飛んだ！（水${r.water.toFixed(2)}L・シュコ${r.pumps}回・${r.ang}°）`;
+function showOver() {
+  if (state !== 'play' || !game || !game.res) return;
+  state = 'over';
+  const r = resInfo;
+  $('oScore').textContent = r.d.toFixed(1);
+  $('oSub').textContent = r.kind === 'burst' ? 'ぼんっ！破裂した…' : r.kind === 'fizzle' ? 'ぷすっ…飛ばなかった' : r.mat === 'river' ? '飛んで、川にぽちゃん' : '飛んだ！';
+  $('oNoren').innerHTML = (r.kind === 'burst' ? ['ぼ', 'ん', 'っ'] : r.kind === 'fizzle' ? ['ぷ', 'す', 'っ'] : r.d >= 100 ? ['ぷ', 'しゅ', 'ー', 'っ', '！'] : ['ぷ', 'しゅ', 'ー', 'っ']).map(c => `<span>${c}</span>`).join('');
+  $('oDetail').textContent = `水 ${r.water.toFixed(2)}L・空気 ${r.pumps}回（${r.pg.toFixed(1)}気圧）・角度 ${r.ang}°・${r.wind.name}${r.wind.s >= 0.8 ? ` ${r.wind.s.toFixed(1)}m/s` : ''}` + (r.kind === 'fly' ? ` ／ 最高 ${r.maxY.toFixed(0)}m・最速 ${(r.maxV * 3.6).toFixed(0)}km/h` : '');
+  $('oMsg').textContent = advice(r);
+  $('oBest').textContent = m1(rec.best); $('oPlays').textContent = rec.plays;
+  $('newRec').hidden = !(r.isNew && rec.plays > 1);
+  $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({ text: `${shareText(r)}${r.isNew && rec.plays > 1 ? ' 自己ベスト！' : ''}\n`, url: gameUrl(), hashtags: 'ペットボトルロケット' });
+  $('copyMsg').textContent = '画面タップ・スペースでもう一回';
+  $('over').hidden = false; $('hud').hidden = true; $('ctrl').hidden = true;
+  overShownAt = performance.now();
+  press = null;
+  $('retryBtn').focus({ preventScroll: true });
+}
+
+/* ---------- シェア ---------- */
+// 公開先のURL。ローカルで開いたときもこれをシェアする
+const PUBLIC_URL = 'https://asobi.enludus.com/games/rocket/';
+function gameUrl() {
+  try {
+    if (/^https?:$/.test(location.protocol) && location.hostname !== 'localhost') return location.origin + location.pathname;
+  } catch {}
+  return PUBLIC_URL;
+}
+
+/* ---------- HUD・操作ボタン ---------- */
+function updateHud() {
+  $('hBest').textContent = rec.best ? `${m1(rec.best)}m` : '—';
+  const Wd = game ? game.wind : null;
+  if (Wd) {
+    const L = windLabel(Wd);
+    $('hWind').textContent = L.s < 0.8 ? 'ほぼ無風' : `${L.short} ${L.s.toFixed(1)}m/s`;
+    // 上から見た向き: 右 = 飛ばす向き、下 = 川（手前）
+    $('hWindArrow').setAttribute('transform', `rotate(${(Math.atan2(Wd.z, Wd.x) / DEG + 90).toFixed(0)} 20 20)`);
+  }
+}
+function fillTitle() { $('tBest').textContent = rec.best ? m1(rec.best) : '—'; $('tPlays').textContent = rec.plays; }
+function syncCtrl() {
+  const g = game, c = $('ctrl'), b = $('actBtn');
+  if (state !== 'play' || !g || bot) { c.hidden = true; return; }
+  if (g.phase === 'pump') { c.hidden = false; b.className = ''; b.textContent = '角度をきめる →'; b.disabled = g.pumps === 0; }
+  else if (g.phase === 'aim') { c.hidden = false; b.className = 'fire'; b.textContent = '発射！'; b.disabled = false; }
+  else c.hidden = true;
+}
+
+/* ---------- 音（低めでやわらかく。2kHz以上は使わない。最後に 1.9kHz のローパス） ---------- */
+let ac = null, master = null, noiseBuf = null, pourLoop = null, flyLoop = null;
+function wakeAudio() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1900; lp.Q.value = 0.5;
+      master = ac.createDynamicsCompressor(); master.threshold.value = -16; master.ratio.value = 5;
+      master.connect(lp).connect(ac.destination);
+      const len = ac.sampleRate * 2; noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0); let b = 0;
+      for (let i = 0; i < len; i++) { b = b * 0.8 + (Math.random() * 2 - 1) * 0.2; d[i] = b * 2.2; }   // 丸めたノイズ（低め）
+      pourLoop = loopNoise(420); flyLoop = loopNoise(240);
+    }
+    if (ac.state === 'suspended') ac.resume();
+  } catch {}
+}
+const live = () => ac && state === 'play';
+function tone(freq, at, dur, vol, type = 'sine', to = 0) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at); if (to) o.frequency.exponentialRampToValueAtTime(to, at + dur);
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.012); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  o.connect(g).connect(master); o.start(at); o.stop(at + dur + 0.05);
+  return o;
+}
+function noise(at, dur, vol, type, freq, q = 1, lpf = 1200, atk = 0.006) {
+  const s = ac.createBufferSource(); s.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = lpf;
+  const g = ac.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + atk); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  s.connect(f).connect(lp).connect(g).connect(master); s.start(at, Math.random() * 1.5); s.stop(at + dur + 0.05);
+  return { f, g };
+}
+function loopNoise(freq) {
+  const s = ac.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+  const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = freq; f.Q.value = 0.7;
+  const g = ac.createGain(); g.gain.value = 0.0001;
+  s.connect(f).connect(g).connect(master); s.start();
+  return { s, f, g };
+}
+// 注ぐ「とぽぽぽ」: こもった水の音 + 低いぽこぽこ
+let pourOn = false, nextBlip = 0;
+function pourAmb(on) {
+  try {
+    if (!pourLoop) return;
+    const n0 = ac.currentTime;
+    if (on !== pourOn) { pourOn = on; pourLoop.g.gain.setTargetAtTime(on && live() ? 0.07 : 0.0001, n0, 0.05); }
+    if (on && live() && n0 > nextBlip) { const w = game ? game.water : 0; tone(220 + w * 120 + Math.random() * 60, n0, 0.07, 0.035, 'sine', 160 + w * 100); nextBlip = n0 + 0.07 + Math.random() * 0.06; }
+  } catch {}
+}
+function sPourStart() {}
+function sPourStop() { try { if (!live()) return; const n0 = ac.currentTime; tone(180, n0, 0.08, 0.03, 'sine', 120); } catch {} }
+function sFlip() { try { if (!live()) return; const n0 = ac.currentTime; noise(n0, 0.12, 0.04, 'bandpass', 500, 1.2, 900); tone(140, n0 + 0.45, 0.1, 0.06, 'triangle', 90); } catch {} }
+// ポンプ「しゅこ」: 低めのノイズの息 + 下がる「こ」。圧が上がると少し短く高く（でも 1kHz 以下）
+function sPump(pg) {
+  try {
+    if (!live()) return;
+    const n0 = ac.currentTime, k = clamp(pg / 7, 0, 1);
+    const { f } = noise(n0, 0.16, 0.07, 'bandpass', 420 + k * 180, 1.1, 1100, 0.02); f.frequency.exponentialRampToValueAtTime(260 + k * 120, n0 + 0.16);
+    tone(120 + k * 40, n0 + 0.12, 0.09, 0.07, 'triangle', 80);
+  } catch {}
+}
+// ミシッ: 低いきしみ
+function sCreak(k) {
+  try {
+    if (!live()) return;
+    const n0 = ac.currentTime + 0.08, o = ac.createOscillator(), g = ac.createGain(), f = ac.createBiquadFilter();
+    o.type = 'sawtooth'; o.frequency.setValueAtTime(150 + k * 50, n0); o.frequency.linearRampToValueAtTime(110, n0 + 0.22);
+    f.type = 'lowpass'; f.frequency.value = 600; f.Q.value = 4;
+    g.gain.setValueAtTime(0.0001, n0); g.gain.exponentialRampToValueAtTime(0.05 + k * 0.05, n0 + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, n0 + 0.25);
+    o.connect(f).connect(g).connect(master); o.start(n0); o.stop(n0 + 0.3);
+  } catch {}
+}
+// 破裂「ぼんっ」: 低い ドン + こもったノイズ + 水がばしゃっ
+function sBurst() { try { if (!live()) return; const n0 = ac.currentTime; tone(110, n0, 0.5, 0.28, 'sine', 38); tone(70, n0, 0.35, 0.18, 'triangle', 40); noise(n0, 0.45, 0.24, 'lowpass', 420, 0.7, 600, 0.003); noise(n0 + 0.12, 0.7, 0.07, 'lowpass', 650, 0.7, 800, 0.05); } catch {} }
+// 発射「ぷしゅーっ」: こもったノイズが下がっていく + 低いドン + 水しぶき
+function sLaunch(pg, w) {
+  try {
+    if (!live()) return;
+    const n0 = ac.currentTime, k = clamp(pg / 7, 0.1, 1);
+    tone(95, n0, 0.25, 0.16 * k + 0.04, 'sine', 45);
+    const a = noise(n0, 0.55 + w * 0.3, 0.18 * k + 0.05, 'lowpass', 900, 0.8, 1200, 0.005); a.f.frequency.exponentialRampToValueAtTime(260, n0 + 0.6);
+    noise(n0 + 0.15, 1.1, 0.05, 'lowpass', 520, 0.7, 700, 0.12);
+  } catch {}
+}
+function sAirJet() { try { if (!live()) return; const n0 = ac.currentTime; const a = noise(n0, 0.3, 0.06, 'lowpass', 700, 0.8, 900, 0.01); a.f.frequency.exponentialRampToValueAtTime(250, n0 + 0.3); } catch {} }
+function flyWindLevel(V) { try { if (!flyLoop) return; const n0 = ac.currentTime; flyLoop.g.gain.setTargetAtTime(live() ? clamp(V * V * 0.00004, 0.0001, 0.08) : 0.0001, n0, 0.1); flyLoop.f.frequency.setTargetAtTime(160 + V * 6, n0, 0.1); } catch {} }
+// 着地「ぽすっ」（草）・「ぽちゃん」（川）
+function sLand(v, mat, fizzle) {
+  try {
+    if (!live()) return;
+    const n0 = ac.currentTime, k = clamp(v / 25, 0.2, 1);
+    if (fizzle) { noise(n0, 0.4, 0.06, 'lowpass', 400, 0.7, 600, 0.02); tone(160, n0, 0.25, 0.04, 'sine', 90); return; }
+    if (mat === 'river') { tone(300, n0, 0.18, 0.08, 'sine', 140); noise(n0, 0.5, 0.1, 'lowpass', 600, 0.7, 800, 0.005); return; }
+    tone(150, n0, 0.14, 0.12 * k + 0.04, 'sine', 70); noise(n0, 0.12, 0.08 * k + 0.03, 'lowpass', 340, 0.7, 500, 0.003);
+  } catch {}
+}
+function sChime(d) { try { if (!live()) return; const n0 = ac.currentTime + 0.1, b = d >= 80 ? 392 : d >= 40 ? 349 : 294; tone(b, n0, 0.45, 0.06); tone(b * 1.25, n0 + 0.1, 0.55, 0.05); } catch {} }
+function sFanfare() { try { if (!live()) return; const n0 = ac.currentTime + 0.1; [[392, 0], [494, 0.12], [587, 0.24], [784, 0.4]].forEach(([f, t]) => { tone(f, n0 + t, 0.5, 0.06); tone(f / 2, n0 + t, 0.5, 0.035); }); } catch {} }
+
+/* ---------- ループ ---------- */
+let lastTs = performance.now();
+function frame() {
+  const now = performance.now();
+  const dt = Math.min(0.1, (now - lastTs) / 1000); lastTs = now;
+  if (frozen) { advancePhys(); render(0); }   // 止めている間も描く（時間は進めない）
+  else { step(dt); render(Math.max(dt, 1 / 240)); }
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 入力: 長押し（水）・下へのスワイプ（ポンプ）・上下ドラッグ（角度）。時刻つきで物理へ ---------- */
+function start() {
+  wakeAudio(); state = 'play';
+  $('title').hidden = true; $('over').hidden = true; $('hud').hidden = false;
+  const bn = HASH.has('debug') && HASH.get('bot') && SKILLS[HASH.get('bot')] ? HASH.get('bot') : null;
+  botStart = !!bn;   // #bot=… で始めたプレイは記録しない（撮影・確認用）
+  newGame(nextSeed(), bn); frozen = false;
+  // #debug&skip=秒: 発射してから その秒数のところまで一気に進めて止める（OGP 撮影・確認用。bot=good と組み合わせる。freeze=1 で止めたまま）
+  if (HASH.has('debug') && HASH.has('skip')) skipTo(+HASH.get('skip') || 0);
+  if (HASH.has('debug') && HASH.get('ff') === '1') ff = true;
+}
+// 発射まで進めて、発射から s 秒のところで止める（ボットがいないときは、いまの時刻から s 秒）
+function skipTo(s) {
+  const g = game, quiet = state; state = 'skip';
+  const lim = g.t + 120;
+  if (bot) while (g.phase !== 'fly' && !g.res && g.t < lim) { bot.step(); stepGame(g); if (g.events.length) handleEvents(); }
+  const t1 = (g.phase === 'fly' ? g.launchAt : g.t) + s;
+  let warm = 0;
+  while (g.t < t1 && g.t < lim && !(g.res && g.phase !== 'fly' && g.t > t1)) {
+    if (bot) bot.step(); stepGame(g); if (g.events.length) handleEvents();
+    if (g.fl && (warm += PH.DT) >= 1 / 120) { consumeSpray(g.fl); stepFx(warm); warm = 0; }
+    if (g.res && g.phase === 'landed' && g.t > t1) break;
+  }
+  if (g.fl) consumeSpray(g.fl);
+  state = quiet;
+  pops = pops.filter(p => p.big); shake = 0; creakFx = 0;
+  if (g.phase === 'pump' || g.phase === 'aim') flipAt = tt - 1;
+  if (endAt >= 0) endAt = tt;
+  base = performance.now() / 1000 - g.t - LAG;
+  cam.snap = true;
+  if (HASH.get('freeze') === '1') frozen = true;
+  syncCtrl();
+}
+fxc.addEventListener('pointerdown', e => {
+  e.preventDefault(); wakeAudio();
+  if (state !== 'play' || !game) return;
+  const g = game;
+  if (g.res) { if (endAt >= 0 && tt - endAt > 0.4) showOver(); return; }
+  if (bot) return;
+  try { fxc.setPointerCapture(e.pointerId); } catch {}
+  const t = evTime(e);
+  if (g.phase === 'water') { press = { id: e.pointerId, kind: 'pour' }; input('pourOn', 0, t); }
+  else if (g.phase === 'pump') { press = { id: e.pointerId, kind: 'pump', y: e.clientY, top: e.clientY, bottom: e.clientY, armed: true }; }
+  else if (g.phase === 'aim') { press = { id: e.pointerId, kind: 'aim', y0: e.clientY, x0: e.clientX, a0: uiAngle }; }
+});
+addEventListener('pointermove', e => {
+  if (!press || e.pointerId !== press.id || !game || state !== 'play') return;
+  const g = game, t = evTime(e);
+  if (press.kind === 'pump' && g.phase === 'pump') {
+    const y = e.clientY; press.y = y;
+    if (press.armed) {
+      press.top = Math.min(press.top, y);
+      if (y - press.top >= PUMP_PX()) { input('pump', 0, t); press.armed = false; press.bottom = y; }
+    } else {
+      press.bottom = Math.max(press.bottom, y);
+      if (press.bottom - y >= REARM_PX) { press.armed = true; press.top = y; }
+    }
+  } else if (press.kind === 'aim' && g.phase === 'aim') {
+    const a = clamp(Math.round(press.a0 + (press.y0 - e.clientY) * ANG_PX), PH.ANG[0], PH.ANG[1]);
+    if (a !== uiAngle) { uiAngle = a; input('angle', a, t); }
+  }
+});
+const ptrUp = e => {
+  if (!press || e.pointerId !== press.id) return;
+  if (press.kind === 'pour' && game && state === 'play') input('pourOff', 0, evTime(e));
+  press = null;
+};
+addEventListener('pointerup', ptrUp);
+addEventListener('pointercancel', ptrUp);
+fxc.addEventListener('contextmenu', e => e.preventDefault());
+for (const id of ['title', 'over']) {
+  $(id).addEventListener('pointerdown', e => {
+    if (e.target.closest('button, a') || state === 'loading') return;
+    if (id === 'over' && performance.now() - overShownAt < 400) return;
+    e.preventDefault(); start();
+  });
+}
+$('actBtn').addEventListener('click', e => {
+  const g = game; if (!g || state !== 'play') return;
+  if (g.phase === 'pump') input('next', 0, evTime(e));
+  else if (g.phase === 'aim') input('launch', 0, evTime(e));
+});
+$('actBtn').addEventListener('pointerdown', e => e.stopPropagation());
+addEventListener('keydown', e => {
+  const c = e.code;
+  if (state === 'play' && game) {
+    const g = game, t = evTime(e);
+    if (g.res) { if ((c === 'Space' || c === 'Enter') && !e.repeat) { e.preventDefault(); if (endAt >= 0 && tt - endAt > 0.4) showOver(); } return; }
+    if (bot) return;
+    if (g.phase === 'water') { if (c === 'Space') { e.preventDefault(); if (!e.repeat && !keyPour) { wakeAudio(); keyPour = true; input('pourOn', 0, t); } } return; }
+    if (g.phase === 'pump') {
+      if ((c === 'ArrowDown' || c === 'ArrowUp' || c === 'KeyS' || c === 'KeyW') && !e.repeat) { e.preventDefault(); input('pump', 0, t); return; }
+      if ((c === 'Enter' || c === 'ArrowRight') && !e.repeat) { e.preventDefault(); input('next', 0, t); return; }
+      if (c === 'Space') e.preventDefault();
+      return;
+    }
+    if (g.phase === 'aim') {
+      if (c === 'ArrowLeft' || c === 'ArrowUp') { e.preventDefault(); uiAngle = clamp(uiAngle + 1, PH.ANG[0], PH.ANG[1]); input('angle', uiAngle, t); return; }
+      if (c === 'ArrowRight' || c === 'ArrowDown') { e.preventDefault(); uiAngle = clamp(uiAngle - 1, PH.ANG[0], PH.ANG[1]); input('angle', uiAngle, t); return; }
+      if ((c === 'Enter' || c === 'Space') && !e.repeat) { e.preventDefault(); if (document.activeElement === $('actBtn') && c === 'Enter') return; input('launch', 0, t); return; }
+    }
+    if (c === 'Space' || c === 'Enter') e.preventDefault();
+    return;
+  }
+  if (c !== 'Space' && c !== 'Enter') return;
+  if (state === 'loading' || state === 'skip') return;
+  const el = document.activeElement;
+  if (el && el !== $('retryBtn') && el !== $('startBtn') && el.matches('button, a, input')) return;
+  if (state === 'over' && performance.now() - overShownAt < 400) { e.preventDefault(); return; }
+  e.preventDefault(); start();
+  keyPour = c === 'Space' ? 'block' : false;   // 始めたスペースは、離すまで注がない
+});
+addEventListener('keyup', e => {
+  if (e.code !== 'Space') return;
+  if (keyPour === true && state === 'play' && game) input('pourOff', 0, evTime(e));
+  keyPour = false;
+});
+addEventListener('blur', () => { if (press && press.kind === 'pour' && game) input('pourOff', 0, performance.now()); if (keyPour === true && game) input('pourOff', 0, performance.now()); press = null; keyPour = false; });
+$('startBtn').addEventListener('click', () => start());
+$('retryBtn').addEventListener('click', () => start());
+$('copyBtn').addEventListener('click', () => {
+  const text = `${resInfo ? shareText(resInfo) : '🚀ペットボトルロケット'} ${gameUrl()}`;
+  const msg = $('copyMsg');
+  const fallback = () => { msg.textContent = text; const r = document.createRange(); r.selectNodeContents(msg); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.style.userSelect = 'text'; };
+  try { navigator.clipboard.writeText(text).then(() => { msg.textContent = 'コピーしました'; }, fallback); } catch { fallback(); }
+});
+
+/* ---------- 調整・検証用（#debug のときだけ） ---------- */
+if (HASH.has('debug')) {
+  const q = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(p * (s.length - 1))]; };
+  const r1 = v => Math.round(v * 10) / 10, r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
+  // 同じ入力（時刻つき）の列を、fps のコマ割りで物理に流しなおす（入力はそのコマで届くが、物理はその時刻で効く）
+  // quant = true: 時刻を使わず「届いたコマの時刻」で効かせた場合（くらべ用）
+  const replay = (log, seedR, fps, quant = false) => {
+    const g = makeGame(seedR); let i = 0, tNow = 0;
+    while (!g.res && tNow < PH.MAXT) {
+      tNow += 1 / fps;
+      while (i < log.length && log[i].t <= tNow) { gInput(g, Math.max(g.t, quant ? tNow - LAG : log[i].t), log[i].kind, log[i].a); i++; }
+      while (g.t + PH.DT <= tNow - LAG && !g.res) { stepGame(g); g.events.length = 0; }
+    }
+    return { d: r2(g.res ? g.res.d : -1), kind: g.res ? g.res.kind : 'none', water: r3(g.water), pumps: g.pumps };
+  };
+  const scr = (x, y, z = 0) => { const p = project(x, y, z); return { x: Math.round(p.x), y: Math.round(p.y) }; };
+  const rect = id => { const el = $(id); if (!el || el.closest('[hidden]') || el.hidden) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), w: Math.round(r.width), h: Math.round(r.height) }; };
+  const ui = () => {
+    const L = uiLayout(), g = game;
+    return {
+      state, phase: g ? g.phase : null,
+      start: rect('startBtn'), act: rect('actBtn'), retry: rect('retryBtn'), copy: rect('copyBtn'), x: rect('xBtn'), hub: rect('hubBack'),
+      hold: L.hold, swipe: { x: L.swipe.x, from: L.swipe.y0, to: L.swipe.y1, px: Math.round(PUMP_PX()), rearm: REARM_PX },
+      drag: { ...L.drag, degPerPx: ANG_PX }, gauge: { x: Math.round(L.gauge.x), y: Math.round(L.gauge.y), r: Math.round(L.gauge.r) },
+      meter: { x: Math.round(L.meter.x), top: Math.round(L.meter.y0), bottom: Math.round(L.meter.y1), pxPerL: r2((L.meter.y1 - L.meter.y0) / PH.VB) },
+      pivot: scr(PIVOT.x, PIVOT.y, PIVOT.z), rocket: scr(rocket.g.position.x, rocket.g.position.y, rocket.g.position.z), pump: scr(PUMP.x, 0.6, PUMP.z), bucket: scr(BUCKET.x, 0.3, BUCKET.z),
+    };
+  };
+  const optimum = (opts = {}) => {
+    const g = game; const wind = opts.wind || (g ? g.wind : makeWind(mulberry(1)));
+    const pg = opts.pg ?? (g && g.pg > 0 ? g.pg : 6), water = opts.water ?? (g && g.water > 0 ? g.water : 0.5);
+    let best = { d: -1 };
+    for (let w = 0.1; w <= 1.2001; w += 0.05) { const a = bestAngle(w, pg, wind, 20, 60, 2); if (a.d > best.d) best = { d: a.d, water: w, ang: a.ang }; }
+    const fine = bestAngle(best.water, pg, wind, best.ang - 3, best.ang + 3, 1);
+    const cur = bestAngle(water, pg, wind, 15, 70, 1);
+    return { wind: { sp: r2(wind.sp), dirDeg: Math.round(wind.dir / DEG), label: windLabel(wind).name }, atPg: r2(pg), bestWater: r2(best.water), bestAngle: fine.ang, bestD: r1(fine.d), forWater: r2(water), angleForWater: cur.ang, dForWater: r1(cur.d), at45: r1(simShot(water, pg, 45, wind).d), safePg: g ? r2(g.creak) : null };
+  };
+  window.__rocket = {
+    info: () => {
+      if (!game) return { state };
+      const g = game, f = g.fl, Wl = windLabel(g.wind);
+      return {
+        state, phase: g.phase, t: r3(g.t), water: r3(g.water), pouring: g.pouring, overflow: g.overflow, pumps: g.pumps, pg: r2(g.pg), perPump: r3(PH.STROKE / Math.max(0.01, PH.VB - g.water)),
+        creaks: g.creaks, creakAt: r2(g.creak), burstAt: r2(g.thr), angle: g.angle, uiAngle,
+        wind: { sp: r2(g.wind.sp), dirDeg: Math.round(g.wind.dir / DEG), along: r2(g.wind.x), cross: r2(g.wind.z), label: Wl.name },
+        flight: f ? { x: r2(f.x), y: r2(f.y), z: r2(f.z), v: r2(Math.hypot(f.vx, f.vy, f.vz)), t: r3(f.t), ph: f.ph, water: r3(f.Vw * 1e3), p: r2(f.p / PH.PA - 1), dist: r2(Math.hypot(f.x, f.z)), maxY: r2(f.maxY), land: f.land ? { x: r2(f.land.x), z: r2(f.land.z), d: r2(f.land.d), mat: f.land.mat } : null } : null,
+        res: g.res ? { ...g.res } : null, result: resInfo, rec, bot: !!bot, botStart, ff, frozen, seed: g.seed, queue: g.queue.length,
+      };
+    },
+    ui,
+    // 物理だけでボットに N 回遊ばせる: sim('first', 100) → [m...]。opts.seed0
+    sim: (skill = 'first', N = 50, opts = {}) => Array.from({ length: N }, (_, i) => r1(runBot(SKILLS[skill], (opts.seed0 ?? 1000) + i, opts).d)),
+    stats: (skill = 'first', N = 100, opts = {}) => {
+      const R = Array.from({ length: N }, (_, i) => runBot(SKILLS[skill], (opts.seed0 ?? 1000) + i, opts)), d = R.map(r => r.d), kinds = {};
+      for (const r of R) kinds[r.kind] = (kinds[r.kind] || 0) + 1;
+      return { skill, N, p10: r1(q(d, 0.1)), p25: r1(q(d, 0.25)), p50: r1(q(d, 0.5)), p75: r1(q(d, 0.75)), p90: r1(q(d, 0.9)), min: r1(Math.min(...d)), max: r1(Math.max(...d)), mean: r1(d.reduce((a, b) => a + b, 0) / N), ge10: R.filter(r => r.d >= 10).length / N, ge25: R.filter(r => r.d >= 25).length / N, ge50: R.filter(r => r.d >= 50).length / N, ge100: R.filter(r => r.d >= 100).length / N, kinds, meanWater: r2(R.reduce((a, r) => a + r.water, 0) / N), meanPg: r2(R.reduce((a, r) => a + r.pg, 0) / N), meanPumps: r1(R.reduce((a, r) => a + r.pumps, 0) / N) };
+    },
+    // ボットの入力の列（時刻つき）を記録して、13 / 30 / 60 / 144 fps のコマ割りで流しなおす（frameQuantized は時刻を使わなかった場合）
+    fpsCheck: (skill = 'first', seedR = 4242) => {
+      const r = runBot(SKILLS[skill], seedR, { log: true });
+      return { live: { d: r2(r.d), kind: r.kind, water: r3(r.water), pumps: r.pumps }, fps13: replay(r.log, seedR, 13), fps30: replay(r.log, seedR, 30), fps60: replay(r.log, seedR, 60), fps144: replay(r.log, seedR, 144), fps30frameQuantized: replay(r.log, seedR, 30, true), fps60frameQuantized: replay(r.log, seedR, 60, true), inputs: r.log.length };
+    },
+    optimum,
+    // いまのプレイをボットに任せる（記録はしない）
+    autoplay: (skill = 'good') => { if (game && state === 'play' && !game.res) { bot = makeBot(game, SKILLS[skill], mulberry(nextSeed())); botStart = true; press = null; syncCtrl(); } },
+    skip: s => skipTo(s),
+    freeze: (on = true) => { frozen = on; },
+    ff: (on = true) => { ff = on; },
+    screen: (x, y, z = 0) => scr(x, y, z),
+    look: (px, py, pz, lx, ly, lz) => { frozen = true; camera.position.set(px, py, pz); camera.lookAt(lx, ly, lz); camera.updateMatrixWorld(); renderer.render(scene, camera); },
+    gl: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles }),
+    PH, SKILLS, makeGame, runBot, stepGame, gInput, simShot, bestAngle, makeWind, windLabel, game: () => game,
+  };
+}
+
+/* ---------- はじめ ---------- */
+try { await Promise.race([Promise.all([document.fonts.load(`40px "Dela Gothic One"`, '0123456789.m°①②③水を入れる空気角度決めて発射ぼんっ！ぷすっ…ミシッあふれた川にぽちゃん土手まで届いた自己ベスト飛んだ超えここまで'), document.fonts.load(`700 16px "Zen Kaku Gothic New"`, '長押しで注ぐ（離したら決まり）ちょうどいい所で、離す！水は多すぎても少なすぎても飛ばない上下にシュコシュコ下へ1回＝入れるほど飛ぶ。でも入れすぎると破裂ドラッグ角度風を見て追い風は高め向かい風低めがのびる気圧高さkm/hここをベスト空気の入れすぎで破裂…飛ばなかった')]), new Promise(r => setTimeout(r, 1500))]); } catch {}
+resize();
+buildMarks();
+updateBestFlag();
+state = 'title';
+fillTitle(); updateHud();
+$('startBtn').disabled = false; $('startBtn').textContent = '河川敷へ行く';
+$('startBtn').focus({ preventScroll: true });
+requestAnimationFrame(frame);
+</script>
+<a class="hub-back" id="hubBack" href="/" aria-label="あそび横丁（ゲーム一覧）にもどる" style="bottom: auto; top: calc(env(safe-area-inset-top, 0px) + 10px);">← 横丁</a>
+<script>
+// プレイ中でもゲーム一覧に戻れるボタン。押してもゲームの入力（タップ・ドラッグ）に伝わらないようにする
+for (const ev of ['pointerdown', 'touchstart', 'mousedown']) document.getElementById('hubBack').addEventListener(ev, e => e.stopPropagation(), { passive: true });
+</script>
+</body>
+</html>
