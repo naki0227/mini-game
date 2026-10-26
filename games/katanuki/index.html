@@ -1,0 +1,1369 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>型抜き</title>
+<meta name="description" content="夏祭りの夜店で型抜き。でんぷん菓子の薄い板に刻まれた型のふちを、つまようじでつついて割らずに抜く。押す長さで力が変わり、溝からそれたり強すぎたりすると、ひびが型の中へ走って「ぱきっ」。1枚抜けたら次はもっと難しい型。何枚つづけて抜ける？ログイン不要のブラウザゲーム。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="型抜き">
+<meta property="og:description" content="溝をつついて、割らずに抜く。夜店の型抜き、何枚つづけて抜ける？">
+<meta property="og:url" content="https://asobi.enludus.com/games/katanuki/">
+<meta property="og:image" content="https://asobi.enludus.com/games/katanuki/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8D%AC%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+:root { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+/* 全画面 WebGL（夏祭りの夜店。裸電球の下の台に、型抜きの板）+ 2D の演出レイヤー + HUD。タイトル/結果は下の札1枚 */
+:root {
+  --sky: #171a2b;        /* 夏の夜 */
+  --ink: #2a1c18;
+  --paper: #fcf4e6;
+  --noren: #b8352b;      /* 夜店ののれんの赤 */
+  --noren-ink: #fbf1e2;
+  --gold: #e0a43a;
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: dark;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--sky); color: var(--ink);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+#gl, #fx { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#fx { touch-action: none; cursor: crosshair; }
+
+.hud {
+  position: fixed; right: 0; top: 0; pointer-events: none;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 6px;
+  padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
+  padding-right: max(12px, env(safe-area-inset-right, 0px));
+}
+.pill {
+  background: var(--noren); color: var(--noren-ink);
+  border-radius: 6px; padding: 5px 10px 6px;
+  font-variant-numeric: tabular-nums; line-height: 1.1; text-align: right;
+  box-shadow: 0 2px 0 rgba(0,0,0,.35);
+}
+.pill .lab { font-size: 10px; letter-spacing: .12em; opacity: .85; display: block; }
+.pill .val { font-family: var(--font-display); font-size: 18px; }
+
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: center; z-index: 40;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px;
+  touch-action: none; cursor: pointer; overflow: hidden;
+}
+#title { place-items: end center; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); background: linear-gradient(to top, rgba(12, 12, 24, .62), rgba(12, 12, 24, 0) 70%); }
+#over { place-items: end center; background: linear-gradient(to top, rgba(12, 12, 24, .66), rgba(12, 12, 24, 0) 72%); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); }
+.card {
+  width: min(360px, 100%); background: var(--paper); color: var(--ink);
+  border-radius: 10px; overflow: hidden; box-shadow: 0 10px 40px rgba(0,0,0,.55);
+  text-align: center; cursor: default;
+}
+.noren {
+  background: var(--noren); color: var(--noren-ink);
+  display: flex; gap: 3px;
+  padding-top: 16px;
+}
+.noren span {
+  flex: 1; background: var(--noren); border-bottom: 3px solid rgba(255,255,255,.5);
+  font-family: var(--font-display); font-size: 32px; line-height: 1; padding-block: 6px 14px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.2); white-space: nowrap;
+}
+.noren span.w { flex: 1.5; font-size: 27px; padding-top: 9px; }
+.noren.result { padding-top: 10px; }
+.noren.result span { font-size: 26px; padding-block: 4px 10px; }
+.body { padding: 16px 20px 18px; display: grid; gap: 11px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.7; text-wrap: balance; }
+.score { font-family: var(--font-display); font-size: 60px; line-height: 1; font-variant-numeric: tabular-nums; }
+.score small { font-size: 22px; margin-left: 4px; }
+.score .sub { display: block; font-family: var(--font-body); font-weight: 700; font-size: 14px; margin-top: 6px; letter-spacing: .04em; }
+.lyric { margin: -2px 0 0; font-size: 13px; letter-spacing: .06em; color: var(--noren); min-height: 1.4em; font-weight: 700; }
+.meta { display: flex; justify-content: center; gap: 6px 16px; font-size: 13px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.meta b { font-size: 16px; }
+.badge {
+  justify-self: center; background: var(--gold); color: #3a2410; font-weight: 700;
+  font-size: 12px; letter-spacing: .14em; padding: 3px 10px; border-radius: 99px;
+}
+#over .lead { font-size: 13px; line-height: 1.55; }
+#over .body { gap: 9px; padding-block: 12px 14px; }
+.btns { display: grid; gap: 8px; }
+.btns .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+button {
+  font: inherit; font-weight: 700; font-size: 16px; border: 0; border-radius: 8px;
+  padding: 13px 16px; cursor: pointer;
+  background: var(--noren); color: var(--noren-ink); box-shadow: 0 3px 0 #6e1c16;
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 #6e1c16; }
+button:disabled { opacity: .6; cursor: progress; }
+a.xbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font-weight: 700; font-size: 16px; border-radius: 8px; padding: 13px 16px;
+  background: #0f1419; color: #fff; box-shadow: 0 3px 0 #000;
+}
+a.xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+a.xbtn:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+a.xbtn svg { width: 16px; height: 16px; fill: currentColor; }
+button.sub { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); padding-inline: 8px; font-size: 15px; }
+button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.how { font-size: 12px; opacity: .72; margin: 0; line-height: 1.6; }
+.err { font-size: 13px; color: #b3361b; margin: 0; font-weight: 700; }
+.back { font-size: 13px; color: var(--ink); opacity: .75; }
+.back:hover { opacity: 1; }
+@media (max-height: 700px) {
+  .score { font-size: 48px; }
+  .body { gap: 8px; padding-block: 12px 14px; }
+  button, a.xbtn { padding-block: 10px; }
+  .noren span { font-size: 28px; }
+}
+@media (max-height: 600px) { #over .lead, #title .how { display: none; } }
+.hub-back {
+  position: fixed; z-index: 60;
+  left: calc(env(safe-area-inset-left, 0px) + 10px); bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  font: 700 12px/1 "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif; letter-spacing: .04em;
+  padding: 7px 11px; border-radius: 99px; text-decoration: none;
+  background: rgba(20, 18, 24, .55); color: #fff; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.hub-back:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<canvas id="gl" aria-hidden="true"></canvas>
+<canvas id="fx" aria-label="型抜きのゲーム画面。板の型のふち（溝）を押すと、つまようじでつつく。押している時間が長いほど強い"></canvas>
+
+<div class="hud" id="hud" hidden>
+  <div class="pill"><span class="lab">最高</span><span class="val" id="hBest">—</span></div>
+</div>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="noren" aria-hidden="true"><span>型</span><span>抜</span><span>き</span><span class="w">つん</span><span class="w">ぽろ</span></div>
+    <div class="body">
+      <p class="lead">型のふちの<b>溝</b>を押して、つまようじで<b>つつく</b>。<br>押す長さで力が変わる。<b>ぽろっ</b>と外れたら離す。</p>
+      <div class="meta"><span>最高 <b id="tBest">—</b> 枚</span><span>遊んだ <b id="tPlays">0</b> 回</span></div>
+      <div class="btns"><button id="startBtn" disabled>よみこみ中…</button></div>
+      <p class="err" id="loadErr" hidden></p>
+      <p class="how">溝の<b>すこし外側</b>をつつくと安全。型の中を押す・押しすぎる・同じ所を急いで連打すると、<br>ひびが型に走って<b>ぱきっ</b>。外の板がぜんぶ外れたら1枚。つぎは もっと難しい型</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <div class="noren result" aria-hidden="true" id="oNoren"><span>ぱ</span><span>き</span><span>っ</span></div>
+    <div class="body">
+      <div class="badge" id="newRec" hidden>新記録</div>
+      <div class="score"><span id="oScore">0</span><small id="oUnit">枚 ぬけた</small><span class="sub" id="oSub"></span></div>
+      <p class="lyric" id="oLyric"></p>
+      <p class="lead" id="oMsg"></p>
+      <div class="meta"><span>最高 <b id="oBest">0</b> 枚</span><span>遊んだ <b id="oPlays">0</b> 回</span><span>ぜんぶで <b id="oTotal">0</b> 枚</span></div>
+      <div class="btns">
+        <div class="two"><button id="retryBtn">もう一回</button><button class="sub" id="copyBtn">結果をコピー</button></div>
+        <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Xでシェア</a>
+      </div>
+      <p class="how" id="copyMsg">画面タップ・スペースでもう一回</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+let THREE;
+try {
+  THREE = await import(THREE_URL);
+} catch (e) {
+  $('startBtn').textContent = '読み込めませんでした';
+  $('loadErr').hidden = false;
+  $('loadErr').textContent = '3D の読み込みに失敗しました。通信状況を確かめて、ページを再読み込みしてください。';
+  throw e;
+}
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FD = getComputedStyle(document.documentElement).getPropertyValue('--font-display');
+const FB = getComputedStyle(document.documentElement).getPropertyValue('--font-body');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const ease = k => k * k * (3 - 2 * k);
+const DEG = Math.PI / 180;
+const HASH = new URLSearchParams(location.hash.slice(1));
+const r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
+
+/*PHYS-BEGIN*/
+/* ---------- 型抜きの物理（自前。three には頼らない） ----------
+   長さの単位は mm、時間は秒。板は 64mm 角のでんぷん菓子。上から見た平面（x: 右、y: 奥＝おじさんのほう）。
+   板を 40×40 のセル（1.6mm）に分けた脆い材料。セルは 3 種類: 外（型の外の板）・溝（型のふち。薄くて弱い）・型（内側）。
+   強さ str はセルごとに seed でばらつく。型のとがった所（まわりに型のセルが少ない所）は弱い。溝は型が進むほど浅い（強い＝外れにくく、型とあまり差がない）。
+   針: 押した点のまわりに荷重（ガウス分布。半径 RHO セル）。押している時間で力が増える（F = FR × 押した秒）。
+        まわりのセルが外れて減ると、残ったセルに力が集まる（穴のふちを押すと 型の内側に回り込む）。
+   セルは「荷重 + 残り応力 res」が強さをこえると外れる。外れたセルは、その応力の TR 倍を となりのセルへ伝える（ひびが走る）。
+        溝は弱いので、ひびは溝に沿って何セルか走って止まる。型のセルが1つでも割れたら、ひびが型の中を走って ぱきっ（失敗）。
+   残り応力: 離したとき、押していた荷重の GAM 倍がセルに残り、TAU 秒で抜けていく（同じ所を短い間に連打すると たまって割れる）。
+   成功: 型のセルから 外のセルへ、外れていないセルだけで（上下左右に）たどれなくなったら、外の板がはずれて型が抜ける。 */
+const PH = {
+  DT: 1 / 240, S: 64, G: 40, HW: 0.78,                         // 板の大きさ(mm)・セル数・溝の半分の幅（セル）
+  RHO: 1.45, RCUT: 2.6, FR: 1.25, KMIN: 0.55,                  // 針: 荷重の広がり・打ち切り（RHO の何倍）・力の増え方（/秒）・穴で力が集まる上限
+  GAM: 0.6, TAU: 1.0, TR: 0.75, IMPRES: 0.15,                    // 残り応力・その抜ける時間・ひびの伝わり・ひびの残り
+  SG0: 0.2, SG1: 0.62, SGK: 7, NZ: 0.12, NZP: 0.08, TIP: 0.35, OUTW: 0.9, PS1: 1.0, PSK: 4,   // 溝の強さ（1枚目→奥）・ばらつき・とがりの弱さ・外の板の強さ
+  T0: 15, TG0: 0.4, TG1: 0.27, TK: 6, INTRO: 1.2, LIFT: 2.2, HOLD_MAX: 6, WARN: 10,     // 1枚ごとの制限時間（基本 + 溝のセル数 × 秒）・幕間
+};
+const CELL = PH.S / PH.G, NC = PH.G * PH.G;
+const clampP = (v, a, b) => Math.max(a, Math.min(b, v));
+function rndG(g) { g.rs = (g.rs + 0x6D2B79F5) >>> 0; let t = g.rs; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
+function mulberry(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+
+/* 型の形（符号つき距離。mm。内側が負） */
+const sdC = (x, y, cx, cy, r) => Math.hypot(x - cx, y - cy) - r;
+function sdE(x, y, cx, cy, rx, ry) { const px = x - cx, py = y - cy, k0 = Math.hypot(px / rx, py / ry), k1 = Math.hypot(px / (rx * rx), py / (ry * ry)); return k1 < 1e-9 ? -Math.min(rx, ry) : k0 * (k0 - 1) / k1; }
+function sdCap(x, y, ax, ay, bx, by, r) { const pax = x - ax, pay = y - ay, bax = bx - ax, bay = by - ay, h = clampP((pax * bax + pay * bay) / (bax * bax + bay * bay), 0, 1); return Math.hypot(pax - bax * h, pay - bay * h) - r; }
+function sdPoly(x, y, P) {
+  let d = Infinity, s = 1;
+  for (let i = 0, j = P.length - 1; i < P.length; j = i, i++) {
+    const [ax, ay] = P[j], [bx, by] = P[i], ex = bx - ax, ey = by - ay, wx = x - ax, wy = y - ay;
+    const h = clampP((wx * ex + wy * ey) / (ex * ex + ey * ey), 0, 1), dx = wx - ex * h, dy = wy - ey * h;
+    d = Math.min(d, dx * dx + dy * dy);
+    const c1 = y >= ay, c2 = y < by, c3 = ex * wy > ey * wx;
+    if ((c1 && c2 && c3) || (!c1 && !c2 && !c3)) s = -s;
+  }
+  return s * Math.sqrt(d);
+}
+const starPts = (n, R, r, rot = Math.PI / 2, cx = 0, cy = 0) => Array.from({ length: n * 2 }, (_, i) => { const a = rot + i * Math.PI / n, rr = i % 2 ? r : R; return [cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]; });
+const smin = (a, b, k) => { const h = clampP(0.5 + 0.5 * (b - a) / k, 0, 1); return b + (a - b) * h - k * h * (1 - h); };
+const U = (...a) => Math.min(...a);
+const P_TRI = [[0, 15.5], [-14.5, -10.5], [14.5, -10.5]], P_HEART = [[-13.4, 1.6], [13.4, 1.6], [0, -15]], P_TAIL = [[5, 0], [19, 9.5], [15.5, 0], [19, -9.5]];
+const P_STAR = starPts(5, 18.5, 8.2), P_EARL = [[-11.5, 2], [-10, 16.5], [-2.5, 9.5]], P_EARR = [[11.5, 2], [10, 16.5], [2.5, 9.5]];
+const P_MOMIJI = starPts(5, 19, 9.6, Math.PI / 2), P_BEAK = [[13, 5.5], [20, 3.5], [13, 1.5]], P_BTAIL = [[-10, -1], [-20, 6], [-19, -5]];
+const SHAPES = [
+  { name: 'まる', f: (x, y) => sdC(x, y, 0, 0, 14) },
+  { name: 'さんかく', f: (x, y) => sdPoly(x, y, P_TRI) - 1.2 },
+  { name: 'ひょうたん', f: (x, y) => smin(sdC(x, y, 0, -6.5, 10.5), sdC(x, y, 0, 9, 7.5), 3) },
+  { name: 'ハート', f: (x, y) => U(sdC(x, y, -6.6, 4.5, 8.2), sdC(x, y, 6.6, 4.5, 8.2), sdPoly(x, y, P_HEART)) },
+  { name: 'さかな', f: (x, y) => U(sdE(x, y, -4, 0, 13.5, 8.5), sdPoly(x, y, P_TAIL)) },
+  { name: 'ほし', f: (x, y) => sdPoly(x, y, P_STAR) },
+  { name: 'ねこ', f: (x, y) => U(sdC(x, y, 0, -3, 12.5), sdPoly(x, y, P_EARL), sdPoly(x, y, P_EARR)) },
+  { name: 'ちょうちょ', f: (x, y) => U(sdE(x, y, -8.5, 6, 8.5, 6.5), sdE(x, y, 8.5, 6, 8.5, 6.5), sdE(x, y, -6.5, -7.5, 6.5, 5.2), sdE(x, y, 6.5, -7.5, 6.5, 5.2), sdCap(x, y, 0, -13, 0, 11, 2.2)) },
+  { name: 'うさぎ', f: (x, y) => U(sdC(x, y, 0, -7, 10.5), sdCap(x, y, -4.2, 0, -6.5, 17, 3.3), sdCap(x, y, 4.2, 0, 6.5, 17, 3.3)) },
+  { name: 'とり', f: (x, y) => U(sdE(x, y, -1, -1, 11, 7.5), sdC(x, y, 9, 4, 5.5), sdPoly(x, y, P_BEAK), sdPoly(x, y, P_BTAIL)) },
+  { name: 'もみじ', f: (x, y) => U(sdPoly(x, y, P_MOMIJI), sdCap(x, y, 0, -6, 3, -20, 2.5)) },
+  { name: 'かさ', f: (x, y) => U(Math.max(sdC(x, y, 0, 1, 17.5), 1 - y, -sdC(x, y, -11.7, 1, 5.9), -sdC(x, y, 0, 1, 5.9), -sdC(x, y, 11.7, 1, 5.9)), sdCap(x, y, 0, 6, 0, -14, 2.3), sdCap(x, y, 0, -14, -3.5, -18.5, 2.3), sdCap(x, y, -3.5, -18.5, -7.5, -15, 2.3)) },
+];
+const EXTRA = ['とげぼし', 'かざぐるま', 'ゆきのは', 'こんぺいとう'];
+function shapeOf(n, u) {
+  if (n <= SHAPES.length) return SHAPES[n - 1];
+  // それより先: とげの多い星。だんだん細く・とがる（seed でかたちが少し変わる）
+  const k = n - SHAPES.length, pts = 5 + (k % 4), R = 19.5, r = Math.max(5.2, 9 - 0.45 * k - 1.2 * u), rot = Math.PI / 2 + u * 0.6;
+  const P = starPts(pts, R, r, rot);
+  return { name: EXTRA[(k - 1) % EXTRA.length], f: (x, y) => sdPoly(x, y, P), star: true };
+}
+const psOf = n => 1 + PH.PS1 * Math.exp(-(n - 1) / PH.PSK);                   // 板の厚み（はじめの型ほど厚くて丈夫）
+const sgOf = n => PH.SG1 - (PH.SG1 - PH.SG0) * Math.exp(-(n - 1) / PH.SGK);     // 溝の強さ（浅くなる）
+const timeOf = (n, nG) => Math.round(PH.T0 + nG * (PH.TG1 + (PH.TG0 - PH.TG1) * Math.exp(-(n - 1) / PH.TK)));   // 制限時間: 溝の長さに比例（1秒あたり何セル外せばよいかは だんだんきびしく）
+const cx_ = i => -PH.S / 2 + (i + 0.5) * CELL;
+function makeBoard(g, n) {
+  const sh = shapeOf(n, rndG(g)), sg = sgOf(n), ps = psOf(n);
+  const type = new Uint8Array(NC), str = new Float32Array(NC), sdf = new Float32Array(NC), nx = new Float32Array(NC), ny = new Float32Array(NC);
+  for (let j = 0; j < PH.G; j++) for (let i = 0; i < PH.G; i++) {
+    const c = j * PH.G + i, x = cx_(i), y = cx_(j), d = sh.f(x, y), e = 0.05;
+    sdf[c] = d;
+    let gx = sh.f(x + e, y) - sh.f(x - e, y), gy = sh.f(x, y + e) - sh.f(x, y - e); const gl = Math.hypot(gx, gy) || 1; nx[c] = gx / gl; ny[c] = gy / gl;
+    type[c] = d < -PH.HW * CELL ? 2 : d > PH.HW * CELL ? 0 : 1;
+  }
+  let nG = 0, nI = 0;
+  for (let j = 0; j < PH.G; j++) for (let i = 0; i < PH.G; i++) {
+    const c = j * PH.G + i, z = (rndG(g) * 2 - 1);
+    if (type[c] === 1) { nG++; str[c] = sg * (1 + PH.NZ * z); }
+    else if (type[c] === 2) {
+      nI++;
+      let k = 0; for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const ii = i + di, jj = j + dj; if (ii >= 0 && jj >= 0 && ii < PH.G && jj < PH.G && type[jj * PH.G + ii] === 2) k++; }
+      str[c] = ps * (1 - PH.TIP * Math.max(0, 5 - (k - 1)) / 5) * (1 + PH.NZP * z);    // まわりに型が少ない（とがり・細い所）ほど弱い
+    } else str[c] = ps * PH.OUTW * (1 + PH.NZP * z);
+  }
+  return { n, name: sh.name, sh, sg, type, str, sdf, nx, ny, nG, nI, brk: new Uint8Array(NC), res: new Float32Array(NC), resT: new Float32Array(NC), load: new Float32Array(NC), gB: 0, crack: null, done: false, failC: -1 };
+}
+const resAt = (B, c, t) => B.res[c] > 0 ? B.res[c] * Math.exp(-(t - B.resT[c]) / PH.TAU) : 0;
+function addRes(B, c, t, v) { B.res[c] = resAt(B, c, t) + v; B.resT[c] = t; }
+// 針の点（mm）→ まわりのセルと重み
+function needleCells(x, y) {
+  const u = (x + PH.S / 2) / CELL - 0.5, v = (y + PH.S / 2) / CELL - 0.5, R = PH.RHO * PH.RCUT, ids = [], ks = [];
+  let K0 = 0;
+  for (let j = Math.ceil(v - R); j <= Math.floor(v + R); j++) for (let i = Math.ceil(u - R); i <= Math.floor(u + R); i++) {
+    const r2 = (i - u) ** 2 + (j - v) ** 2; if (r2 > R * R) continue;
+    const k = Math.exp(-r2 / (PH.RHO * PH.RHO)); K0 += k;
+    if (i < 0 || j < 0 || i >= PH.G || j >= PH.G) continue;
+    ids.push(j * PH.G + i); ks.push(k);
+  }
+  return { ids, ks, K0 };
+}
+// ひと押しの1ステップ（t: 物理の時刻）。外れたセルの一覧を返す
+function pressStep(B, P, t) {
+  const F = PH.FR * Math.max(0, t - P.t0), { ids, ks, K0 } = P.nc;
+  let Su = 0; for (let m = 0; m < ids.length; m++) if (!B.brk[ids[m]]) Su += ks[m];
+  const sc = F / Math.max(Su / K0, PH.KMIN);
+  P.F = F; P.conc = K0 / Math.max(Su, PH.KMIN * K0);
+  const br = [];
+  let dz = 0;
+  for (let m = 0; m < ids.length; m++) {
+    const c = ids[m]; if (B.brk[c]) continue;
+    const L = sc * ks[m]; B.load[c] = L;
+    const E = L + resAt(B, c, t);
+    if (B.type[c] === 2) dz = Math.max(dz, E / B.str[c]);
+    if (E > B.str[c]) br.push(c, E);
+  }
+  P.danger = dz;
+  const out = [];
+  for (let m = 0; m < br.length; m += 2) breakCell(B, br[m], br[m + 1], t, out, P);
+  return out;
+}
+const NB4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+function breakCell(B, c0, E0, t, out, P) {
+  const st = [c0, E0];
+  while (st.length) {
+    const E = st.pop(), c = st.pop();
+    if (B.brk[c]) continue;
+    B.brk[c] = 1; out.push(c);
+    if (B.type[c] === 1) B.gB++;
+    if (B.type[c] === 2 && B.failC < 0) { B.failC = c; B.failE = E; B.failP = P ? [P.x, P.y] : null; }
+    const i = c % PH.G, j = (c / PH.G) | 0;
+    // ひびの先は いちばん弱いとなりへ進む: 弱いとなりほど多く受けとる（(いちばん弱い強さ / 自分の強さ)^2 の割合）
+    let smin_ = Infinity;
+    for (const [di, dj] of NB4) { const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= PH.G || jj >= PH.G) continue; const n = jj * PH.G + ii; if (!B.brk[n]) smin_ = Math.min(smin_, B.str[n]); }
+    for (const [di, dj] of NB4) {
+      const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= PH.G || jj >= PH.G) continue;
+      const n = jj * PH.G + ii; if (B.brk[n]) continue;
+      const imp = PH.TR * E * (smin_ / B.str[n]) ** 2, En = B.load[n] + resAt(B, n, t) + imp;
+      addRes(B, n, t, PH.IMPRES * imp);
+      if (En > B.str[n]) st.push(n, En);
+    }
+  }
+}
+function releasePress(B, P, t) {
+  const { ids } = P.nc;
+  for (const c of ids) { if (!B.brk[c] && B.load[c] > 0) addRes(B, c, t, PH.GAM * B.load[c]); B.load[c] = 0; }
+}
+// 型が外の板とつながっているか（外れていないセルだけで上下左右に）
+function connected(B) {
+  const seen = new Uint8Array(NC), q = [];
+  for (let c = 0; c < NC; c++) if (B.type[c] === 2 && !B.brk[c]) { seen[c] = 1; q.push(c); }
+  if (!q.length) return false;
+  for (let h = 0; h < q.length; h++) {
+    const c = q[h], i = c % PH.G, j = (c / PH.G) | 0;
+    for (const [di, dj] of NB4) {
+      const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= PH.G || jj >= PH.G) continue;
+      const n = jj * PH.G + ii; if (seen[n] || B.brk[n]) continue;
+      if (B.type[n] === 0) return true;
+      seen[n] = 1; q.push(n);
+    }
+  }
+  return false;
+}
+// 割れたとき: 割れたセルから、針と反対の向きへ 弱い所をたどってひびが型を横切る（seed で決まる）
+function crackPath(B, g) {
+  const c0 = B.failC, i0 = c0 % PH.G, j0 = (c0 / PH.G) | 0;
+  let dx = cx_(i0) - (B.failP ? B.failP[0] : 0), dy = cx_(j0) - (B.failP ? B.failP[1] : 0);
+  if (Math.hypot(dx, dy) < 0.3) { dx = -B.nx[c0]; dy = -B.ny[c0]; }
+  // 型のまん中のほうへ少し曲げる
+  dx -= B.nx[c0] * 0.8; dy -= B.ny[c0] * 0.8;
+  let l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+  const path = [c0]; let i = i0, j = j0;
+  for (let s = 0; s < 80; s++) {
+    let best = -1, bv = Infinity;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+      if (!di && !dj) continue;
+      const ii = i + di, jj = j + dj; if (ii < 0 || jj < 0 || ii >= PH.G || jj >= PH.G) continue;
+      const dl = Math.hypot(di, dj), dot = (di * dx + dj * dy) / dl; if (dot < 0.35) continue;
+      const n = jj * PH.G + ii, v = B.str[n] * (0.7 + 0.6 * rndG(g)) - 0.5 * dot;
+      if (v < bv) { bv = v; best = n; }
+    }
+    if (best < 0) break;
+    i = best % PH.G; j = (best / PH.G) | 0;
+    dx = dx * 0.8 + (cx_(i) - cx_(path[path.length - 1] % PH.G)) / CELL * 0.2; dy = dy * 0.8 + (cx_(j) - cx_((path[path.length - 1] / PH.G) | 0)) / CELL * 0.2; l = Math.hypot(dx, dy) || 1; dx /= l; dy /= l;
+    path.push(best);
+    if (B.type[best] !== 2) break;
+  }
+  return path;
+}
+const progOf = B => B.done ? 1 : B.nG ? B.gB / B.nG : 0;
+
+function makeGame(seed = 1) {
+  const g = { seed, rs: (seed ^ 0x9e3779b9) >>> 0, t: 0, n: 1, cleared: 0, over: false, fail: null, overT: -1, phase: 'intro', phT: 0, tLeft: 0, tLim: 0,
+    B: null, P: null, queue: [], events: [], log: null, pokes: 0, lastProg: 0, warned: false, lastClearT: 0, total: 0, hist: [] };
+  newBoard(g);
+  return g;
+}
+function newBoard(g) { g.B = makeBoard(g, g.n); g.tLim = timeOf(g.n, g.B.nG); g.tLeft = g.tLim; g.phase = 'intro'; g.phT = g.t; g.P = null; g.warned = false; }
+// 入力: 時刻つき。kind = 'down'（押した。x, y は板の上の mm）/ 'up'（離した）
+function gInput(g, t, kind, x = 0, y = 0) { const e = { t, kind, x, y }; if (g.log) g.log.push(e); const q = g.queue; let i = q.length; while (i > 0 && q[i - 1].t > t) i--; q.splice(i, 0, e); }
+function applyInput(g, e) {
+  if (g.over) return;
+  if (e.kind === 'down') {
+    if (g.P || g.phase !== 'play') return;
+    if (Math.abs(e.x) > PH.S / 2 || Math.abs(e.y) > PH.S / 2) return;   // 板の外
+    g.P = { x: e.x, y: e.y, t0: e.t, nc: needleCells(e.x, e.y), F: 0, danger: 0, conc: 1, n0: g.B.gB };
+    g.pokes++; g.events.push({ type: 'poke', x: e.x, y: e.y });
+  } else if (g.P) endPress(g, e.t);
+}
+function endPress(g, t) {
+  const P = g.P; if (!P) return;
+  releasePress(g.B, P, t); g.P = null;
+  g.events.push({ type: 'lift', x: P.x, y: P.y, cut: g.B.gB - P.n0, F: P.F });
+}
+function failGame(g, kind, info = {}) {
+  if (g.over) return;
+  g.lastHold = g.P ? g.t - g.P.t0 : 0;
+  if (g.P) { releasePress(g.B, g.P, g.t); g.P = null; }
+  g.over = true; g.fail = kind; g.overT = g.t; g.lastProg = progOf(g.B);
+  g.events.push({ type: 'fail', kind, ...info });
+}
+function stepGame(g, dt = PH.DT) {
+  g.t += dt;
+  const q = g.queue;
+  while (q.length && q[0].t <= g.t) applyInput(g, q.shift());
+  if (g.over) return;
+  const B = g.B;
+  switch (g.phase) {
+    case 'intro': if (g.t - g.phT >= PH.INTRO) { g.phase = 'play'; g.phT = g.t; g.events.push({ type: 'go', n: g.n }); } break;
+    case 'play': {
+      g.tLeft = Math.max(0, g.tLim - (g.t - g.phT));
+      if (!g.warned && g.tLeft <= PH.WARN) { g.warned = true; g.events.push({ type: 'warn' }); }
+      if (g.P) {
+        if (g.t - g.P.t0 > PH.HOLD_MAX) { endPress(g, g.t); break; }
+        const out = pressStep(B, g.P, g.t);
+        if (out.length) {
+          let ng = 0, no = 0, ni = 0; for (const c of out) { const ty = B.type[c]; if (ty === 1) ng++; else if (ty === 0) no++; else ni++; }
+          g.events.push({ type: 'break', cells: out, ng, no, ni });
+          if (B.failC >= 0) { B.crack = crackPath(B, g); failGame(g, 'crack', { c: B.failC }); return; }
+          if (!connected(B)) {
+            B.done = true; endPress(g, g.t); g.cleared = g.n; g.hist.push({ n: g.n, name: B.name, sh: B.sh }); g.total += g.t - g.phT; g.lastClearT = g.t - g.phT;
+            g.phase = 'lift'; g.phT = g.t; g.events.push({ type: 'cleared', n: g.n, time: g.lastClearT, pokes: g.pokes });
+            return;
+          }
+        }
+      }
+      if (g.tLeft <= 0) failGame(g, 'time');
+      break;
+    }
+    case 'lift': if (g.t - g.phT >= PH.LIFT) { g.n++; g.pokes = 0; newBoard(g); g.events.push({ type: 'next', n: g.n }); } break;
+  }
+}
+
+/* ---------- つぎにつつくとよい所（物理を写してためしに押してみる） ---------- */
+function cloneB(B) { return { ...B, brk: B.brk.slice(), res: B.res.slice(), resT: B.resT.slice(), load: new Float32Array(NC), failC: -1 }; }
+// (x, y) を時刻 t から押しつづけたら: 溝が外れはじめる秒 tG・型が割れる秒 tI・押した秒ごとの外れた溝の数
+function trialPress(B0, x, y, t, maxH = 2.4, step = 2) {
+  const B = cloneB(B0), P = { x, y, t0: t, nc: needleCells(x, y) };
+  let tG = -1, tI = maxH, cut = [], g0 = B.gB, done = -1;
+  for (let k = 1; k * PH.DT <= maxH; k++) {
+    const tt = t + k * PH.DT, out = pressStep(B, P, tt);
+    if (out.length) {
+      if (B.gB > g0 && tG < 0) tG = k * PH.DT;
+      if (B.failC >= 0) { tI = k * PH.DT; break; }
+      if (done < 0 && B.gB > g0 && !connected(B)) done = k * PH.DT;
+    }
+    if (k % step === 0) cut.push([k * PH.DT, B.gB - g0]);
+    if (tG >= 0 && k * PH.DT > tG + 0.9) break;
+  }
+  return { tG, tI, cut, done };
+}
+function planNext(g, maxC = 5) {
+  if (g.over || g.phase !== 'play') return null;
+  const B = g.B, cand = [];
+  for (let c = 0; c < NC; c++) {
+    if (B.type[c] !== 1 || B.brk[c]) continue;
+    const i = c % PH.G, j = (c / PH.G) | 0; let f = 0;
+    for (const [di, dj] of NB4) { const ii = i + di, jj = j + dj; if (ii >= 0 && jj >= 0 && ii < PH.G && jj < PH.G && B.brk[jj * PH.G + ii] && B.type[jj * PH.G + ii] !== 2) f = 1; }
+    cand.push({ c, f, a: Math.atan2(cx_(j), cx_(i)) });
+  }
+  if (!cand.length) return null;
+  let list = cand.filter(o => o.f);
+  if (!list.length) { list = cand.slice().sort((a, b) => Math.abs(a.a + 0.8) - Math.abs(b.a + 0.8)).slice(0, 12); }   // はじめは右下（手前・利き手側）から
+  const pick = [], stp = Math.max(1, list.length / maxC);
+  for (let k = 0; k < list.length && pick.length < maxC; k += stp) pick.push(list[Math.floor(k)]);
+  let best = null;
+  for (const o of pick) {
+    const c = o.c, off = 0.42 * CELL, x = cx_(c % PH.G) + B.nx[c] * off, y = cx_((c / PH.G) | 0) + B.ny[c] * off;
+    const T = trialPress(B, x, y, g.t);
+    if (T.tG < 0) continue;
+    const span = T.tI - T.tG;
+    const h = T.tG + clampP(0.4 * span, 0.04, 0.22);
+    let cutH = 0; for (const [s, n] of T.cut) if (s <= h) cutH = n;
+    const score = Math.min(1, span / Math.max(0.15, T.tG)) * 2 + Math.min(cutH, 8) * 0.12;
+    if (!best || score > best.score) best = { x, y, hold: h, tG: T.tG, tI: T.tI, cut: cutH, score, c };
+  }
+  return best;
+}
+/*PHYS-END*/
+
+/*BOT-BEGIN*/
+/* ---------- ボット（調整・タイトルのデモ用）: 押した点と時刻だけを入れる ----------
+   first（はじめての人）: 溝の線そのもの（外側に逃がすコツを知らない）を、ずれ大きめにつつく。押す長さはおおざっぱ（人ごとのくせ bias も）。ときどき見当ちがいの所。
+   good: 溝のすこし外側を、ずれ小さく。押す長さも正確。
+   mash: 板のどこかを一定間隔で連打。center: 型のまん中ばかり押す。 */
+const SKILLS = {
+  first: { wait: [0.55, 1.2], aimSd: 0.85, off: -0.42, react: 0.3, holdSd: 0.35, holdBias: 0.25, pRand: 0.08, giveUp: 1.4 },
+  casual: { wait: [0.45, 0.9], aimSd: 0.6, off: -0.2, react: 0.24, holdSd: 0.25, holdBias: 0.15, pRand: 0.04, giveUp: 1.4 },
+  good: { wait: [0.3, 0.55], aimSd: 0.32, off: 0, react: 0.16, holdSd: 0.15, holdBias: 0.08, pRand: 0, usePlan: true, giveUp: 1.2 },
+  pro: { wait: [0.25, 0.45], aimSd: 0.2, off: 0.1, react: 0.12, holdSd: 0.1, holdBias: 0.05, pRand: 0, usePlan: true, giveUp: 1.2 },
+  slow: { wait: [1.1, 1.8], aimSd: 0.32, off: 0, react: 0.16, holdSd: 0.15, holdBias: 0.08, pRand: 0, usePlan: true, giveUp: 1.2 },
+  mash: { mash: true, every: 0.3, hold: 0.12 },
+  mashLong: { mash: true, every: 0.6, hold: 0.4 },
+  center: { center: true, every: 0.6, hold: 0.3 },
+};
+function gaussR(r) { let u = r(); while (u < 1e-9) u = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * r()); }
+function makeBot(g, sk, rnd) {
+  const bot = { at: -1, upAt: -1, hb: Math.exp((sk.holdBias || 0) * gaussR(rnd)) };
+  bot.step = () => {
+    if (g.over) return;
+    if (bot.upAt >= 0) { if (g.t >= bot.upAt) { gInput(g, g.t, 'up'); bot.upAt = -1; bot.at = -1; } return; }
+    if (g.phase !== 'play' || g.P) { bot.at = -1; return; }
+    if (bot.at < 0) bot.at = g.t + (sk.mash || sk.center ? sk.every - sk.hold : sk.wait[0] + (sk.wait[1] - sk.wait[0]) * rnd());
+    if (g.t < bot.at) return;
+    let x, y, h;
+    if (sk.mash) { x = (rnd() * 2 - 1) * 28; y = (rnd() * 2 - 1) * 28; h = sk.hold; }
+    else if (sk.center) { x = gaussR(rnd) * 1.5; y = gaussR(rnd) * 1.5; h = sk.hold; }
+    else {
+      const N = planNext(g, 4);
+      if (!N) { bot.at = g.t + 0.5; return; }
+      const B = g.B, c = N.c;
+      let bx = N.x + B.nx[c] * (sk.off || 0) * CELL, by = N.y + B.ny[c] * (sk.off || 0) * CELL;
+      if (rnd() < sk.pRand) { const cs = []; for (let k = 0; k < NC; k++) if (B.type[k] === 1 && !B.brk[k]) cs.push(k); const k = cs[Math.floor(rnd() * cs.length)]; bx = cx_(k % PH.G); by = cx_((k / PH.G) | 0); }
+      x = bx + gaussR(rnd) * sk.aimSd; y = by + gaussR(rnd) * sk.aimSd;
+      // 人は「ぽろっ」と外れたのを見て（聞いて）から離す: 実際につついた所で外れはじめる時刻 + 反応のおくれ
+      const T = trialPress(g.B, x, y, g.t, sk.giveUp || 1.6);
+      h = T.tG >= 0 ? T.tG + sk.react * bot.hb * Math.exp(gaussR(rnd) * sk.holdSd) : (sk.giveUp || 1.6);
+      if (sk.usePlan) h = Math.min(h, N.hold * Math.exp(gaussR(rnd) * sk.holdSd));
+    }
+    gInput(g, g.t, 'down', x, y); bot.upAt = g.t + Math.max(0.05, h);
+  };
+  return bot;
+}
+function runBot(sk, seed, opts = {}) {
+  const g = makeGame(seed), bot = makeBot(g, sk, mulberry((seed * 7919 + 13) >>> 0)), maxN = opts.maxN || 40;
+  if (opts.log) g.log = [];
+  while (!g.over && g.cleared < maxN && g.t < 3000) { stepGame(g); bot.step(); g.events.length = 0; }
+  return { n: g.cleared, prog: g.over ? g.lastProg : 1, fail: g.cleared >= maxN ? 'max' : g.fail, t: g.t, log: g.log, pokes: g.pokes };
+}
+/*BOT-END*/
+
+/* ---------- 記録（このブラウザだけ） ---------- */
+const KEY = 'katanuki:v1';
+const DEF = () => ({ ver: 1, best: 0, bestProg: 0, plays: 0, total: 0, last: 0, lastProg: 0 });
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || '{}');
+    if (d && d.ver === 1) { const r = { ...DEF(), ...d }; for (const k of ['best', 'bestProg', 'plays', 'total', 'last', 'lastProg']) r[k] = +r[k] || 0; return r; }
+  } catch {}
+  return DEF();
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch {} }
+let rec = load();
+let seed = HASH.has('seed') ? (+HASH.get('seed') >>> 0) : (Math.random() * 2 ** 32) >>> 0;
+function nextSeed() { const s = seed; seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return s; }
+
+/* ---------- three.js ---------- */
+const glc = $('gl'), fxc = $('fx'), fx = fxc.getContext('2d');
+const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, powerPreference: 'high-performance' });
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#171a2b');
+scene.fog = new THREE.Fog('#171a2b', 300, 820);
+const camera = new THREE.PerspectiveCamera(38, 1, 5, 5000);
+let W = 0, H = 0, dpr = 1, safeT = 0, safeB = 0, port = true;
+function resize() {
+  W = innerWidth; H = innerHeight; dpr = Math.min(devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(Math.min(dpr, 1.75)); renderer.setSize(W, H, false);
+  fxc.width = Math.round(W * dpr); fxc.height = Math.round(H * dpr);
+  camera.aspect = W / H; port = W / H < 0.8;
+  camera.fov = port ? 40 : 34;
+  camera.updateProjectionMatrix();
+  const cs = getComputedStyle(document.documentElement);
+  safeT = parseFloat(cs.paddingTop) || 0; safeB = parseFloat(cs.paddingBottom) || 0;
+}
+addEventListener('resize', resize);
+
+function canvasTex(w, h, draw, repeat) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
+  t.anisotropy = 4;
+  return t;
+}
+const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
+let srnd = 7; const prand = () => (srnd = (srnd * 9301 + 49297) % 233280) / 233280;
+const UP = new THREE.Vector3(0, 1, 0);
+const BT = 2.4;              // 板の厚み（mm）
+const W3 = (x, y, h = BT) => new THREE.Vector3(x, h, -y);   // 板の (x, y) mm → 3D
+
+// 光: 裸電球（あたたかい点光源）と、夜のうす明かり
+scene.add(new THREE.HemisphereLight('#c8cbe8', '#3a2a20', 1.05));
+const bulbL = new THREE.PointLight('#ffe2b8', 1.7, 0, 0); bulbL.position.set(70, 260, -90); scene.add(bulbL);
+const rimL = new THREE.DirectionalLight('#8a9ad8', 0.35); rimL.position.set(-200, 120, -300); scene.add(rimL);
+
+/* ---------- 夜店: 台・敷き紙・裸電球・ちょうちん・うちわ・おじさん ---------- */
+let bulbM = null, lanterns = [], man = {};
+const glowTex = canvasTex(64, 64, (g, w, h) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, 'rgba(255,220,160,1)'); r.addColorStop(0.35, 'rgba(255,190,110,.45)'); r.addColorStop(1, 'rgba(255,160,80,0)'); g.fillStyle = r; g.fillRect(0, 0, w, h); });
+function glow(color, size) { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })); s.scale.set(size, size, 1); scene.add(s); return s; }
+function buildStall() {
+  // 台（木）
+  const woodTex = canvasTex(512, 512, (g, w, h) => {
+    g.fillStyle = '#6a4428'; g.fillRect(0, 0, w, h);
+    for (let y = 0; y < h; y += 64) {
+      const sh = 0.85 + prand() * 0.25; g.fillStyle = `rgb(${Math.round(110 * sh)},${Math.round(72 * sh)},${Math.round(42 * sh)})`; g.fillRect(0, y, w, 62);
+      g.fillStyle = 'rgba(30,15,5,.6)'; g.fillRect(0, y + 62, w, 2);
+      for (let i = 0; i < 14; i++) { g.strokeStyle = `rgba(40,22,10,${0.1 + prand() * 0.2})`; g.lineWidth = 1 + prand() * 1.5; const yy = y + prand() * 60; g.beginPath(); g.moveTo(0, yy); g.bezierCurveTo(w * 0.3, yy + 5, w * 0.7, yy - 5, w, yy + prand() * 4); g.stroke(); }
+    }
+  }, [3, 3]);
+  const counter = new THREE.Mesh(new THREE.PlaneGeometry(1400, 500), lam('#ffffff', { map: woodTex }));
+  counter.rotation.x = -Math.PI / 2; counter.position.set(0, -0.2, 80); scene.add(counter);
+  const edge = new THREE.Mesh(new THREE.BoxGeometry(1400, 30, 24), lam('#4a2c18')); edge.position.set(0, -15, -182); scene.add(edge);
+  // 板の下の敷き紙（藍の和紙）
+  const paperTex = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#26305a'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(${prand() < 0.5 ? '255,255,255' : '0,0,0'},${prand() * 0.07})`; g.fillRect(prand() * w, prand() * h, 1 + prand() * 3, 1); }
+    g.strokeStyle = 'rgba(230,220,200,.25)'; g.lineWidth = 3; g.strokeRect(8, 8, w - 16, h - 16);
+  });
+  const paper = new THREE.Mesh(new THREE.PlaneGeometry(100, 100), lam('#ffffff', { map: paperTex })); paper.rotation.x = -Math.PI / 2; paper.rotation.z = 0.03; paper.position.set(0, 0.05, 0); scene.add(paper);
+  // 抜けた型を並べる小さな皿（板の奥）
+  const plate = new THREE.Mesh(new THREE.BoxGeometry(150, 1.2, 26), lam('#e8dcc4')); plate.position.set(0, 0.6, -56); scene.add(plate);
+  const plateRim = new THREE.Mesh(new THREE.BoxGeometry(152, 1.6, 2), lam('#b8352b')); plateRim.position.set(0, 1.2, -43); scene.add(plateRim);
+  // 裸電球（コードでぶら下がる）
+  bulbM = new THREE.Mesh(new THREE.SphereGeometry(13, 16, 12), new THREE.MeshBasicMaterial({ color: '#fff1c8' }));
+  bulbM.position.set(52, 62, -120); scene.add(bulbM);
+  const sock = new THREE.Mesh(new THREE.CylinderGeometry(7, 8, 14, 10), lam('#3a3430')); sock.position.set(52, 80, -120); scene.add(sock);
+  const cord = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 400, 5), lam('#1c1a18')); cord.position.set(52, 287, -120); scene.add(cord);
+  bulbM.userData.glow = glow('#ffd59a', 110); bulbM.userData.glow.position.copy(bulbM.position);
+  // 遠くのちょうちん
+  for (let i = 0; i < 9; i++) {
+    const x = -560 + i * 140 + prand() * 40, y = -140 - prand() * 140, z = -700 - prand() * 250;
+    const m = new THREE.Mesh(new THREE.SphereGeometry(26, 10, 8), new THREE.MeshBasicMaterial({ color: i % 3 === 1 ? '#f4e2b8' : '#e2553e', fog: false })); m.scale.set(1, 1.3, 1); m.position.set(x, y, z); scene.add(m);
+    const gl = glow(i % 3 === 1 ? '#ffe6b0' : '#ff7a50', 170); gl.position.set(x, y, z + 5);
+    lanterns.push({ m, gl, t0: prand() * 6 });
+  }
+  // 屋台ののれん（奥の上。赤と白）
+  const norTex = canvasTex(512, 128, (g, w, h) => {
+    for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#f2eadb' : '#b8352b'; g.fillRect(i * 64, 0, 64, h); }
+    g.fillStyle = 'rgba(0,0,0,.2)'; for (let i = 1; i < 8; i++) g.fillRect(i * 64 - 1, 20, 2, h);
+    g.fillStyle = '#2a1c18'; g.font = 'bold 56px serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = '#fbf1e2'; ['型', 'ぬ', 'き'].forEach((c, k) => { g.fillText(c, 64 * (2 * k + 0.5) + 32 * 0 + 0, 72); });
+  });
+  const noren = new THREE.Mesh(new THREE.PlaneGeometry(900, 220), lam('#ffffff', { map: norTex })); noren.position.set(0, 560, -520); scene.add(noren);
+  // うちわ（右手前の台の上）
+  const fanTex = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#f4efe2'; g.beginPath(); g.arc(128, 128, 126, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#3c6fae'; g.lineWidth = 9;
+    for (let k = 0; k < 4; k++) { g.beginPath(); for (let x = 10; x < 250; x += 4) g.lineTo(x, 150 + k * 26 + Math.sin(x / 18) * 8); g.stroke(); }
+    g.fillStyle = '#d8442e'; g.beginPath(); g.ellipse(100, 90, 26, 14, -0.3, 0, Math.PI * 2); g.fill(); g.beginPath(); g.moveTo(76, 98); g.lineTo(52, 80); g.lineTo(56, 112); g.fill();
+    g.fillStyle = '#2a1c18'; g.beginPath(); g.arc(114, 86, 3, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(120,90,50,.5)'; g.lineWidth = 2; for (let a = 0; a < Math.PI * 2; a += Math.PI / 14) { g.beginPath(); g.moveTo(128, 128); g.lineTo(128 + Math.cos(a) * 126, 128 + Math.sin(a) * 126); g.stroke(); }
+    g.strokeStyle = '#3c6fae'; g.lineWidth = 6; g.beginPath(); g.arc(128, 128, 123, 0, Math.PI * 2); g.stroke();
+  });
+  const fan = new THREE.Group(); scene.add(fan);
+  const disc = new THREE.Mesh(new THREE.CircleGeometry(38, 28), lam('#ffffff', { map: fanTex, side: THREE.DoubleSide })); disc.rotation.x = -Math.PI / 2; fan.add(disc);
+  const handle = new THREE.Mesh(new THREE.BoxGeometry(6, 3, 60), lam('#c99a5e')); handle.position.set(0, 0, 60); fan.add(handle);
+  fan.position.set(96, 1.6, 22); fan.rotation.y = 0.7;
+  // おじさん（台の向こう: ダボシャツ・腹巻・ねじりはちまき。台に両手をついている）
+  const G = new THREE.Group(); scene.add(G); man.G = G;
+  const shirt = lam('#ece6d8'), belly = lam('#b8352b'), skin = lam('#d9a57a');
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(150, 170, 520, 16), shirt); torso.position.set(0, 330, -360); G.add(torso);
+  const hara = new THREE.Mesh(new THREE.CylinderGeometry(172, 172, 110, 16), belly); hara.position.set(0, 120, -360); G.add(hara);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(110, 18, 14), skin); head.position.set(0, 700, -340); G.add(head); man.head = head;
+  const band = new THREE.Mesh(new THREE.TorusGeometry(108, 16, 8, 24), lam('#f4f0e6')); band.rotation.x = Math.PI / 2 - 0.15; band.position.set(0, 750, -340); G.add(band);
+  man.arms = [];
+  for (const s of [-1, 1]) {
+    const up = new THREE.Mesh(new THREE.CylinderGeometry(44, 40, 1, 10), shirt); G.add(up);
+    const lo = new THREE.Mesh(new THREE.CylinderGeometry(36, 30, 1, 10), skin); G.add(lo);
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(40, 12, 10), skin); hand.scale.set(1, 0.6, 1.2); G.add(hand);
+    man.arms.push({ s, up, lo, hand });
+  }
+}
+const _v = new THREE.Vector3();
+function place(m, a, b) { _v.subVectors(b, a); const L = Math.max(1e-3, _v.length()); m.position.copy(a).addScaledVector(_v, 0.5); m.quaternion.setFromUnitVectors(UP, _v.multiplyScalar(1 / L)); m.scale.set(1, L, 1); }
+
+/* ---------- 型抜きの板: 上の面（キャンバスに描く。外れたセルは穴）・下の面（穴のふちの影）・まわりの縁 ---------- */
+const TEX = 256, PXMM = TEX / PH.S;
+const LCOL = [[244, 211, 214], [214, 234, 214], [244, 238, 226], [250, 238, 196], [226, 216, 238]];   // 板の色（ももいろ・うすみどり・しろ・レモン・ふじ）
+const boardCanvas = document.createElement('canvas'); boardCanvas.width = boardCanvas.height = TEX;
+const bctx = boardCanvas.getContext('2d');
+const boardTex = new THREE.CanvasTexture(boardCanvas); boardTex.colorSpace = THREE.SRGBColorSpace; boardTex.anisotropy = 4;
+const boardImg = bctx.createImageData(TEX, TEX);
+const pxSdf = new Float32Array(TEX * TEX), pxNoise = new Float32Array(TEX * TEX);
+for (let i = 0; i < pxNoise.length; i++) pxNoise[i] = (prand() - 0.5) * 0.06 + (prand() < 0.012 ? 0.08 : 0);
+const boardG = new THREE.Group(); scene.add(boardG);
+const topMat = lam('#ffffff', { map: boardTex, alphaTest: 0.5, emissive: '#ffffff', emissiveMap: boardTex, emissiveIntensity: 0.28 });
+const underMat = lam('#7d6266', { map: boardTex, alphaTest: 0.5 });
+const sideMat = lam('#e6c7c9');
+{
+  const top = new THREE.Mesh(new THREE.PlaneGeometry(PH.S, PH.S), topMat); top.rotation.x = -Math.PI / 2; top.position.y = BT; boardG.add(top);
+  const und = new THREE.Mesh(new THREE.PlaneGeometry(PH.S, PH.S), underMat); und.rotation.x = -Math.PI / 2; und.position.y = 0.35; boardG.add(und);
+  for (const [x, z, w, d] of [[0, PH.S / 2, PH.S, 0.4], [0, -PH.S / 2, PH.S, 0.4], [PH.S / 2, 0, 0.4, PH.S], [-PH.S / 2, 0, 0.4, PH.S]]) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, BT, d), sideMat); m.position.set(x, BT / 2, z); boardG.add(m); }
+}
+let shownB = null, texDirty = false, boardRGB = LCOL[0];
+function setupBoard(B) {
+  shownB = B; boardRGB = LCOL[(B.n - 1) % LCOL.length];
+  for (let py = 0; py < TEX; py++) for (let px = 0; px < TEX; px++) pxSdf[py * TEX + px] = B.sh.f((px + 0.5) / PXMM - PH.S / 2, PH.S / 2 - (py + 0.5) / PXMM);
+  sideMat.color.setRGB(boardRGB[0] / 255 * 0.86, boardRGB[1] / 255 * 0.82, boardRGB[2] / 255 * 0.8, THREE.SRGBColorSpace);
+  texDirty = true;
+}
+const fieldC = new Float32Array(NC);
+function drawBoardTex() {
+  const B = shownB; if (!B) return;
+  for (let c = 0; c < NC; c++) fieldC[c] = B.brk[c] ? 1 : 0;
+  const d = boardImg.data, [R0, G0, B0] = boardRGB, done = B.done;
+  for (let py = 0; py < TEX; py++) {
+    const v = (TEX - 1 - py + 0.5) / PXMM / CELL - 0.5;   // セルの行（y が上）
+    const j0 = Math.max(0, Math.min(PH.G - 2, Math.floor(v))), fy = clamp(v - j0, 0, 1);
+    for (let px = 0; px < TEX; px++) {
+      const k = py * TEX + px, o = k * 4, s = pxSdf[k];
+      const u = (px + 0.5) / PXMM / CELL - 0.5, i0 = Math.max(0, Math.min(PH.G - 2, Math.floor(u))), fxx = clamp(u - i0, 0, 1);
+      const a = fieldC[j0 * PH.G + i0], b = fieldC[j0 * PH.G + i0 + 1], c = fieldC[(j0 + 1) * PH.G + i0], e = fieldC[(j0 + 1) * PH.G + i0 + 1];
+      const f = (a * (1 - fxx) + b * fxx) * (1 - fy) + (c * (1 - fxx) + e * fxx) * fy;
+      if (f > 0.5 || (done && s < 0.35)) { d[o + 3] = 0; continue; }
+      let sh = 1 + pxNoise[k];
+      const as = Math.abs(s);
+      if (as < 0.62) sh *= 0.66 + 0.2 * (as / 0.62) + (s > 0 ? 0.05 : -0.03);          // 溝（彫られた線）
+      else if (s < 0 && s > -0.95) sh *= 1.07;                                          // 型のふちの光
+      if (f > 0.3) sh *= 0.55 + (0.5 - f) * 1.5;                                        // 欠けたふち
+      d[o] = clamp(R0 * sh, 0, 255); d[o + 1] = clamp(G0 * sh, 0, 255); d[o + 2] = clamp(B0 * sh, 0, 255); d[o + 3] = 255;
+    }
+  }
+  bctx.putImageData(boardImg, 0, 0);
+  // ひび（割れたとき）
+  if (B.crack && B.crack.length > 1) {
+    const pts = B.crack.map((c, m) => [(cx_(c % PH.G) + PH.S / 2) * PXMM + Math.sin(m * 2.3) * 1.6, (PH.S / 2 - cx_((c / PH.G) | 0)) * PXMM + Math.cos(m * 1.7) * 1.6]);
+    const path = () => { bctx.beginPath(); pts.forEach(([x, y], m) => m ? bctx.lineTo(x, y) : bctx.moveTo(x, y)); };
+    bctx.lineJoin = 'round'; bctx.lineCap = 'round';
+    path(); bctx.strokeStyle = 'rgba(255,255,255,.45)'; bctx.lineWidth = 4.5; bctx.stroke();
+    path(); bctx.strokeStyle = 'rgba(40,18,20,.95)'; bctx.lineWidth = 2.4; bctx.stroke();
+    for (const [m, [x, y]] of pts.entries()) if (m % 4 === 2) { bctx.beginPath(); bctx.moveTo(x, y); bctx.lineTo(x + Math.sin(m) * 6, y + Math.cos(m * 1.3) * 6); bctx.strokeStyle = 'rgba(40,18,20,.7)'; bctx.lineWidth = 1.2; bctx.stroke(); }
+  }
+  boardTex.needsUpdate = true; texDirty = false;
+}
+// 抜けた型（小さなキャンバス + 上下2枚の面）
+function makeShapeMesh(sh, n) {
+  const T = 128, rgb = LCOL[(n - 1) % LCOL.length];
+  const tex = canvasTex(T, T, (g) => {
+    const im = g.createImageData(T, T), d = im.data, p = T / PH.S;
+    for (let py = 0; py < T; py++) for (let px = 0; px < T; px++) {
+      const s = sh.f((px + 0.5) / p - PH.S / 2, PH.S / 2 - (py + 0.5) / p), o = (py * T + px) * 4;
+      if (s > -0.15) { d[o + 3] = 0; continue; }
+      const k = (s > -0.8 ? 1.08 : 1) + (prand() - 0.5) * 0.05;
+      d[o] = clamp(rgb[0] * k, 0, 255); d[o + 1] = clamp(rgb[1] * k, 0, 255); d[o + 2] = clamp(rgb[2] * k, 0, 255); d[o + 3] = 255;
+    }
+    g.putImageData(im, 0, 0);
+  });
+  const G = new THREE.Group();
+  const top = new THREE.Mesh(new THREE.PlaneGeometry(PH.S, PH.S), lam('#ffffff', { map: tex, alphaTest: 0.5, emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: 0.28 })); top.rotation.x = -Math.PI / 2; top.position.y = BT; G.add(top);
+  for (let k = 1; k <= 2; k++) { const m = new THREE.Mesh(new THREE.PlaneGeometry(PH.S, PH.S), lam(k === 1 ? '#b39598' : '#8a7072', { map: tex, alphaTest: 0.5 })); m.rotation.x = -Math.PI / 2; m.position.y = BT - k * 0.9; G.add(m); }
+  return G;
+}
+// 皿の上に並んだ抜けた型
+const shelf = []; let lifting = null;
+const SHELF_K = 0.21, shelfPos = i => new THREE.Vector3(-36 + (i % 6) * 14.4, 1.2, -56);
+function clearShelf() { for (const m of shelf) { scene.remove(m); m.traverse(o => { if (o.material) { if (o.material.map && o.material.map !== boardTex) o.material.map.dispose(); o.material.dispose(); } }); } shelf.length = 0; if (lifting) { scene.remove(lifting.G); lifting = null; } }
+function rebuildShelf() {
+  clearShelf();
+  const H = game.hist.slice(-6);
+  for (const [i, h] of H.entries()) { const G = makeShapeMesh(h.sh, h.n); G.scale.setScalar(SHELF_K); G.position.copy(shelfPos(i)); G.rotation.y = (i % 2 ? 0.08 : -0.06); scene.add(G); shelf.push(G); }
+}
+
+/* ---------- かけら（小さな多面体をまとめて描く） ---------- */
+const MAXC = 320;
+const crumbMesh = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0), lam('#ffffff', { emissive: '#4a4038' }), MAXC);
+crumbMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); crumbMesh.count = 0; crumbMesh.frustumCulled = false; scene.add(crumbMesh);
+let crumbs = [];
+const _q = new THREE.Quaternion(), _m4 = new THREE.Matrix4(), _s = new THREE.Vector3(), _ax = new THREE.Vector3(), _col = new THREE.Color();
+function addCrumb(x, y, size, vy = 60, spread = 40, dark = 1) {
+  if (reduceMotion && crumbs.length > 60) return;
+  if (crumbs.length >= MAXC) crumbs.shift();
+  const r = boardRGB;
+  const cr = ({ p: new THREE.Vector3(x, BT + 0.5, -y), v: new THREE.Vector3((Math.random() - 0.5) * spread, vy * (0.5 + Math.random()), (Math.random() - 0.5) * spread), ax: new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize(), a: Math.random() * 6, w: (Math.random() - 0.5) * 30, s: size * (0.6 + Math.random() * 0.6), life: 0, rest: false, c: [r[0] * dark / 255, r[1] * dark / 255, r[2] * dark / 255], sq: 0.55 + Math.random() * 0.4 });
+  crumbs.push(cr); return cr;
+}
+function stepCrumbs(dt) {
+  for (const c of crumbs) {
+    c.life += dt;
+    if (c.rest) continue;
+    c.v.y -= 2600 * dt; c.p.addScaledVector(c.v, dt); c.a += c.w * dt;
+    const onBoard = boardG.visible && Math.abs(c.p.x) < PH.S / 2 && Math.abs(c.p.z) < PH.S / 2 && !(shownB && shownB.brk[cellAt(c.p.x, -c.p.z)]);
+    const floor = (onBoard ? BT : 0.1) + c.s * 0.4;
+    if (c.p.y < floor && c.v.y < 0) { if (c.p.y < floor - 3) { c.p.y = floor; } else c.p.y = floor; c.v.y *= -0.25; c.v.x *= 0.5; c.v.z *= 0.5; c.w *= 0.5; if (Math.abs(c.v.y) < 25) c.rest = true; }
+  }
+  crumbs = crumbs.filter(c => c.life < 14);
+  crumbMesh.count = crumbs.length;
+  for (const [i, c] of crumbs.entries()) {
+    _q.setFromAxisAngle(c.ax, c.a); _s.set(c.s, c.s * c.sq, c.s);
+    _m4.compose(c.p, _q, _s); crumbMesh.setMatrixAt(i, _m4);
+    _col.setRGB(c.c[0], c.c[1], c.c[2], THREE.SRGBColorSpace); crumbMesh.setColorAt(i, _col);
+  }
+  crumbMesh.instanceMatrix.needsUpdate = true; if (crumbMesh.instanceColor) crumbMesh.instanceColor.needsUpdate = true;
+}
+const cellAt = (x, y) => { const i = Math.floor((x + PH.S / 2) / CELL), j = Math.floor((y + PH.S / 2) / CELL); return i < 0 || j < 0 || i >= PH.G || j >= PH.G ? 0 : j * PH.G + i; };
+
+/* ---------- つまようじ ---------- */
+const needle = new THREE.Group(); scene.add(needle);
+{
+  const wood = lam('#e3c08a'), dir = new THREE.Vector3(0.55, 1, 0.12).normalize();
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 44, 8), wood);
+  const tip = new THREE.Mesh(new THREE.ConeGeometry(0.95, 6, 8), wood);
+  const q = new THREE.Quaternion().setFromUnitVectors(UP, dir);
+  tip.quaternion.copy(q).multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI)); tip.position.copy(dir).multiplyScalar(3);
+  body.quaternion.copy(q); body.position.copy(dir).multiplyScalar(6 + 22);
+  needle.add(tip, body);
+  needle.visible = false;
+}
+const needleShadow = new THREE.Mesh(new THREE.CircleGeometry(1, 16), new THREE.MeshBasicMaterial({ color: '#1a0f0a', transparent: true, opacity: 0.25, depthWrite: false })); needleShadow.rotation.x = -Math.PI / 2; scene.add(needleShadow);
+let needleAt = null, needleUpT = -1;
+
+/* ---------- ゲーム状態 ---------- */
+let game = null, bot = null, botStart = false, state = 'loading';    // loading | title | play | over | skip
+let tt = 0, overShownAt = 0, failAt = -1, pops = [], bubbles = [], frozen = false, ff = false, newShown = false, base = 0, demoEnd = -1, lastAdv = 0;
+let shake = 0, ptrId = null, keyHeld = false, liftT = -1, introT = -1, failInfo = null, countSaid = -1, creakT = -1;
+const LAG = 0.08, FF = 4;   // 物理は画面より 0.08 秒うしろを進む（押した時刻をそのまま使うため）。早送りは 4 倍
+const evTime = e => (e.timeStamp > 1e3 && Math.abs(e.timeStamp - performance.now()) < 5000 ? e.timeStamp : performance.now());
+function newGame(s, botSkill) {
+  game = makeGame(s);
+  bot = botSkill ? makeBot(game, SKILLS[botSkill], mulberry((s * 7 + 3) >>> 0)) : null;
+  pops = []; bubbles = []; failAt = -1; newShown = false; shake = 0; crumbs = []; liftT = -1; introT = tt; failInfo = null; countSaid = -1;
+  ptrId = null; keyHeld = false; needleAt = null; needleUpT = -1;
+  clearShelf(); setupBoard(game.B); boardG.visible = true; boardG.position.set(0, 0, 0); boardG.rotation.set(0, 0, 0);
+  base = performance.now() / 1000 + LAG; lastAdv = performance.now() / 1000;
+}
+
+/* ---------- 1ステップ（物理は 1/240 秒きざみ。描画のコマ数によらない。入力は押した時刻で物理に入る） ---------- */
+function advancePhys() {
+  if (!game) return;
+  const now = performance.now() / 1000;
+  if (frozen) { base = now - game.t - LAG; lastAdv = now; return; }
+  if (ff && state === 'play') base -= (now - lastAdv) * (FF - 1);
+  lastAdv = now;
+  let target = now - base - LAG;
+  if (target - game.t > 0.25 * (ff ? FF : 1)) { base += target - game.t - 0.25 * (ff ? FF : 1); target = now - base - LAG; }
+  let k = 0;
+  while (game.t + PH.DT <= target && k < 4000) { physTick(); k++; }
+}
+function physTick() {
+  stepGame(game);
+  if (bot) bot.step();
+  if (game.events.length) handleEvents();
+}
+function gameTimeOf(ms) { return Math.max(game.t, ms / 1000 - base); }
+function step(dt) {
+  tt += dt;
+  advancePhys();
+  if (state === 'title') demoStep();
+  if (state === 'play' && failAt >= 0 && tt - failAt > 1.8) showOver();
+  if (frozen) return;
+  if (shake > 0) shake -= dt;
+  for (const p of pops) p.life += dt;
+  pops = pops.filter(p => p.life < p.dur);
+  for (const b of bubbles) b.life += dt;
+  bubbles = bubbles.filter(b => b.life < b.dur);
+  stepCrumbs(dt);
+}
+function addPop(text, opt = {}) {
+  pops = pops.filter(p => p.kind !== (opt.kind || 'mid'));
+  pops.push({ text, sub: opt.sub, life: 0, dur: opt.dur || 1.4, kind: opt.kind || 'mid', size: opt.size || 26, col: opt.col, x: opt.x, y: opt.y });
+}
+function say(text, opt = {}) { bubbles = [{ text, life: 0, dur: opt.dur || 1.4, col: opt.col || '#2a1c18', size: opt.size || 18 }]; }
+const NICE = ['お、うまいね', 'やるねえ', 'ほう、きれいだ', 'いい手つきだ', 'おみごと'];
+const MILE = { 3: ['3枚！', 'いい調子'], 5: ['5枚！', 'おじさん 苦笑い'], 8: ['8枚！', '夜店の 名人'], 10: ['10枚！', '屋台が つぶれる'], 12: ['12枚！', '型抜きの 鬼'], 15: ['15枚！', '伝説の 指先'] };
+const recentCells = [];
+function handleEvents() {
+  const loud = state === 'play', quiet = state === 'skip';
+  for (const e of game.events) {
+    const B = game.B;
+    switch (e.type) {
+      case 'poke': needleAt = { x: e.x, y: e.y }; needleUpT = -1; if (loud) sKotsu(); break;
+      case 'lift': needleUpT = tt; if (e.cut === 0 && loud && game.pokes <= 3 && game.n === 1 && rec.plays < 3) addPop(game.B.type[cellAt(e.x, e.y)] === 2 ? '型の中は あぶない' : '溝の上を ゆっくり押す', { kind: 'tip', size: 16, dur: 1.4, col: '#fbf1e2' }); break;
+      case 'break': {
+        texDirty = true;
+        for (const c of e.cells) { recentCells.push(c); if (recentCells.length > 40) recentCells.shift(); }
+        if (!quiet) for (const c of e.cells) if (B.type[c] !== 2 && Math.random() < 0.8) addCrumb(cx_(c % PH.G), cx_((c / PH.G) | 0), B.type[c] === 1 ? 0.55 : 0.8, 40, 30);
+        if (loud) { if (e.ng || e.no) sPoro(e.ng + e.no); }
+        break;
+      }
+      case 'go': if (loud) { say(game.n === 1 ? 'まずは まるだ。ゆっくりな' : `つぎは「${B.name}」だ`, { dur: 1.6 });  } break;
+      case 'warn': if (loud) say('あと10びょう！', { col: '#b8352b', dur: 1.2 }); break;
+      case 'cleared': {
+        liftT = tt;
+        // 外の板がばらばらに外れて、型が持ちあがる
+        if (!quiet) { for (let k = 0; k < 46; k++) { let x, y; do { x = (Math.random() - 0.5) * PH.S; y = (Math.random() - 0.5) * PH.S; } while (B.sh.f(x, y) < 2); const c = addCrumb(x, y, 1.8 + Math.random() * 2.2, 25, 0); if (c) { const l = Math.hypot(x, y) || 1; c.v.x = x / l * (15 + Math.random() * 30); c.v.z = -y / l * (15 + Math.random() * 30); c.sq = 0.22 + Math.random() * 0.12; c.ax.set((Math.random() - 0.5) * 0.4, 1, (Math.random() - 0.5) * 0.4).normalize(); c.w *= 0.3; } } for (let k = 0; k < 30; k++) { const a = Math.random() * Math.PI * 2, r = 10 + Math.random() * 12; addCrumb(Math.cos(a) * r, Math.sin(a) * r, 0.5 + Math.random() * 0.4, 50, 30); } }
+        boardG.visible = false;
+        lifting = { G: makeShapeMesh(B.sh, B.n), t0: tt, slot: Math.min(game.hist.length - 1, 5) };
+        scene.add(lifting.G);
+        if (loud) {
+          sNuke(); say(game.n >= 5 && game.n % 2 ? 'こりゃ 商売あがったりだ' : NICE[(game.n * 3 + game.seed) % NICE.length], { col: '#2f6b55', size: 20, dur: 1.8 });
+          addPop('ぬけた！', { kind: 'hot', size: 40, dur: 1.6, col: '#f2c94c', sub: `${e.n}枚目「${B.name}」・${e.time.toFixed(1)}秒` });
+          const M = MILE[e.n] || (e.n > 15 && e.n % 5 === 0 ? [`${e.n}枚！`, 'もう 型がない'] : null);
+          if (M) { addPop(M[0], { sub: M[1], kind: 'mile', size: 30, dur: 1.9, col: '#f2c94c' }); sChime(e.n >= 8); }
+          if (rec.best > 0 && e.n > rec.best && !newShown && !botStart) { newShown = true; addPop('自己ベスト更新！', { kind: 'best', size: 20, dur: 1.8, col: '#f2c94c' }); sChime(false); }
+          if (navigator.vibrate) try { navigator.vibrate(12); } catch {}
+        }
+        break;
+      }
+      case 'next': {
+        if (lifting) { lifting.G.position.copy(shelfPos(lifting.slot)); lifting.G.scale.setScalar(SHELF_K); shelf.push(lifting.G); lifting = null; if (shelf.length > 6) rebuildShelf(); }
+        crumbs = crumbs.filter(c => c.rest && Math.abs(c.p.x) > PH.S / 2 + 4);   // おじさんが板のくずを はらう
+        setupBoard(game.B); boardG.visible = true; introT = tt; needleAt = null; countSaid = -1;
+        break;
+      }
+      case 'fail': {
+        failAt = tt; needleUpT = tt; texDirty = true;
+        failInfo = { kind: e.kind };
+        if (e.kind === 'crack') {
+          if (!quiet) for (const c of B.crack || []) for (let k = 0; k < 2; k++) addCrumb(cx_(c % PH.G), cx_((c / PH.G) | 0), 0.9, 120, 60, 0.95);
+          addPop('ぱきっ！', { kind: 'hot', size: 48, dur: 2.2, col: '#ff8a6a', sub: `「${B.name}」が 割れちゃった` });
+          if (loud) { sPaki(); shake = 0.35; say(game.cleared >= 5 ? 'あ〜っ、おしいねえ' : 'あ〜 ぱきっと いったね', { size: 18, dur: 2 }); if (navigator.vibrate) try { navigator.vibrate([25, 30, 40]); } catch {} }
+        } else {
+          addPop('時間ぎれ', { kind: 'hot', size: 40, dur: 2.2, col: '#fbf1e2', sub: `「${B.name}」 ${Math.round(progOf(B) * 100)}% まで` });
+          if (loud) { sEnd(); say('はい、時間〜', { size: 18, dur: 2 }); }
+        }
+        break;
+      }
+    }
+  }
+  if (state !== 'play' && game.events.some(e => e.type === 'fail')) failAt = tt;
+  game.events.length = 0;
+}
+// タイトル背景のデモ: ボットが抜いている（音なし）
+function newDemo() { newGame(nextSeed(), 'good'); demoEnd = -1; }
+function demoStep() { if (game.over || game.cleared >= 8) { if (demoEnd < 0) demoEnd = tt; if (tt - demoEnd > 2.2) newDemo(); } }
+
+/* ---------- 3D の同期 ---------- */
+function syncWorld(dt) {
+  const g = game;
+  if (shownB !== g.B) setupBoard(g.B);
+  if (texDirty) drawBoardTex();
+  // 新しい板: おじさんが右から すべらせて置く
+  if (g.phase === 'intro' && !g.over) { const k = ease(clamp((tt - introT) / (PH.INTRO * 0.8), 0, 1)); boardG.position.x = lerp(120, 0, k); boardG.rotation.y = lerp(-0.25, 0, k); }
+  else { boardG.position.x = 0; boardG.rotation.y = 0; }
+  // 割れたら板が少しはねる
+  if (g.over && g.fail === 'crack' && !reduceMotion) { const k = tt - failAt; boardG.position.y = k < 0.3 ? Math.sin(k / 0.3 * Math.PI) * 3 : 0; boardG.rotation.z = k < 0.5 ? Math.sin(k * 40) * 0.01 * (0.5 - k) : 0; }
+  else { boardG.position.y = 0; boardG.rotation.z = 0; }
+  // 抜けた型: 持ちあがって、皿の上へ
+  if (lifting) {
+    const k = (tt - lifting.t0) / PH.LIFT, up = ease(clamp(k / 0.35, 0, 1)), mv = ease(clamp((k - 0.4) / 0.5, 0, 1)), to = shelfPos(lifting.slot);
+    lifting.G.position.set(lerp(0, to.x, mv), up * 22 * (1 - mv) + lerp(0, to.y, mv), lerp(0, to.z, mv));
+    lifting.G.scale.setScalar(lerp(1, SHELF_K, mv)); lifting.G.rotation.y = Math.sin(k * 5) * 0.05 * (1 - mv);
+    lifting.G.rotation.x = -0.25 * up * (1 - mv);
+  }
+  // つまようじ: 押しているあいだ 力に応じて沈む。離すと持ちあがって消える
+  const P = g.P;
+  if (P || (needleAt && needleUpT >= 0 && tt - needleUpT < 0.3)) {
+    const at = P ? P : needleAt, sink = P ? Math.min(1.6, P.F * 1.1) : 0, up = P ? 0 : (tt - needleUpT) / 0.3 * 30;
+    needle.visible = true; needle.position.set(at.x, BT + 0.3 - sink + up + (P ? 0 : 0), -at.y);
+    needleShadow.visible = true; needleShadow.position.set(at.x + 2.2, BT + 0.08, -at.y + 1.2); needleShadow.scale.setScalar(1.6 + up * 0.08);
+  } else if (needleAt && needleUpT < 0 && !g.over) { needle.visible = true; needleShadow.visible = true; }
+  else { needle.visible = false; needleShadow.visible = false; }
+  // 電球とちょうちんのゆらぎ
+  const fl = 1 + Math.sin(tt * 7.3) * 0.02 + Math.sin(tt * 13.1) * 0.015;
+  bulbL.intensity = 1.7 * fl; bulbM.userData.glow.material.opacity = 0.8 * fl;
+  for (const L of lanterns) L.gl.material.opacity = 0.75 + Math.sin(tt * 1.7 + L.t0) * 0.12;
+  // おじさんの腕: 台に手をつく。新しい板を出すときは 右手で すべらせる
+  for (const A of man.arms) {
+    const sh = new THREE.Vector3(A.s * 170, 520, -330);
+    let hand = new THREE.Vector3(A.s * 150, 30, -190);
+    if (A.s > 0 && g.phase === 'intro' && !g.over) { const k = clamp((tt - introT) / (PH.INTRO * 0.8), 0, 1); hand = new THREE.Vector3(lerp(160, 40, ease(k)), 12, lerp(-120, -60, k)); }
+    const el = new THREE.Vector3((sh.x + hand.x) / 2 + A.s * 60, (sh.y + hand.y) / 2 - 40, (sh.z + hand.z) / 2 - 40);
+    place(A.up, sh, el); place(A.lo, el, hand); A.hand.position.copy(hand);
+  }
+  if (man.head) man.head.rotation.z = Math.sin(tt * 0.9) * 0.04;
+}
+
+/* ---------- カメラ: 手元を見おろす ---------- */
+const LOOK = new THREE.Vector3();
+function updateCamera() {
+  const ui = state === 'title' || state === 'over';
+  const tanV = Math.tan(camera.fov * DEG / 2), tanH = tanV * camera.aspect;
+  // 板を見る角度 al（水平から）・板の中心が来る画面の高さ fy（0=上 1=下）・板の幅が画面の何割か
+  const al = (port ? 44 : 40) * DEG, fy = ui ? (port ? 0.32 : 0.36) : (port ? 0.62 : 0.58);
+  const R = Math.max((PH.S / 2 + 8) / tanH, (port ? 60 : 52) / tanV);
+  const c = al - Math.atan((fy - 0.5) * 2 * tanV);
+  let sx = 0, sy = 0;
+  if (shake > 0 && !reduceMotion) { const a = shake * 6; sx = (Math.random() - 0.5) * a; sy = (Math.random() - 0.5) * a; }
+  camera.position.set(sx, R * Math.sin(al) + sy, R * Math.cos(al));
+  LOOK.set(sx, camera.position.y - Math.sin(c) * 100, camera.position.z - Math.cos(c) * 100);
+  camera.lookAt(LOOK);
+}
+const tmpV = new THREE.Vector3();
+function projectW(v) { tmpV.copy(v).project(camera); return { x: (tmpV.x + 1) / 2 * W, y: (1 - tmpV.y) / 2 * H }; }
+const project = (x, y, h = BT) => projectW(W3(x, y, h));
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(), plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -BT), hitP = new THREE.Vector3();
+function screenToBoard(sx, sy) {
+  ndc.set(sx / W * 2 - 1, -(sy / H) * 2 + 1); ray.setFromCamera(ndc, camera);
+  if (!ray.ray.intersectPlane(plane, hitP)) return null;
+  return { x: hitP.x - boardG.position.x, y: -hitP.z };
+}
+function render() {
+  if (!game) return;
+  updateCamera();
+  syncWorld();
+  renderer.render(scene, camera);
+  drawFx();
+}
+
+/* ---------- 2D の演出 ---------- */
+function txt(s, x, y, size, fill = '#fbf1e2', stroke = 'rgba(23,26,43,.9)', lw = 6, font = FD) {
+  const wt = /^\d00 /.exec(font);
+  fx.font = wt ? `${wt[0]}${size}px ${font.slice(wt[0].length)}` : `${size}px ${font}`; fx.lineJoin = 'round'; fx.lineWidth = lw; fx.strokeStyle = stroke; fx.strokeText(s, x, y); fx.fillStyle = fill; fx.fillText(s, x, y);
+}
+function rrect(x, y, w, h, r) { fx.beginPath(); fx.moveTo(x + r, y); fx.arcTo(x + w, y, x + w, y + h, r); fx.arcTo(x + w, y + h, x, y + h, r); fx.arcTo(x, y + h, x, y, r); fx.arcTo(x, y, x + w, y, r); fx.closePath(); }
+function drawFx() {
+  fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fx.clearRect(0, 0, W, H);
+  if (!game || state === 'loading') return;
+  // 夜のふち（四すみを暗く）と、右上の裸電球のあかり
+  const vg = fx.createRadialGradient(W / 2, H * 0.6, Math.min(W, H) * 0.35, W / 2, H * 0.6, Math.hypot(W, H) * 0.62);
+  vg.addColorStop(0, 'rgba(12,12,28,0)'); vg.addColorStop(1, 'rgba(12,12,28,.62)'); fx.fillStyle = vg; fx.fillRect(0, 0, W, H);
+  const bg = fx.createRadialGradient(W * 0.86, 0, 0, W * 0.86, 0, Math.min(W, H) * 0.6);
+  bg.addColorStop(0, 'rgba(255,214,150,.30)'); bg.addColorStop(1, 'rgba(255,214,150,0)'); fx.fillStyle = bg; fx.fillRect(0, 0, W, H);
+  const g = game, sc = Math.min(1, W / 390 + 0.05), B = g.B;
+  fx.textAlign = 'center';
+  if (state === 'play' || state === 'skip') {
+    const n = g.over ? g.cleared : g.n;
+    txt(g.over ? `${n}枚` : `${n}枚目`, W / 2, safeT + 52, 40 * sc);
+    txt(g.over ? 'ぬけた' : `「${B.name}」`, W / 2, safeT + 76, 15 * sc, '#fbf1e2', 'rgba(23,26,43,.9)', 5, `700 ${FB}`);
+    if (!g.over) {
+      // ぬけぐあい（溝の外れた割合）と のこり時間
+      const bw = Math.min(220, W * 0.55), bx = W / 2 - bw / 2, by = safeT + 88, pr = progOf(B);
+      fx.fillStyle = 'rgba(23,26,43,.65)'; rrect(bx - 2, by - 2, bw + 4, 10, 5); fx.fill();
+      fx.fillStyle = '#f2c94c'; rrect(bx, by, Math.max(6, bw * pr), 6, 3); fx.fill();
+      const tl = g.phase === 'intro' ? g.tLim : g.tLeft, hot = g.phase === 'play' && tl <= PH.WARN;
+      txt(`のこり ${Math.ceil(tl)}秒`, W / 2, by + 26, (hot ? 17 : 14) * sc, hot ? '#ff8a6a' : '#fbf1e2', 'rgba(23,26,43,.9)', 5, `700 ${FB}`);
+      if (g.cleared > 0) txt(`ぬけた ${g.cleared}枚`, W / 2, by + 46, 12 * sc, '#f2c94c', 'rgba(23,26,43,.9)', 4, `700 ${FB}`);
+    }
+    if (ff) txt('早送り ▶▶', W / 2, safeT + 150, 12 * sc, '#ff8a6a', 'rgba(23,26,43,.9)', 4, `700 ${FB}`);
+    // 押している所の輪: 力の大きさ（輪の大きさ）と、型にかかっている応力（色: 白→黄→赤）
+    if (g.P && !g.over) {
+      const p = project(g.P.x, g.P.y), dz = g.P.danger || 0, r = (10 + Math.min(1.5, g.P.F) * 16) * sc;
+      fx.lineWidth = 3; fx.strokeStyle = dz > 0.85 ? 'rgba(255,90,70,.95)' : dz > 0.65 ? 'rgba(255,205,90,.9)' : 'rgba(255,250,240,.75)';
+      fx.beginPath(); fx.arc(p.x, p.y, r, 0, Math.PI * 2); fx.stroke();
+    }
+    drawGuide(sc);
+  }
+  // おじさんのふきだし（画面の上から）
+  for (const b of bubbles) {
+    const k = clamp(b.life / 0.08, 0, 1), out = clamp((b.dur - b.life) / 0.15, 0, 1), s = b.size * sc * (reduceMotion ? 1 : 0.8 + 0.2 * k);
+    fx.globalAlpha = Math.min(k, out);
+    fx.font = `${s}px ${FD}`; const w = fx.measureText(b.text).width + 22 * sc, h = s + 14 * sc;
+    const bx = clamp(W * 0.3 - w / 2, 8, W - w - 8), by = safeT + 128 * sc;
+    fx.fillStyle = 'rgba(252,244,230,.97)'; rrect(bx, by, w, h, h / 2.4); fx.fill();
+    fx.strokeStyle = 'rgba(42,28,24,.6)'; fx.lineWidth = 2; fx.stroke();
+    fx.beginPath(); fx.moveTo(bx + 18, by + 1); fx.lineTo(bx + 10, by - 10 * sc); fx.lineTo(bx + 30, by + 1); fx.closePath(); fx.fillStyle = 'rgba(252,244,230,.97)'; fx.fill();
+    fx.fillStyle = b.col; fx.textBaseline = 'middle'; fx.fillText(b.text, bx + w / 2, by + h / 2 + 1); fx.textBaseline = 'alphabetic';
+    fx.font = `700 ${10 * sc}px ${FB}`; fx.fillStyle = 'rgba(252,244,230,.8)'; fx.textAlign = 'left'; fx.fillText('おじさん', bx + 4, by - 4); fx.textAlign = 'center';
+    fx.globalAlpha = 1;
+  }
+  for (const p of pops) {
+    const k = clamp(p.life / 0.16, 0, 1), out = clamp((p.dur - p.life) / 0.25, 0, 1);
+    const y = H * (p.kind === 'hot' ? 0.36 : p.kind === 'mile' ? 0.47 : p.kind === 'best' ? 0.54 : p.kind === 'tip' ? 0.8 : 0.33) - p.life * 8;
+    fx.globalAlpha = Math.min(k, out);
+    const s = (reduceMotion ? 1 : 1 + 0.25 * Math.max(0, 1 - p.life / 0.12)) * p.size * sc;
+    txt(p.text, W / 2, y, s, p.col || '#fbf1e2');
+    if (p.sub) txt(p.sub, W / 2, y + 22 * sc, 13 * sc, '#fbf1e2', 'rgba(23,26,43,.92)', 4, `700 ${FB}`);
+    fx.globalAlpha = 1;
+  }
+  fx.textAlign = 'start';
+}
+// はじめの数回だけ: いま何をすればいいか
+function drawGuide(sc) {
+  const g = game;
+  if (g.over || bot || rec.plays >= 3 || g.n > 2 || g.phase !== 'play') return;
+  const y = H - safeB - 62;
+  const s = g.P ? (g.P.F > 0.6 ? 'ぽろっと外れたら 離す！' : '押している あいだ 力が増える') : (g.pokes === 0 ? '型のふちの 溝を 押す' : '外れた所の となりを つつく');
+  txt(s, W / 2, y, 16 * sc, g.P && g.P.F > 0.6 ? '#ff8a6a' : '#fbf1e2', 'rgba(23,26,43,.92)', 6, `700 ${FB}`);
+  // はじめの1回: 溝の上に目印
+  if (g.pokes === 0 && g.n === 1 && rec.plays < 2) {
+    const N = guideN || (guideN = planNext(g, 3));
+    if (N) { const p = project(N.x, N.y), r = (14 + Math.sin(tt * 6) * 3) * sc; fx.strokeStyle = 'rgba(242,201,76,.9)'; fx.lineWidth = 3; fx.beginPath(); fx.arc(p.x, p.y, r, 0, Math.PI * 2); fx.stroke(); }
+  } else guideN = null;
+}
+let guideN = null;
+
+/* ---------- 結果 ---------- */
+function failMsg() {
+  const n = game.cleared, k = game.fail, B = game.B, pr = Math.round(game.lastProg * 100);
+  if (k === 'time') return { noren: pr < 3 ? 'おしまい' : 'じかんぎれ', msg: pr < 3 ? `「${B.name}」の溝を押すと、つまようじでつつける。押す長さで力が変わる。` : `「${B.name}」は ${pr}% まで外れたところで 時間ぎれ。ぽろっと外れたら離して、となりへ。` };
+  const why = B.failC >= 0 && B.failP ? (B.sh.f(B.failP[0], B.failP[1]) < -0.5 ? 'in' : B.failE > B.str[B.failC] * 1.0 && game.lastHold > 0.9 ? 'long' : 'edge') : 'edge';
+  const M = { in: '型の内側をつついて、ひびが型に走った。溝の上か、すこし外側をつつこう。', long: '押しすぎて、ひびが型の中に回りこんだ。ぽろっと外れたら すぐ離そう。', edge: 'ひびが溝からそれて、型の中へ走った。' + (n >= 6 ? ' 細い所・とがった所は、外側から そっと。' : ' 溝のすこし外側を、短めに。') };
+  return { noren: 'ぱきっ', msg: M[why] };
+}
+function manLine() {
+  const n = game.cleared, k = game.fail;
+  if (n >= 12) return 'おじさん「もう 勘弁してくれ…」';
+  if (n >= 8) return 'おじさん「名人だね、こりゃ」';
+  if (n >= 5) return 'おじさん「お、うまいね。また来な」';
+  if (n >= 2) return 'おじさん「つぎは もっと いけるよ」';
+  return k === 'time' ? 'おじさん「ゆっくりで いいけど、時間はあるよ」' : 'おじさん「だれでも 最初は割るもんだ」';
+}
+function showOver() {
+  if (state !== 'play') return;
+  state = 'over';
+  const n = game.cleared, pr = game.lastProg;
+  const isNew = n > rec.best || (n === rec.best && pr > rec.bestProg && n + pr > 0);
+  if (!botStart) { rec.plays++; rec.total += n; rec.last = n; rec.lastProg = r2(pr); if (isNew) { rec.best = n; rec.bestProg = r2(pr); } save(); }
+  $('oScore').textContent = n;
+  $('oUnit').textContent = n > 0 ? '枚 ぬけた' : '枚。まずは1枚！';
+  $('oSub').textContent = `（${n + 1}枚目「${game.B.name}」${Math.round(pr * 100)}% まで）`;
+  $('oLyric').textContent = manLine();
+  const F = failMsg();
+  $('oMsg').textContent = F.msg;
+  $('oNoren').innerHTML = Array.from(F.noren).map(c => `<span>${c}</span>`).join('');
+  $('oBest').textContent = rec.best; $('oTotal').textContent = rec.total; $('oPlays').textContent = rec.plays;
+  $('newRec').hidden = !(isNew && !botStart && rec.plays > 0 && (n > 0 || pr > 0));
+  $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({ text: `${shareText(n, pr, game.fail, game.B.name)}${isNew && rec.plays > 1 && n > 0 && !botStart ? ' 自己ベスト！' : ''}\n`, url: gameUrl(), hashtags: '型抜き' });
+  $('copyMsg').textContent = '画面タップ・スペースでもう一回';
+  $('over').hidden = false; $('hud').hidden = true;
+  overShownAt = performance.now();
+  $('retryBtn').focus({ preventScroll: true });
+}
+const shareText = (n, pr, fail, name) => n > 0 ? `🍬型抜き ${n}枚 ぬけた！（${n + 1}枚目「${name}」${Math.round(pr * 100)}%で${fail === 'time' ? '時間ぎれ' : 'ぱきっ'}）` : `🍬型抜き、1枚目の「${name}」で ${fail === 'time' ? '時間ぎれ' : 'ぱきっ'}…（${Math.round(pr * 100)}%まで）`;
+
+/* ---------- シェア ---------- */
+const PUBLIC_URL = 'https://asobi.enludus.com/games/katanuki/';
+function gameUrl() {
+  try {
+    if (/^https?:$/.test(location.protocol) && location.hostname !== 'localhost') return location.origin + location.pathname;
+  } catch {}
+  return PUBLIC_URL;
+}
+
+/* ---------- HUD ---------- */
+function updateHud() { $('hBest').textContent = rec.best ? `${rec.best}枚` : '—'; }
+function fillTitle() { $('tBest').textContent = rec.best || '—'; $('tPlays').textContent = rec.plays; }
+
+/* ---------- 音（でんぷん菓子と木の台。低くこもった音だけ。2kHz 以上は使わない。最後に 1.9kHz のローパス） ---------- */
+let ac = null, master = null, noiseBuf = null;
+function wakeAudio() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1900; lp.Q.value = 0.5;
+      master = ac.createDynamicsCompressor(); master.threshold.value = -16; master.ratio.value = 5;
+      master.connect(lp).connect(ac.destination);
+      const len = ac.sampleRate * 1.5; noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0); let b = 0;
+      for (let i = 0; i < len; i++) { b = b * 0.8 + (Math.random() * 2 - 1) * 0.2; d[i] = b * 2.6; }
+    }
+    if (ac.state === 'suspended') ac.resume();
+  } catch {}
+}
+const live = () => ac && state === 'play' && !frozen;
+function tone(freq, at, dur, vol, type = 'sine', f1) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at); if (f1) o.frequency.exponentialRampToValueAtTime(f1, at + dur);
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  o.connect(g).connect(master); o.start(at); o.stop(at + dur + 0.05);
+}
+function noise(at, dur, vol, type, freq, q = 1, lpf = 1200, att = 0.003) {
+  const s = ac.createBufferSource(); s.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = lpf;
+  const g = ac.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + att); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  s.connect(f).connect(lp).connect(g).connect(master); s.start(at, Math.random() * 1.0); s.stop(at + dur + 0.05);
+}
+// つつく「こつ」: つまようじの先が板に当たる、小さな木の音
+function sKotsu() { try { if (!live()) return; const n0 = ac.currentTime; noise(n0, 0.035, 0.07, 'bandpass', 520, 1.6, 900); tone(230, n0, 0.045, 0.05, 'triangle', 160); } catch {} }
+// 外れる「ぽろ」: 粉っぽい小さなかけらが こぼれる（数に応じて 2〜4 粒）
+function sPoro(n) { try { if (!live()) return; const n0 = ac.currentTime, k = Math.min(4, 1 + Math.floor(n / 3)); for (let i = 0; i < k; i++) { const t = n0 + i * 0.03 + Math.random() * 0.015; noise(t, 0.04, 0.05 + 0.015 * Math.min(n, 6), 'bandpass', 380 + Math.random() * 260, 1.2, 800); tone(300 - i * 25, t, 0.05, 0.03, 'sine', 210); } } catch {} }
+// 割れる「ぱき」: 低い乾いた音 + 板がはねる「こん」（高い音にしない）
+function sPaki() { try { const n0 = ac.currentTime; noise(n0, 0.09, 0.2, 'bandpass', 620, 1.1, 1000, 0.002); tone(210, n0, 0.12, 0.14, 'triangle', 90); noise(n0 + 0.07, 0.06, 0.12, 'bandpass', 480, 1.2, 800, 0.002); tone(140, n0 + 0.1, 0.25, 0.1, 'sine', 70); tone(330, n0 + 0.3, 0.45, 0.04, 'triangle', 196); } catch {} }
+// ぬけた「すぽっ」: 型が持ちあがる やわらかい音
+function sNuke() { try { if (!live()) return; const n0 = ac.currentTime; tone(190, n0, 0.14, 0.12, 'sine', 400); noise(n0, 0.08, 0.05, 'lowpass', 400, 0.7, 500); } catch {} }
+function sChime(big) { try { if (!live()) return; const n0 = ac.currentTime + 0.12; (big ? [[523, 0], [659, 0.1], [784, 0.2], [1047, 0.32]] : [[523, 0], [659, 0.1], [784, 0.2]]).forEach(([f, t]) => tone(f, n0 + t, 0.42, 0.04)); tone(82, n0, 0.3, 0.08, 'sine', 60); } catch {} }
+function sTick(hot) { try { if (!live()) return; const n0 = ac.currentTime; tone(hot ? 440 : 330, n0, 0.06, 0.05, 'triangle', hot ? 400 : 300); noise(n0, 0.025, 0.04, 'bandpass', 600, 2, 900); } catch {} }
+function sCreak() { try { if (!live()) return; const n0 = ac.currentTime; tone(120, n0, 0.12, 0.05, 'sawtooth', 95); } catch {} }
+function sEnd() { try { if (!live()) return; const n0 = ac.currentTime; tone(330, n0, 0.4, 0.05, 'triangle', 220); tone(262, n0 + 0.2, 0.5, 0.045, 'sine', 196); } catch {} }
+// 残り5秒の カウントダウン（おじさんが 指で台をたたく）・応力が高いときの「みし」
+function soundTick() {
+  const g = game; if (!g || state !== 'play' || g.over) return;
+  if (g.phase === 'play' && g.tLeft <= 5.0) { const s = Math.ceil(g.tLeft); if (s !== countSaid && s > 0) { countSaid = s; sTick(s <= 3); say(`${s}`, { col: '#b8352b', size: 24, dur: 0.8 }); } }
+  if (g.P && g.P.danger > 0.8 && tt - creakT > 0.5) { creakT = tt; sCreak(); }
+}
+
+/* ---------- ループ ---------- */
+let lastTs = performance.now();
+function frame() {
+  const now = performance.now();
+  const dt = Math.min(0.1, (now - lastTs) / 1000); lastTs = now;
+  step(dt);
+  soundTick();
+  render();
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 入力: 板の上を押す = つまようじでつつく。押している長さで力。指の位置と押した・離した時刻で物理へ ---------- */
+function start() {
+  wakeAudio(); state = 'play';
+  $('title').hidden = true; $('over').hidden = true; $('hud').hidden = false;
+  const bn = HASH.has('debug') && HASH.get('bot') && SKILLS[HASH.get('bot')] ? HASH.get('bot') : null;
+  botStart = !!bn;   // #bot=… で始めたプレイは記録しない（撮影・確認用）
+  newGame(nextSeed(), bn); frozen = false;
+  updateHud();
+  // #debug&skip=秒: その秒数だけ一気に進め、型があと少しで抜けそうな所（pose=nice）で止める（OGP 撮影用。bot=good と組み合わせる。freeze=1 で止めたまま）
+  if (HASH.has('debug') && +HASH.get('skip') > 0) skipTo(game.t + +HASH.get('skip'), HASH.get('pose') || 'nice');
+  if (HASH.has('debug') && HASH.get('ff') === '1') ff = true;
+}
+function poseOk(g, pose) {
+  if (pose !== 'nice') return true;
+  const P = g.P, B = g.B;
+  return g.phase === 'play' && P && P.F > 0.15 && g.cleared >= (+HASH.get('minN') || 3) && progOf(B) > 0.78 && progOf(B) < 0.97 && g.t - P.t0 > 0.12;   // 抜けそうな型・押している針・皿に並んだ型
+}
+function skipTo(t1, pose = 'none') {
+  const quiet = state; state = 'skip';
+  const lim = t1 + 240;
+  while (!game.over && game.t < lim) {
+    physTick();
+    if (game.t >= t1 && poseOk(game, pose)) break;
+  }
+  state = quiet;
+  pops = []; failAt = game.over ? tt : -1; shake = 0; bubbles = []; crumbs = [];
+  rebuildShelf(); setupBoard(game.B); boardG.visible = game.phase !== 'lift'; introT = tt - 9; liftT = -1;
+  if (game.P) { needleAt = { x: game.P.x, y: game.P.y }; needleUpT = -1; }
+  // ついさっき外れた所のまわりに こまかいかけら
+  for (const c of recentCells) if (game.B.brk[c] && game.B.type[c] !== 2) for (let k = 0; k < 2; k++) { addCrumb(cx_(c % PH.G) + (Math.random() - 0.5) * 3, cx_((c / PH.G) | 0) + (Math.random() - 0.5) * 3, 0.5 + Math.random() * 0.5, 0, 6); }
+  for (let k = 0; k < 120; k++) stepCrumbs(1 / 60);
+  base = performance.now() / 1000 - game.t - LAG;
+  if (HASH.get('freeze') === '1') frozen = true;
+}
+function onPress(ms, sx, sy) {
+  if (state !== 'play' || !game) return;
+  if (game.over) { if (failAt >= 0 && tt - failAt > 0.6) showOver(); return; }
+  if (bot) return;
+  const p = screenToBoard(sx, sy); if (!p) return;
+  gInput(game, gameTimeOf(ms), 'down', p.x, p.y);
+}
+function onRelease(ms) { if (state === 'play' && game && !game.over && !bot) gInput(game, gameTimeOf(ms), 'up'); }
+fxc.addEventListener('pointerdown', e => {
+  e.preventDefault(); wakeAudio();
+  if (ptrId != null && ptrId !== e.pointerId) return;   // 2本目の指は数えない
+  ptrId = e.pointerId;
+  try { fxc.setPointerCapture(e.pointerId); } catch {}
+  onPress(evTime(e), e.clientX, e.clientY);
+});
+const ptrUp = e => { if (e.pointerId !== ptrId) return; ptrId = null; onRelease(evTime(e)); };
+addEventListener('pointerup', ptrUp);
+addEventListener('pointercancel', ptrUp);
+fxc.addEventListener('contextmenu', e => e.preventDefault());
+for (const id of ['title', 'over']) {
+  $(id).addEventListener('pointerdown', e => {
+    if (e.target.closest('button, a') || state === 'loading') return;
+    if (id === 'over' && performance.now() - overShownAt < 400) return;
+    e.preventDefault(); start();
+  });
+}
+addEventListener('keydown', e => {
+  const c = e.code;
+  if (state === 'play') {
+    if (game && game.over && (c === 'Space' || c === 'Enter') && !e.repeat) { e.preventDefault(); if (failAt >= 0 && tt - failAt > 0.6) showOver(); }
+    return;
+  }
+  if (c !== 'Space' && c !== 'Enter') return;
+  if (state === 'loading' || state === 'skip') return;
+  const el = document.activeElement;
+  if (el && el !== $('retryBtn') && el !== $('startBtn') && el.matches('button, a, input')) return;
+  if (state === 'over' && performance.now() - overShownAt < 400) { e.preventDefault(); return; }
+  e.preventDefault(); if (!e.repeat) start();
+});
+addEventListener('blur', () => { if (ptrId != null) { ptrId = null; onRelease(performance.now()); } });
+$('startBtn').addEventListener('click', start);
+$('retryBtn').addEventListener('click', start);
+$('copyBtn').addEventListener('click', () => {
+  const text = `${shareText(rec.last, rec.lastProg, game && game.fail, game && game.B.name)} ${gameUrl()}`;
+  const msg = $('copyMsg');
+  const fallback = () => { msg.textContent = text; const r = document.createRange(); r.selectNodeContents(msg); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.style.userSelect = 'text'; };
+  try { navigator.clipboard.writeText(text).then(() => { msg.textContent = 'コピーしました'; }, fallback); } catch { fallback(); }
+});
+
+/* ---------- 調整・検証用（#debug のときだけ） ---------- */
+if (HASH.has('debug')) {
+  const q = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(p * (s.length - 1))]; };
+  // 同じ「押した・離した」の時刻と場所の列を、いろいろなコマ割りで物理に流して、結果がそろうか（quant = 時刻を使わずコマの時刻で入れた場合のくらべ）
+  const replay = (log, seedR, fps, quant = false) => {
+    const g = makeGame(seedR), L = log.slice().sort((a, b) => a.t - b.t); let i = 0, tNow = 0;
+    while (!g.over && tNow < 3000 && g.cleared < 40) {
+      tNow += 1 / fps;
+      while (i < L.length && L[i].t <= tNow) { gInput(g, Math.max(g.t, quant ? tNow - LAG : L[i].t), L[i].kind, L[i].x, L[i].y); i++; }
+      while (g.t + PH.DT <= tNow - LAG && !g.over) { stepGame(g); g.events.length = 0; }
+      if (i >= L.length && g.queue.length === 0 && !g.P) { while (!g.over && g.t < tNow + 200) { stepGame(g); g.events.length = 0; } }
+    }
+    return { n: g.cleared, prog: r2(g.lastProg), fail: g.fail, t: r3(g.t) };
+  };
+  const rect = id => { const el = $(id); if (!el || el.closest('[hidden]') || el.hidden) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), w: Math.round(r.width), h: Math.round(r.height) }; };
+  const scr = (x, y) => { const p = project(x + boardG.position.x, y); return { x: Math.round(p.x), y: Math.round(p.y) }; };
+  const ui = () => ({
+    state, start: rect('startBtn'), retry: rect('retryBtn'), copy: rect('copyBtn'), x: rect('xBtn'), hub: rect('hubBack'), best: rect('hud'),
+    board: { center: scr(0, 0), tl: scr(-PH.S / 2, PH.S / 2), tr: scr(PH.S / 2, PH.S / 2), bl: scr(-PH.S / 2, -PH.S / 2), br: scr(PH.S / 2, -PH.S / 2), mmPerPx: r3(PH.S / Math.max(1, scr(PH.S / 2, 0).x - scr(-PH.S / 2, 0).x)) },
+    shelf: projectW(shelfPos(0)), bulb: projectW(bulbM.position),
+  });
+  window.__katanuki = {
+    info: () => {
+      if (!game) return { state };
+      const g = game, B = g.B, N = g.phase === 'play' && !g.over && !g.P ? planNext(g, 5) : null;
+      return {
+        state, t: r3(g.t), n: g.n, name: B.name, cleared: g.cleared, phase: g.phase, over: g.over, fail: g.fail, tLeft: r2(g.tLeft), tLim: g.tLim, prog: r3(progOf(B)), pokes: g.pokes,
+        board: { groove: B.nG, grooveCut: B.gB, grooveStrength: r3(B.sg), plate: r3(psOf(B.n)), cells: NC, cellMm: CELL },
+        press: g.P ? { x: r2(g.P.x), y: r2(g.P.y), heldMs: Math.round((g.t - g.P.t0) * 1000), F: r3(g.P.F), danger: r3(g.P.danger), conc: r2(g.P.conc) } : null,
+        // つぎに つつくとよい点: 画面座標 x, y（そこを押す）と押す時間の目安 holdMs。minMs = 溝が外れはじめる押し時間、maxMs = 型が割れはじめる押し時間（いまの状態をためしに押してみた結果）
+        next: N ? { x: scr(N.x, N.y).x, y: scr(N.x, N.y).y, holdMs: Math.round(N.hold * 1000), minMs: Math.round(N.tG * 1000), maxMs: Math.round(N.tI * 1000), bx: r2(N.x), by: r2(N.y), expectCut: N.cut } : null,
+        danger: g.P ? r3(g.P.danger) : 0,
+        bot: !!bot, botStart, ff, frozen, rec, seed: g.seed, queue: g.queue.length, lag: LAG,
+      };
+    },
+    ui,
+    // 物理だけでボットに N 回遊ばせる: sim('first', 100) → [枚数...]（'first' / 'casual' / 'good' / 'mash'（板のどこかを 0.3 秒おきに短く連打）/ 'mashLong' / 'center'（型のまん中ばかり））
+    sim: (skill = 'first', N = 50, opts = {}) => Array.from({ length: N }, (_, i) => runBot(typeof skill === 'string' ? SKILLS[skill] : skill, (opts.seed0 ?? 1000) + i, opts).n),
+    stats: (skill = 'first', N = 100, opts = {}) => {
+      const sk = typeof skill === 'string' ? SKILLS[skill] : skill;
+      const R = Array.from({ length: N }, (_, i) => runBot(sk, (opts.seed0 ?? 1000) + i, opts)), n = R.map(r => r.n), fails = {}, hist = {};
+      for (const r of R) { fails[r.fail] = (fails[r.fail] || 0) + 1; hist[r.n] = (hist[r.n] || 0) + 1; }
+      return { skill: typeof skill === 'string' ? skill : 'custom', N, p10: q(n, 0.1), p25: q(n, 0.25), p50: q(n, 0.5), p75: q(n, 0.75), p90: q(n, 0.9), min: Math.min(...n), max: Math.max(...n), ge1: R.filter(r => r.n >= 1).length / N, ge3: R.filter(r => r.n >= 3).length / N, ge8: R.filter(r => r.n >= 8).length / N, mean: +(n.reduce((a, b) => a + b, 0) / N).toFixed(2), secPerPlay: +(R.reduce((a, r) => a + r.t, 0) / N).toFixed(1), fails, hist };
+    },
+    // 型ごとの溝の強さ・板の厚み・制限時間
+    levels: (maxN = 18) => Array.from({ length: maxN }, (_, i) => { const g = makeGame(1); const B = makeBoard(g, i + 1); return { n: i + 1, name: B.name, groove: B.nG, inner: B.nI, grooveStrength: r3(B.sg), plate: r3(psOf(i + 1)), time: timeOf(i + 1, B.nG) }; }),
+    // ボットの入力の列（時刻・場所つき）を記録して、13 / 30 / 60 / 144 fps のコマ割りで流しなおす（frameQuantized は時刻を使わなかった場合のくらべ）
+    fpsCheck: (skill = 'good', seedR = 4242) => {
+      const r = runBot(SKILLS[skill], seedR, { log: true, maxN: 40 });
+      return { live: { n: r.n, prog: r2(r.prog), fail: r.fail, t: r3(r.t) }, fps13: replay(r.log, seedR, 13), fps30: replay(r.log, seedR, 30), fps60: replay(r.log, seedR, 60), fps144: replay(r.log, seedR, 144), fps30frameQuantized: replay(r.log, seedR, 30, true), fps60frameQuantized: replay(r.log, seedR, 60, true), inputs: r.log.length };
+    },
+    // いまのプレイをボットに任せる（記録はしない）
+    autoplay: (skill = 'good') => { if (game && state === 'play' && !game.over) { if (game.P) gInput(game, game.t, 'up'); bot = makeBot(game, SKILLS[skill], mulberry(nextSeed())); botStart = true; ptrId = null; } },
+    skip: (s, pose = 'none') => skipTo(game.t + s, pose),
+    freeze: (on = true) => { frozen = on; },
+    ff: (on = true) => { ff = on; },
+    screen: (x, y) => scr(x, y),
+    toBoard: (sx, sy) => screenToBoard(sx, sy),
+    gl: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles }),
+    PH, SKILLS, makeGame, runBot, stepGame, gInput, planNext, trialPress, makeBoard, game: () => game,
+  };
+}
+
+/* ---------- はじめ ---------- */
+try { await Promise.race([Promise.all([document.fonts.load(`40px "Dela Gothic One"`, '0123456789枚目ぬけた！ぱきっ時間ぎれ自己ベスト更新おじさんまずはるだゆっくりなつぎ「」型の中あぶない溝上を押すお、うまいねやるねえほうきれいいい手つきおみごとこりゃ商売あがったり3枚調子5苦笑8夜店名人10屋台つぶれ12鬼15伝説指先もうがあと10びょう〜割ちゃったあっしいいった'), document.fonts.load(`700 16px "Zen Kaku Gothic New"`, '0123456789枚目のこり秒ぬけたまでかんぎれ「」・早送り▶型のふち溝を押すている力が増えるぽろっと外れたら離す！所となりつつく内側あぶないさかなまるさんかくひょうたんハートほしねこちょうちょうさぎとりもみじかさとげぼしかざぐるまゆきのはこんぺいとう割れ%')]), new Promise(r => setTimeout(r, 1500))]); } catch {}
+resize();
+buildStall();
+newDemo();
+state = 'title';
+fillTitle(); updateHud();
+$('startBtn').disabled = false; $('startBtn').textContent = 'つつく！';
+$('startBtn').focus({ preventScroll: true });
+requestAnimationFrame(frame);
+</script>
+<a class="hub-back" id="hubBack" href="/" aria-label="あそび横丁（ゲーム一覧）にもどる">← 横丁</a>
+<script>
+// プレイ中でもゲーム一覧に戻れるボタン。押してもゲームの入力（タップ・長押し）に伝わらないようにする
+for (const ev of ['pointerdown', 'touchstart', 'mousedown']) document.getElementById('hubBack').addEventListener(ev, e => e.stopPropagation(), { passive: true });
+</script>
+</body>
+</html>
