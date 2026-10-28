@@ -1,0 +1,1581 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>釣り堀</title>
+<meta name="description" content="昭和の街の 屋内釣り堀。蛍光灯の光が ゆれる四角い池で、竹竿に 赤い浮き。浮きが ちょんちょん…ぐっと沈んだら 合わせて、押している間は 竿を立てて 寄せ、離すと ゆるめる。張りすぎると 糸が ぷつん、ゆるめすぎると 針が外れる。魚の引き・向き・疲れ、竹竿のしなり、糸の伸びと張力を 計算する3D物理のブラウザゲーム。何匹 釣れるか。ログイン不要。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="釣り堀">
+<meta property="og:description" content="浮きが ぐっと沈んだら 合わせ。竿を立てて 寄せ、離して ゆるめる。切らさず、外さず、何匹 釣れる？">
+<meta property="og:url" content="https://asobi.enludus.com/games/tsuribori/">
+<meta property="og:image" content="https://asobi.enludus.com/games/tsuribori/ogp.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%A3%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@500;700&display=swap">
+<style>
+:root { padding: env(safe-area-inset-top, 0px) 0 env(safe-area-inset-bottom, 0px); }
+*, *::before, *::after { box-sizing: border-box; }
+body { margin: 0; }
+/* 全画面 WebGL（屋内の釣り堀。釣り人の うしろ肩ごしに 池を見る）+ 2D の演出レイヤー（浮きのアップ・糸の張り・おじさんの声）。タイトル/結果は下寄せのカード1枚 */
+:root {
+  --bg: #2c3a33;         /* 釣り堀の 薄暗い 水の色 */
+  --ink: #232a24;
+  --paper: #f4efe0;      /* 料金表の 紙 */
+  --noren: #1f4a5a;      /* 釣り堀の のれん（藍） */
+  --noren-ink: #f4efe0;
+  --gold: #e0a43a;
+  --red: #c8402e;        /* 赤い浮き */
+  --font-display: "Dela Gothic One", "Hiragino Sans", "Yu Gothic", sans-serif;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", system-ui, sans-serif;
+  color-scheme: light;
+}
+[hidden] { display: none !important; }
+html, body { height: 100%; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); overflow: hidden;
+  -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+}
+#gl, #fx { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#fx { touch-action: none; cursor: pointer; }
+.overlay {
+  position: fixed; inset: 0; display: grid; place-items: center; z-index: 40;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 16px;
+  touch-action: none; cursor: pointer; overflow: hidden;
+}
+#title { place-items: end center; padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 18px); background: linear-gradient(to top, rgba(14, 22, 18, .6), rgba(14, 22, 18, 0) 62%); }
+#over { place-items: end center; background: linear-gradient(to top, rgba(14, 22, 18, .66), rgba(14, 22, 18, 0) 70%); padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px); }
+.card {
+  width: min(360px, 100%); background: var(--paper); color: var(--ink);
+  border-radius: 10px; overflow: hidden; box-shadow: 0 10px 36px rgba(0,10,5,.45);
+  text-align: center; cursor: default;
+}
+.noren {
+  background: var(--noren); color: var(--noren-ink);
+  display: flex; gap: 3px; padding-top: 16px;
+  background-image: repeating-linear-gradient(90deg, rgba(255,255,255,.0) 0 24px, rgba(255,255,255,.06) 24px 26px);
+}
+.noren span {
+  flex: 1; background: var(--noren); border-bottom: 3px solid rgba(244,239,224,.5);
+  font-family: var(--font-display); font-size: 31px; line-height: 1; padding-block: 6px 14px;
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.2); white-space: nowrap;
+}
+.noren span.w { flex: 1.45; font-size: 27px; padding-top: 8px; }
+.noren.result { padding-top: 10px; }
+.noren.result span { font-size: 26px; padding-block: 4px 10px; }
+.body { padding: 16px 20px 18px; display: grid; gap: 11px; }
+.lead { margin: 0; font-size: 14px; line-height: 1.7; text-wrap: balance; }
+.score { font-family: var(--font-display); font-size: 60px; line-height: 1; font-variant-numeric: tabular-nums; }
+.score small { font-size: 22px; margin-left: 4px; }
+.score .sub { display: block; font-family: var(--font-body); font-weight: 700; font-size: 13px; margin-top: 6px; letter-spacing: .04em; }
+.lyric { margin: -2px 0 0; font-size: 13px; letter-spacing: .04em; color: #a8452a; min-height: 1.4em; font-weight: 700; }
+.meta { display: flex; justify-content: center; gap: 6px 16px; font-size: 13px; font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.meta b { font-size: 16px; }
+.badge {
+  justify-self: center; background: var(--gold); color: #3a2410; font-weight: 700;
+  font-size: 12px; letter-spacing: .14em; padding: 3px 10px; border-radius: 99px;
+}
+.col { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 6px; min-height: 0; }
+.col i { display: block; height: 10px; border-radius: 50% 40% 40% 50% / 50%; box-shadow: inset 0 -2px 0 rgba(0,0,0,.14); position: relative; }
+.col i::after { content: ""; position: absolute; left: -5px; top: 1px; border: 4px solid transparent; border-right: 5px solid currentColor; }
+.col .more { font-size: 12px; font-weight: 700; align-self: center; }
+#over .lead { font-size: 13px; line-height: 1.55; }
+#over .body { gap: 9px; padding-block: 12px 14px; }
+.btns { display: grid; gap: 8px; }
+.btns .two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+button {
+  font: inherit; font-weight: 700; font-size: 16px; border: 0; border-radius: 8px;
+  padding: 13px 16px; cursor: pointer;
+  background: var(--noren); color: var(--noren-ink); box-shadow: 0 3px 0 #0e2a34;
+}
+button:active { transform: translateY(2px); box-shadow: 0 1px 0 #0e2a34; }
+button:disabled { opacity: .6; cursor: progress; }
+a.xbtn {
+  display: flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none;
+  font-weight: 700; font-size: 16px; border-radius: 8px; padding: 13px 16px;
+  background: #0f1419; color: #fff; box-shadow: 0 3px 0 #000;
+}
+a.xbtn:active { transform: translateY(2px); box-shadow: 0 1px 0 #000; }
+a.xbtn:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+a.xbtn svg { width: 16px; height: 16px; fill: currentColor; }
+button.sub { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink); padding-inline: 8px; font-size: 15px; }
+button:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+.how { font-size: 12px; opacity: .72; margin: 0; line-height: 1.6; }
+.err { font-size: 13px; color: #b3361b; margin: 0; font-weight: 700; }
+.back { font-size: 13px; color: var(--ink); opacity: .75; }
+.back:hover { opacity: 1; }
+@media (max-height: 700px) {
+  .score { font-size: 48px; }
+  .body { gap: 8px; padding-block: 12px 14px; }
+  button, a.xbtn { padding-block: 10px; }
+  .noren span { font-size: 27px; }
+}
+@media (max-height: 600px) { #over .lead, #title .how, .col { display: none; } }
+.hub-back {
+  position: fixed; z-index: 60;
+  left: calc(env(safe-area-inset-left, 0px) + 10px); bottom: calc(env(safe-area-inset-bottom, 0px) + 10px);
+  font: 700 12px/1 "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", sans-serif; letter-spacing: .04em;
+  padding: 7px 11px; border-radius: 99px; text-decoration: none;
+  background: rgba(20, 18, 24, .55); color: #fff; -webkit-backdrop-filter: blur(4px); backdrop-filter: blur(4px);
+}
+.hub-back:focus-visible { outline: 3px solid #e0a43a; outline-offset: 2px; }
+</style>
+</head>
+<body>
+<canvas id="gl" aria-hidden="true"></canvas>
+<canvas id="fx" aria-label="釣り堀のゲーム画面。浮きが ぐっと沈んだら タップで 合わせる。魚が かかったら、押している間は 竿を立てて 寄せ、離すと 竿を寝かせて ゆるめる。押す位置の 左右で 竿を倒す向き"></canvas>
+
+<div class="overlay" id="title">
+  <div class="card">
+    <div class="noren" aria-hidden="true"><span>釣</span><span>り</span><span>堀</span><span class="w">ぐっ</span></div>
+    <div class="body">
+      <p class="lead">赤い浮きが ちょんちょん…<br><b>ぐっと 沈んだら タップ</b>で 合わせ。<br>かかったら <b>押す間 竿を立てて 寄せる</b>、<br><b>離すと ゆるめる</b>。張りすぎると ぷつん、<br>ゆるめすぎると 外れる。何匹 釣れるか！</p>
+      <div class="meta"><span>最高 <b id="tBest">—</b> 匹</span><span>遊んだ <b id="tPlays">0</b> 回</span></div>
+      <div class="btns"><button id="startBtn" disabled>よみこみ中…</button></div>
+      <p class="err" id="loadErr" hidden></p>
+      <p class="how">早く合わせると すっぽ抜け、遅いと 餌だけ 取られる（餌は 3回ぶん）。押す位置の 左右で 竿を倒す向き（魚の走る向きと 逆に倒すと 早く弱る）。弱って 浮いてきたら 竿を立てて 網へ。キーボード: スペース（長押しで 立てる）、←→ で 倒す向き。</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="over" hidden>
+  <div class="card">
+    <div class="noren result" aria-hidden="true" id="oNoren"><span>ぷ</span><span>つ</span><span>ん</span></div>
+    <div class="body">
+      <div class="badge" id="newRec" hidden>新記録</div>
+      <div class="score"><span id="oScore">0</span><small id="oUnit">匹 釣れた</small><span class="sub" id="oSub"></span></div>
+      <div class="col" id="oCol" aria-label="釣った魚"></div>
+      <p class="lyric" id="oLyric"></p>
+      <p class="lead" id="oMsg"></p>
+      <div class="meta"><span>最高 <b id="oBest">0</b> 匹</span><span>遊んだ <b id="oPlays">0</b> 回</span><span>ぜんぶで <b id="oTotal">0</b> 匹</span></div>
+      <div class="btns">
+        <div class="two"><button id="retryBtn">もう一回</button><button class="sub" id="copyBtn">結果をコピー</button></div>
+        <a class="xbtn" id="xBtn" href="https://x.com/intent/post" target="_blank" rel="noopener"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>Xでシェア</a>
+      </div>
+      <p class="how" id="copyMsg">画面タップ・スペースでもう一回</p>
+      <a class="back" href="../../">← ほかのゲームを見る</a>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const THREE_URL = 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+let THREE;
+try {
+  THREE = await import(THREE_URL);
+} catch (e) {
+  $('startBtn').textContent = '読み込めませんでした';
+  $('loadErr').hidden = false;
+  $('loadErr').textContent = '3D の読み込みに失敗しました。通信状況を確かめて、ページを再読み込みしてください。';
+  throw e;
+}
+
+const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const FD = getComputedStyle(document.documentElement).getPropertyValue('--font-display');
+const FB = getComputedStyle(document.documentElement).getPropertyValue('--font-body');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const lerp = (a, b, k) => a + (b - a) * k;
+const HASH = new URLSearchParams(location.hash.slice(1));
+const r1 = v => Math.round(v * 10) / 10, r2 = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
+
+/*PHYS-BEGIN*/
+/* ---------- 釣り堀の物理（three には頼らない自前。長さ m・力 N・重さ kg・時間 秒・角度 rad） ----------
+   座標: 水面が y = 0（上が +）。池は x が 左右、z は 手前が +・奥が −。釣り人の 手元（竿じり）は HX, HY, HZ（岸の ベンチ）。
+   竹竿（のべ竿・リールなし）: 長さ ROD。立てる角度 phi（水平から）と 左右の 向き yaw。押している間は PHI_HI へ じわっと 立てる（腕の速さ W_UP。
+     腕は 張力に 負けないので、押しつづけると 糸が 切れるまで 立てる）、離すと PHI_LO へ 寝かせる（W_DN）。左右は 押した位置で 決まる（YAW_MAX まで）。
+   糸: 竿先から 針（魚の口）まで 長さ L0 の ナイロン（伸びの ばね K_LINE）。糸の長さは 変わらないので、竿を 立てると 竿先が 手前・上へ 来て 魚を 寄せ、
+     寝かせると 竿先が 魚の方へ 出て ゆるむ。竿先と 魚の きょり l が L0 を こえると 張る。
+     竿の しなり: 竿先は 竿と直角の 向きにだけ しなる（ばね K_ROD・最大 BEND_MAX）。糸と 竿の なす角 α で しなりの クッションが 変わる
+       （竿を立てて 糸と 直角に 近いほど よく しなって 衝撃を 吸う。竿先が 魚の方を 向くと しならず、糸の 伸びだけ）。
+     直列の ばね（準静的）: l − L0 = T / K_LINE + T·sin²α / K_ROD（しなりきったら 糸だけ）。伸びる速さに 比例する 減衰 C_LINE も 足す。
+     T > T_BREAK で 糸が 切れる（ぷつん）。T < T_SLACK（ゆるみ）が 魚ごとの tOut 秒 つづくと 針が 外れる（ばれる）。
+   魚: 質点（重さ m・水の抵抗 cd·|v|·v）。自分の 向き h へ 泳ぐ力（体の大きさ Fb × 気分 × 体力）。気分は 引く（pull）・走る（run: 急に 強く 別の向きへ）・休む（rest）
+     を 乱数で 切りかえる（大物ほど よく走り、長く走る）。糸の 張力は 口を 竿先へ 引き、頭の 向きも 竿先へ 回す（張力が 強いほど）。
+     体力 S は 張力に さからうほど へる（糸が 頭を 横へ 引くほど 多く: 魚の 走る向きと 逆へ 竿を 倒すと よく効く）。張力が ないと 少し もどる。
+     弱ると 浮いてくる。手元から NET_R 以内・水面近く・体力 NET_S 以下が NET_T 秒 つづいたら 網に 入る（釣れた）。
+   アタリ: 魚が 寄ってきて 餌を つつく（ちょん: 口に 少し 入って 出る）→ 食う（ぐっ: 口の 奥まで 入れて 下へ 引く・hold 秒）→ 吐き出す（餌だけ 取られる）。
+     浮きの 沈み x は 2次の 系（水の ばね FL_W・減衰 FL_Z）で、入力は 餌が 口に 入った 深さ（魚の 引き）と 水面の 波。
+     タップ（合わせ）した 時刻に 餌が 口の 奥（HOOK_D 以上）なら かかる。早い（つつき中・食う前）と すっぽ抜け、遅い（吐いた後）と 餌だけ 取られる。
+     待っている間（魚が まだ 来ない）の タップは 空合わせ（2回で 餌が 落ちる）。合わせの 失敗は 餌を 1個 使う。餌が なくなったら おしまい（ESA_BACK 匹 釣るごとに 1個 もらえる）。
+   入力は すべて 時刻つき（画面のコマには よらない）。物理は 1/500 秒きざみ。 */
+const PH = {
+  DT: 1 / 500, G: 9.8,
+  HX: 0.12, HY: 0.95, HZ: 0.35,
+  ROD: 2.4, PHI_LO: 0.16, PHI_HI: 1.12, PHI_REST: 0.42, L0: 3.2, TANA: 0.6,
+  W_UP: 0.3, W_DN: 1.0, YAW_MAX: 0.45, W_YAW: 0.9,
+  K_LINE: 60, C_LINE: 0.6, K_ROD: 6, BEND_MAX: 0.95, T_BREAK: 6, T_SLACK: 0.05, RUN_CAP: 0.9, RUN_T0: 0.45, RUN_T1: 0.55, DRAIN_CAP: 1.0, MOUTH_T: 0.7, MOUTH_K: 2.0, PULL_CAP: 0.6, NEAR_K: 2.5, NEAR_CAP: 1.5, NEAR_R: 3.0,
+  X0: -3.6, X1: 3.6, Z0: -6.5, Z1: -0.35, DEEP: -0.92, TOP: -0.035,
+  NET_R: 2.3, NET_Y: -0.18, NET_S: 0.32, NET_T: 0.3,
+  ESA: 3, ESA_BACK: 4, T_CAST: 1.0, T_MISS: 1.4, T_LAND: 2.4, T_FIGHT: 90,
+  FL_W: 17, FL_Z: 0.32, HOOK_D: 0.6,
+};
+function mulberry(seed) { let s = seed >>> 0; return () => { s = (s + 0x6D2B79F5) >>> 0; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
+function rndG(g) { g.rs = (g.rs + 0x6D2B79F5) >>> 0; let t = g.rs; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }
+const clampP = (v, a, b) => Math.max(a, Math.min(b, v));
+const wrapA = a => { while (a > Math.PI) a -= 2 * Math.PI; while (a < -Math.PI) a += 2 * Math.PI; return a; };
+const smooth = k => k <= 0 ? 0 : k >= 1 ? 1 : k * k * (3 - 2 * k);
+// n 匹目の 魚（大きさ・力・アタリの くせ）。あとの魚ほど 大きく、アタリは 短く、針は 小さく（ゆるみに 弱い）
+function fishSpec(g, n) {
+  const R = () => rndG(g);
+  let L = 28 + 2.2 * n + R() * 6;
+  if (n >= 3 && R() < 0.16) L += 8 + R() * 12;   // ときどき 大物
+  if (n === 0) L = 26 + R() * 4;
+  L = Math.min(L, 84);
+  const kind = L < 34 ? 'hera' : (R() < 0.24 ? 'nishiki' : R() < 0.5 ? 'gold' : 'koi');
+  const s = L / 30;
+  return {
+    L, kind, s, Fb: (n === 0 ? 2.0 : 2.3) * s * s, m: 0.45 * s * s * s + 0.25, cd: 2.0 * s * s, end: 1 / (0.75 + 0.3 * s),
+    pRun: Math.min(0.5, (n < 2 ? 0.14 : 0.2) + 0.022 * n), runK: Math.min(2.2, (n < 2 ? 1.3 : 1.55) + 0.02 * n), nearK: n < 2 ? 1.25 : PH.NEAR_K, bolt: n === 0 ? 1.0 : 1.35,
+    nib: Math.min(4, (n === 0 ? 1 : 1 + Math.floor(n / 3)) + (R() < 0.5 ? 1 : 0)), nibAmp: Math.min(0.7, 0.3 + 0.024 * n),
+    hold: Math.max(0.5, 1.4 - 0.065 * n) + R() * 0.25,
+    tOut: Math.max(0.65, 1.6 - 0.065 * n),
+    approach: 2.0 + R() * 3.2,
+  };
+}
+function rodTip(phi, yaw) { const c = Math.cos(phi); return { x: PH.HX + PH.ROD * c * Math.sin(yaw), y: PH.HY + PH.ROD * Math.sin(phi), z: PH.HZ - PH.ROD * c * Math.cos(yaw), dx: c * Math.sin(yaw), dy: Math.sin(phi), dz: -c * Math.cos(yaw) }; }
+function makeGame(seed = 1) {
+  const g = {
+    seed, rs: (seed ^ 0x9e3779b9) >>> 0, t: 0, phase: 'cast', phaseT: 0, n: 0, esa: PH.ESA, misses: 0, karaHp: 1, casts: 0,
+    over: false, fail: null, failInfo: null, overT: 0, queue: [], events: [], log: null, down: false, downX: 0.5,
+    rod: { phi: PH.PHI_REST, yaw: 0, yawT: 0, w: 0, bend: 0 },
+    ln: { T: 0, ext: -1, slackT: 0, peak: 0, dT: 0, mouth: 0, sa: 0, ux: 0, uy: -1, uz: 0 },
+    fl: { x: 0, v: 0, X: 0, Z: -3.7 },
+    fish: null, bite: null, caught: [], biggest: null, fightT0: 0, netT: 0, castYaw: 0, missKind: null, lastSplash: -9, fightLog: [],
+  };
+  newCast(g);
+  return g;
+}
+function clampPool(p) { p.x = clampP(p.x, PH.X0, PH.X1); p.z = clampP(p.z, PH.Z0, PH.Z1); }
+function newCast(g) {
+  const R = () => rndG(g);
+  g.phase = 'cast'; g.phaseT = g.t; g.casts++;
+  const yaw = (R() - 0.5) * 0.3; g.castYaw = yaw; g.rod.yawT = yaw;
+  const tp = rodTip(PH.PHI_REST, yaw), hd = Math.sqrt((PH.L0 - 0.04) ** 2 - (tp.y + PH.TANA) ** 2);
+  g.fl.X = tp.x + Math.sin(yaw) * hd; g.fl.Z = tp.z - Math.cos(yaw) * hd; g.fl.x = 0; g.fl.v = 0;
+  const sp = fishSpec(g, g.n), a = R() * Math.PI * 2, d = 1.4 + R() * 1.1;
+  const f = { sp, x: g.fl.X + Math.cos(a) * d, y: -0.35 - R() * 0.35, z: g.fl.Z + Math.sin(a) * d * 0.8, vx: 0, vy: 0, vz: 0, h: 0, hd: 0, S: 1, mode: 'approach', modeEnd: 0, force: 0, t0: -1, wig: (R() - 0.5) * 0.8, thr: 0, bumps: [] };
+  clampPool(f); f.a0 = { x: f.x, y: f.y, z: f.z }; f.h = Math.atan2(g.fl.Z - f.z, g.fl.X - f.x);
+  // さわり（魚が 寄ってきて 糸に さわる 小さな ゆれ）
+  for (let k = 0, t = 0.62; k < 3; k++) { t += 0.08 + R() * 0.12; f.bumps.push({ k: t, a: 0.06 + R() * 0.08 }); }
+  g.fish = f; g.bite = null; g.ln.T = 0; g.ln.slackT = 0; g.ln.ext = -1; g.ln.peak = 0; g.netT = 0;
+  g.events.push({ type: 'cast' });
+}
+// 餌が 口に 入っている 深さ 0〜1（つつき: 少し入って 出る / 食う: 奥まで 入れて hold 秒 / 吐く）
+function dIn(b, t) {
+  let d = 0;
+  for (const k of b.nibs) { const s = t - k.t0; if (s < 0 || s > 0.26) continue; d = Math.max(d, k.a * (s < 0.07 ? s / 0.07 : s < 0.12 ? 1 : 1 - (s - 0.12) / 0.14)); }
+  const s = t - b.h0;
+  if (s >= 0 && s <= b.hd + 0.1) d = Math.max(d, s < 0.12 ? s / 0.12 : s <= b.hd ? 1 : 1 - (s - b.hd) / 0.1);
+  return d;
+}
+function planBite(g) {
+  const R = () => rndG(g), sp = g.fish.sp, nibs = [];
+  let t = g.t + 0.15 + R() * 0.3;
+  for (let k = 0; k < sp.nib; k++) { nibs.push({ t0: t, a: sp.nibAmp * (0.65 + R() * 0.5) }); t += 0.32 + R() * 0.55; }
+  const h0 = nibs.length ? t + R() * 0.4 : t;
+  g.bite = { nibs, h0, hd: sp.hold, end: h0 + sp.hold + 0.12, nk: 0, held: false };
+  g.phase = 'bite'; g.phaseT = g.t;
+  g.events.push({ type: 'near' });
+}
+// 水面の 波（浮きの ゆれ。描画の 水面と 同じ式）
+const waveH = (x, z, t) => 0.006 * Math.sin(1.7 * x + 1.1 * t) + 0.005 * Math.sin(2.3 * z - 1.4 * t + 0.7) + 0.003 * Math.sin(3.1 * (x + z) + 2.1 * t);
+const waveU = (x, z, t) => (waveH(x, z, t) - waveH(x, z, t - 0.25)) * 4;
+function floatStep(g, dt, u) {
+  const f = g.fl, w = PH.FL_W;
+  f.v += (w * w * (u - f.x) - 2 * PH.FL_Z * w * f.v) * dt; f.x += f.v * dt;
+}
+function gInput(g, t, kind, x = 0.5) { if (g.log) g.log.push({ t, kind, x }); const q = g.queue; let i = q.length; while (i > 0 && q[i - 1].t > t) i--; q.splice(i, 0, { t, kind, x }); }
+function applyInput(g, e) {
+  if (g.over) return;
+  if (e.kind === 'down') {
+    if (g.down) return;
+    g.down = true; g.downX = e.x;
+    if (g.phase === 'wait' || g.phase === 'cast') kara(g);
+    else if (g.phase === 'bite') hookCheck(g, e.t);
+    else if (g.phase === 'fight') g.rod.yawT = clampP((e.x - 0.5) * 2, -1, 1) * PH.YAW_MAX;
+    g.events.push({ type: 'down', x: e.x });
+  } else if (e.kind === 'move') {
+    if (g.down && g.phase === 'fight') { g.downX = e.x; g.rod.yawT = clampP((e.x - 0.5) * 2, -1, 1) * PH.YAW_MAX; }
+  } else if (e.kind === 'up') {
+    if (!g.down) return;
+    g.down = false; g.events.push({ type: 'up' });
+  }
+}
+function kara(g) {
+  if (g.phase === 'cast' && g.t - g.phaseT < 0.5) return;   // 振りこみの 途中は 数えない
+  g.karaHp -= 0.5; g.events.push({ type: 'kara', hp: g.karaHp });
+  if (g.karaHp <= 0) return missBite(g, 'drop');
+  g.fish.mode = 'flee'; newCastKeep(g);
+}
+function newCastKeep(g) { const S = g.karaHp; newCast(g); g.karaHp = S; }
+function missBite(g, kind) {
+  g.esa--; g.misses++; g.missKind = kind; g.karaHp = 1;
+  g.phase = 'miss'; g.phaseT = g.t;
+  const f = g.fish; f.mode = 'flee'; f.h = Math.atan2(f.z - PH.HZ, f.x - PH.HX) + (rndG(g) - 0.5) * 1.5;
+  g.events.push({ type: 'miss', kind, esa: g.esa });
+}
+function hookCheck(g, t) {
+  const b = g.bite, d = dIn(b, t);
+  if (t >= b.h0 && t <= b.h0 + b.hd + 0.1 && d >= PH.HOOK_D) return startFight(g, t);
+  missBite(g, t < b.h0 + 0.12 ? 'early' : 'late');
+}
+function startFight(g, t) {
+  const f = g.fish, R = () => rndG(g);
+  g.phase = 'fight'; g.phaseT = g.t; g.fightT0 = g.t; g.netT = 0;
+  f.x = g.fl.X; f.z = g.fl.Z; f.y = -PH.TANA; f.vx = f.vy = f.vz = 0; f.S = 1;
+  const away = Math.atan2(f.z - PH.HZ, f.x - PH.HX);
+  f.h = away + (R() - 0.5) * 1.2; f.hd = f.h; f.mode = 'run'; f.force = Math.min(f.sp.bolt * (0.9 + R() * 0.2), 0.8 * PH.T_BREAK / f.sp.Fb); f.modeEnd = g.t + 0.6 + R() * 0.5;
+  g.rod.yawT = g.rod.yaw; g.ln.slackT = 0; g.ln.ext = -1; g.ln.peak = 0; g.ln.mouth = 0;
+  g.fl.x = 1.4;
+  g.events.push({ type: 'hook', L: f.sp.L, t });
+}
+// 魚の 気分の 切りかえ（体力・何匹目かで 変わる）
+function nextMode(g, f) {
+  const R = () => rndG(g), S = f.S, sp = f.sp;
+  const away = Math.atan2(f.z - PH.HZ, f.x - PH.HX);
+  if (S < 0.12) { f.mode = 'tired'; f.force = 0.06; f.modeEnd = g.t + 0.8 + R(); f.hd = f.h + (R() - 0.5) * 1.4; return; }
+  const near = Math.hypot(f.x - PH.HX, f.z - PH.HZ) < PH.NEAR_R && S > 0.3;   // 足元に 寄せられると 突っ込む
+  const r = R(), pRun = Math.min(0.85, sp.pRun * (0.35 + 0.65 * S) * (near ? 2.5 : 1)), pRest = 0.22 * (1.25 - S);
+  if (r < pRun) { f.mode = 'run'; f.force = Math.min(sp.runK * (0.9 + R() * 0.25) * (near ? sp.nearK : 1), (near ? PH.NEAR_CAP : PH.RUN_CAP) * PH.T_BREAK / sp.Fb); f.modeEnd = g.t + (PH.RUN_T0 + R() * PH.RUN_T1) * (0.8 + 0.25 * sp.s); f.hd = away + (R() - 0.5) * 2.6; g.events.push({ type: 'run' }); }
+  else if (r < pRun + pRest) { f.mode = 'rest'; f.force = 0.18; f.modeEnd = g.t + 0.7 + R() * 1.2; f.hd = f.h + (R() - 0.5) * 1.5; }
+  else { f.mode = 'pull'; f.force = Math.min(0.35 + R() * 0.25, PH.PULL_CAP * PH.T_BREAK / sp.Fb); f.modeEnd = g.t + 1.0 + R() * 2.0; f.hd = away + (R() - 0.5) * 2.0; }
+  // 壁の 手前では 向きを 変える
+  const px = f.x + Math.cos(f.hd) * 1.0, pz = f.z + Math.sin(f.hd) * 1.0;
+  if (px < PH.X0 + 0.2 || px > PH.X1 - 0.2) f.hd = Math.PI - f.hd;
+  if (pz < PH.Z0 + 0.2 || pz > PH.Z1 - 0.1) f.hd = -f.hd;
+}
+// 竿（腕で 立てる・寝かせる）
+function rodStep(g, dt, target) {
+  const r = g.rod;
+  r.w = clampP((target - r.phi) * 8, -PH.W_DN, PH.W_UP); r.phi += r.w * dt;
+  r.yaw += clampP((r.yawT - r.yaw) * 6, -PH.W_YAW, PH.W_YAW) * dt;
+}
+// 糸の 張力（竿の しなりと 糸の 伸びの 直列ばね）
+function lineStep(g, dt) {
+  const r = g.rod, f = g.fish, ln = g.ln, tp = rodTip(r.phi, r.yaw);
+  const dx = f.x - tp.x, dy = f.y - tp.y, dz = f.z - tp.z, l = Math.hypot(dx, dy, dz) || 1e-6;
+  const ux = dx / l, uy = dy / l, uz = dz / l, ca = tp.dx * ux + tp.dy * uy + tp.dz * uz, sa = Math.sqrt(Math.max(0, 1 - ca * ca));
+  const ext = l - PH.L0;
+  let T = 0;
+  if (ext > 0) {
+    T = ext / (1 / PH.K_LINE + sa * sa / PH.K_ROD);
+    if (T * sa / PH.K_ROD > PH.BEND_MAX) T = PH.K_LINE * (ext - PH.BEND_MAX * sa);
+    if (ln.ext > 0) T = Math.max(0, T + PH.C_LINE * (ext - ln.ext) / dt);
+  }
+  ln.dT = ln.dT + ((T - ln.T) / dt - ln.dT) * Math.min(1, dt * 12);
+  ln.ext = ext; ln.T = T; ln.sa = sa; ln.ux = ux; ln.uy = uy; ln.uz = uz; ln.l = l;
+  r.bend = Math.min(PH.BEND_MAX, T * sa / PH.K_ROD);
+  if (T > ln.peak) ln.peak = T;
+}
+function fightStep(g, dt) {
+  const f = g.fish, sp = f.sp, ln = g.ln;
+  rodStep(g, dt, g.down ? PH.PHI_HI : PH.PHI_LO);
+  lineStep(g, dt);
+  const T = ln.T;
+  if (T > PH.T_BREAK) return failGame(g, 'break', { T, L: sp.L, S: f.S });
+  if (g.t >= f.modeEnd) nextMode(g, f);
+  // 向き: 行きたい向きへ / 糸が 頭を 竿先へ 回す
+  const tw = f.mode === 'run' ? 4.5 : 2.2;
+  f.h += clampP(wrapA(f.hd - f.h), -tw * dt, tw * dt);
+  const hl = Math.hypot(ln.ux, ln.uz) || 1, toTip = Math.atan2(-ln.uz / hl, -ln.ux / hl);
+  f.h += wrapA(toTip - f.h) * clampP(0.8 * T / sp.Fb, 0, 3) * dt;
+  // 泳ぐ力
+  const tired = f.mode === 'tired', Fth = f.force * sp.Fb * (tired ? 1 : 0.3 + 0.7 * f.S);
+  const yd = tired ? -0.02 : -(0.12 + 0.55 * f.S);
+  const vyT = clampP((yd - f.y) * 2.5, -0.6, 0.6);
+  let fx = Math.cos(f.h) * Fth, fz = Math.sin(f.h) * Fth, fy = vyT * Fth * 0.6;
+  fx -= ln.ux * T; fy -= ln.uy * T; fz -= ln.uz * T;
+  const v = Math.hypot(f.vx, f.vy, f.vz), cd = sp.cd;
+  fx -= cd * v * f.vx; fy -= cd * v * f.vy * 1.6; fz -= cd * v * f.vz;
+  f.vx += fx / sp.m * dt; f.vy += fy / sp.m * dt; f.vz += fz / sp.m * dt;
+  f.x += f.vx * dt; f.y += f.vy * dt; f.z += f.vz * dt; f.thr = Fth;
+  if (f.y > PH.TOP) { f.y = PH.TOP; if (f.vy > 0) f.vy = 0; }
+  if (f.y < PH.DEEP) { f.y = PH.DEEP; if (f.vy < 0) f.vy = 0; }
+  if (f.x < PH.X0) { f.x = PH.X0; f.vx = Math.abs(f.vx) * 0.2; } else if (f.x > PH.X1) { f.x = PH.X1; f.vx = -Math.abs(f.vx) * 0.2; }
+  if (f.z < PH.Z0) { f.z = PH.Z0; f.vz = Math.abs(f.vz) * 0.2; } else if (f.z > PH.Z1) { f.z = PH.Z1; f.vz = -Math.abs(f.vz) * 0.2; }
+  // 体力（張力に さからうほど へる。頭を 横へ 引かれるほど 多く）
+  const lat = Math.abs(Math.sin(wrapA(f.h - Math.atan2(ln.uz / hl, ln.ux / hl))));
+  f.lat = lat;
+  f.S -= dt * (0.012 + 0.08 * Math.min(T / sp.Fb, PH.DRAIN_CAP) * (0.6 + 1.0 * lat) + (f.mode === 'run' ? 0.015 : 0)) * sp.end;
+  if (T < 0.1 * sp.Fb) f.S += 0.01 * dt;
+  f.S = clampP(f.S, 0, 1);
+  // 水面で あばれる（ばしゃっ）
+  if (f.y > -0.09 && v > 0.42 && Fth > 0.45 * sp.Fb && g.t - g.lastSplash > 0.45) { g.lastSplash = g.t; g.events.push({ type: 'splash', x: f.x, z: f.z, v, big: f.mode === 'run' }); }
+  // 強く 引きつづけると 口が 切れる（張りが MOUTH_T をこえた ぶんだけ 傷む。張りが 下がると 少し もどる）
+  if (T > PH.MOUTH_T * PH.T_BREAK) ln.mouth += (T / PH.T_BREAK - PH.MOUTH_T) * PH.MOUTH_K * dt; else ln.mouth = Math.max(0, ln.mouth - 0.05 * dt);
+  if (ln.mouth >= 1) return failGame(g, 'kuchi', { L: sp.L, S: f.S });
+  // ゆるみ → 針が 外れる
+  if (T < PH.T_SLACK) ln.slackT += dt; else ln.slackT = Math.max(0, ln.slackT - dt * 2.5);
+  if (ln.slackT > sp.tOut) return failGame(g, 'bare', { L: sp.L, S: f.S });
+  // 網
+  const dh = Math.hypot(f.x - PH.HX, f.z - PH.HZ);
+  if (dh < PH.NET_R && f.y > PH.NET_Y && f.S < PH.NET_S) g.netT += dt; else g.netT = Math.max(0, g.netT - dt);
+  if (g.netT > PH.NET_T) return landFish(g);
+  if (g.t - g.fightT0 > PH.T_FIGHT) return failGame(g, 'bare', { L: sp.L, S: f.S, long: true });
+}
+function landFish(g) {
+  const f = g.fish;
+  g.n++; g.caught.push({ L: f.sp.L, kind: f.sp.kind, sec: g.t - g.fightT0 });
+  if (!g.biggest || f.sp.L > g.biggest.L) g.biggest = { L: f.sp.L, kind: f.sp.kind };
+  g.phase = 'land'; g.phaseT = g.t; g.ln.T = 0; g.ln.slackT = 0;
+  let gift = false;
+  if (g.n % PH.ESA_BACK === 0 && g.esa < PH.ESA) { g.esa++; gift = true; }
+  g.events.push({ type: 'land', L: f.sp.L, kind: f.sp.kind, n: g.n, gift, sec: g.t - g.fightT0 });
+}
+function failGame(g, kind, info) { if (g.over) return; g.over = true; g.fail = kind; g.failInfo = info || null; g.overT = g.t; g.phase = 'over'; g.events.push({ type: 'fail', kind, info }); }
+// 待つ間・アタリの間の 魚（寄ってくる。口が 餌の ところ）
+function approachStep(g, dt) {
+  const f = g.fish;
+  if (f.t0 < 0) f.t0 = g.t;
+  const k = clampP((g.t - f.t0) / f.sp.approach, 0, 1), e = smooth(k);
+  const mx = g.fl.X, my = -PH.TANA, mz = g.fl.Z;
+  const px = f.x, pz = f.z;
+  const sx = -(mz - f.a0.z), sz = mx - f.a0.x, sl = Math.hypot(sx, sz) || 1, wg = Math.sin(k * Math.PI) * f.wig;
+  f.x = lerp(f.a0.x, mx, e) + sx / sl * wg; f.y = lerp(f.a0.y, my, e); f.z = lerp(f.a0.z, mz, e) + sz / sl * wg;
+  if (Math.hypot(f.x - px, f.z - pz) > 1e-6) f.h = Math.atan2(f.z - pz, f.x - px);
+  return k;
+}
+function stepGame(g, dt = PH.DT) {
+  g.t += dt;
+  const q = g.queue;
+  while (q.length && q[0].t <= g.t) applyInput(g, q.shift());
+  if (g.over) return;
+  const t = g.t, fl = g.fl;
+  switch (g.phase) {
+    case 'cast': {
+      rodStep(g, dt, PH.PHI_REST);
+      if (t - g.phaseT >= PH.T_CAST) { g.phase = 'wait'; g.phaseT = t; g.fish.t0 = t; g.events.push({ type: 'plop', x: fl.X, z: fl.Z }); fl.x = 0.5; fl.v = -3; }
+      break;
+    }
+    case 'wait': {
+      rodStep(g, dt, PH.PHI_REST);
+      const k = approachStep(g, dt);
+      let u = waveU(fl.X, fl.Z, t);
+      for (const b of g.fish.bumps) { const s = (k - b.k) * g.fish.sp.approach; if (s > 0 && s < 0.18) u += b.a * Math.sin(s / 0.18 * Math.PI); }
+      floatStep(g, dt, u);
+      if (k >= 1) planBite(g);
+      break;
+    }
+    case 'bite': {
+      rodStep(g, dt, PH.PHI_REST);
+      const b = g.bite, d = dIn(b, t), inH = t >= b.h0;
+      if (inH && !b.held) { b.held = true; g.events.push({ type: 'gu' }); }
+      while (b.nk < b.nibs.length && t >= b.nibs[b.nk].t0) { g.events.push({ type: 'nibble', a: b.nibs[b.nk].a }); b.nk++; }
+      const u = d * (inH ? 1.25 + 0.35 * clampP((t - b.h0) / 0.5, 0, 1) : 0.95) + waveU(fl.X, fl.Z, t);
+      floatStep(g, dt, u);
+      const f = g.fish; f.x = fl.X - Math.cos(f.h) * 0.02 * d; f.z = fl.Z - Math.sin(f.h) * 0.02 * d; f.y = -PH.TANA - 0.03 * d;
+      if (t > b.end) missBite(g, 'stolen');
+      break;
+    }
+    case 'fight': fightStep(g, dt); break;
+    case 'land': {
+      rodStep(g, dt, PH.PHI_HI * 0.85);
+      if (t - g.phaseT >= PH.T_LAND) newCast(g);
+      break;
+    }
+    case 'miss': {
+      rodStep(g, dt, PH.PHI_REST + 0.3);
+      const f = g.fish; f.x += Math.cos(f.h) * 0.7 * dt; f.z += Math.sin(f.h) * 0.7 * dt; f.y = Math.max(-0.8, f.y - 0.2 * dt); clampPool(f);
+      floatStep(g, dt, waveU(fl.X, fl.Z, t));
+      if (t - g.phaseT >= PH.T_MISS) { if (g.esa <= 0) failGame(g, 'esa', { kind: g.missKind }); else newCast(g); }
+      break;
+    }
+  }
+}
+/*PHYS-END*/
+
+/*BOT-BEGIN*/
+/* ---------- ボット（確かめ用・タイトルの デモ・ヒント）。見るのは 画面に 出ている物だけ（浮きの 沈み・糸の 張り・魚の 動き）を 少し 遅れて ----------
+   first: はじめての人。浮きを 見て 反応が おそい（0.32〜0.7 秒）、ときどき つつきで 合わせてしまう。
+          やりとりは 張りを 見て 0.33〜0.55 秒 おくれて「張ったら 離す・ゆるんだら 押す」（しきい値も ばらばら）。左右は 使わない。
+   good: 反応 0.13〜0.22 秒。ぐっと 沈んで 0.06 秒 つづいたら 合わせ。張りの 増え方を 見て 早めに 離し、魚の 走る向きと 逆へ 倒す。
+   mash: 一定の間隔で 押す・離すを くり返す（on 秒 押して off 秒 離す）。hold: 合わせは 上手で、かかったら ずっと 押しっぱなし（立てっぱなし）。none: 何もしない。 */
+const SKILLS = {
+  first: { kind: 'react', see: [0.32, 0.7], fool: 0.2, foolTh: 0.33, th: 0.68, tap: [0.12, 0.3], fd: [0.33, 0.55], hi: [0.7, 0.9], lo: [0.25, 0.45], slack: 0.5, side: 0 },
+  good: { kind: 'react', see: [0.13, 0.22], fool: 0, th: 0.72, sus: 0.06, tap: [0.1, 0.14], fd: [0.1, 0.13], hi: [0.78, 0.82], lo: [0.52, 0.56], pred: 1.5, runR: 0.45, slack: 0.12, side: 1 },
+  mash: { kind: 'mash', on: 0.35, off: 0.35 },
+  mashAw: { kind: 'mash', aw: true, on: 0.5, off: 0.5, see: [0.13, 0.22], th: 0.72, sus: 0.06, tap: [0.1, 0.14] },
+  hold: { kind: 'hold', see: [0.13, 0.22], th: 0.72, sus: 0.06, fool: 0 },
+  none: { kind: 'none' },
+};
+function makeBot(g, sk, rnd) {
+  const U = a => a[0] + (a[1] - a[0]) * rnd();
+  const bot = { hist: [], lastS: -9, down: false, cool: 0, see: U(sk.see || [0.2, 0.2]), fd: U(sk.fd || [0.2, 0.2]), hi: U(sk.hi || [0.7, 0.7]), lo: U(sk.lo || [0.4, 0.4]), tapUp: -1, ph: null, nib: false, sus0: -1, cast: -1 };
+  const push = () => { const f = g.fish; bot.hist.push({ t: g.t, x: g.fl.x, T: g.ln.T, sl: g.ln.slackT, fvx: f ? f.vx : 0, fx: f ? f.x : 0 }); if (bot.hist.length > 400) bot.hist.splice(0, 200); };
+  const obs = d => { const t = g.t - d, H = bot.hist; for (let i = H.length - 1; i >= 0; i--) if (H[i].t <= t) return H[i]; return H[0]; };
+  const press = (x = 0.5) => { gInput(g, g.t + 1e-6, 'down', x); bot.down = true; bot.cool = g.t + 0.1; };
+  const release = () => { gInput(g, g.t + 1e-6, 'up'); bot.down = false; bot.cool = g.t + 0.1; };
+  bot.step = () => {
+    if (g.over) return;
+    if (g.t - bot.lastS >= 0.01) { bot.lastS = g.t; push(); }
+    if (sk.kind === 'none') return;
+    if (sk.kind === 'mash' && (!sk.aw || g.phase === 'fight')) { const P = sk.on + sk.off, want = ((g.t + (sk.ph0 || 0)) % P) < sk.on; if (want !== bot.down) want ? press(sk.x ?? 0.5) : release(); return; }
+    const ph = g.phase;
+    if (ph !== bot.ph) {   // 場面が 変わった
+      bot.ph = ph; bot.sus0 = -1; bot.nib = false;
+      if (ph === 'bite' || ph === 'wait') bot.see = U(sk.see);
+      if (ph === 'fight') { bot.fd = U(sk.fd || [0.1, 0.1]); bot.hi = U(sk.hi || [0.6, 0.6]); bot.lo = U(sk.lo || [0.4, 0.4]); }
+    }
+    if (ph === 'wait' || ph === 'bite') {
+      if (bot.down) { if (g.t >= bot.tapUp) release(); return; }
+      if (g.t < bot.cool || g.t - g.phaseT < bot.see) return;
+      const o = obs(bot.see);
+      if (sk.fool) {   // つつきに つられる
+        if (o.x > sk.foolTh && !bot.nib) { bot.nib = true; if (rnd() < sk.fool) { press(); bot.tapUp = g.t + U(sk.tap || [0.15, 0.15]); return; } }
+        if (o.x < sk.foolTh * 0.6) bot.nib = false;
+      }
+      if (o.x > sk.th) {
+        if (sk.sus) { if (bot.sus0 < 0) bot.sus0 = o.t; if (o.t - bot.sus0 < sk.sus) return; }
+        press(); bot.tapUp = sk.kind === 'hold' ? Infinity : g.t + U(sk.tap || [0.12, 0.12]);
+      } else bot.sus0 = -1;
+      return;
+    }
+    if (ph === 'fight') {
+      if (sk.kind === 'hold') { if (!bot.down) press(); return; }
+      if (g.t < bot.cool) return;
+      const o = obs(bot.fd), o2 = obs(bot.fd + 0.08), r = o.T / PH.T_BREAK, dr = (o.T - o2.T) / 0.08 / PH.T_BREAK;
+      if (bot.down) {
+        if (r > bot.hi || (sk.pred && r > sk.runR && dr > sk.pred)) { release(); bot.hi = U(sk.hi); }
+      } else {
+        if ((r < bot.lo && (!sk.pred || dr < sk.pred * 0.5)) || o.sl > sk.slack) {
+          const x = sk.side ? (o.fvx > 0.15 ? 0.12 : o.fvx < -0.15 ? 0.88 : 0.5) : 0.5;
+          press(x); bot.lo = U(sk.lo);
+        }
+      }
+      return;
+    }
+    if (bot.down) release();
+  };
+  return bot;
+}
+function runBot(sk, seed, opts = {}) {
+  const g = makeGame(seed), bot = makeBot(g, sk, mulberry((seed * 7919 + 13) >>> 0)), maxN = opts.maxN || 60;
+  if (opts.log) g.log = [];
+  const fights = [];
+  let ft = -1;
+  while (!g.over && g.n < maxN && g.t < 3000) {
+    stepGame(g); bot.step();
+    for (const e of g.events) { if (e.type === 'hook') ft = g.t; if (e.type === 'land') fights.push(g.t - ft); }
+    g.events.length = 0;
+  }
+  return { n: g.n, fail: g.n >= maxN ? 'max' : g.over ? g.fail : 'time', t: g.t, misses: g.misses, casts: g.casts, fights, big: g.biggest ? g.biggest.L : 0, log: g.log };
+}
+/*BOT-END*/
+
+/* ---------- 記録（このブラウザだけ） ---------- */
+const KEY = 'tsuribori:v1';
+const DEF = () => ({ ver: 1, best: 0, plays: 0, total: 0, last: 0, bigL: 0 });
+function load() {
+  try {
+    const d = JSON.parse(localStorage.getItem(KEY) || '{}');
+    if (d && d.ver === 1) { const r = { ...DEF(), ...d }; for (const k of ['best', 'plays', 'total', 'last', 'bigL']) r[k] = +r[k] || 0; return r; }
+  } catch {}
+  return DEF();
+}
+function save() { try { localStorage.setItem(KEY, JSON.stringify(rec)); } catch {} }
+let rec = load();
+let seed = HASH.has('seed') ? (+HASH.get('seed') >>> 0) : (Math.random() * 2 ** 32) >>> 0;
+function nextSeed() { const s = seed; seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return s; }
+
+/* ---------- three.js ---------- */
+const glc = $('gl'), fxc = $('fx'), fx = fxc.getContext('2d');
+const renderer = new THREE.WebGLRenderer({ canvas: glc, antialias: true, powerPreference: 'high-performance' });
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#2c3a33');
+scene.fog = new THREE.Fog('#34423a', 9, 19);
+const camera = new THREE.PerspectiveCamera(60, 1, 0.05, 40);
+const V3 = (x, y, z) => new THREE.Vector3(x, y, z);
+const UP = V3(0, 1, 0);
+let W = 0, H = 0, dpr = 1, safeT = 0, safeB = 0, port = true;
+// カメラ: タイトルは 釣り堀を 広く（料金表・蛍光灯・となりの おじさん）、あそぶときは 釣り人の 右肩ごしに 池を
+const CAMT = { pos: V3(1.5, 4.3, 3.5), look: V3(-0.5, -1.7, -2.6), fov: 58 };
+const CAMP = { pos: V3(0.85, 2.3, 3.4), look: V3(0, 0.55, -2.5), fov: 60 };
+const CAM = { k: 0, want: 0, shake: 0, fx: 0 };
+function resize() {
+  W = innerWidth; H = innerHeight; dpr = Math.min(devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(Math.min(dpr, 1.75)); renderer.setSize(W, H, false);
+  fxc.width = Math.round(W * dpr); fxc.height = Math.round(H * dpr);
+  camera.aspect = W / H; port = W / H < 0.8;
+  if (port) { CAMP.pos.set(1.05, 2.55, 3.1); CAMP.look.set(-0.15, 0.15, -3.0); CAMP.fov = 63; CAMT.fov = 64; }
+  else { CAMP.pos.set(0.9, 2.3, 3.0); CAMP.look.set(-0.1, 0.35, -3.0); CAMP.fov = 46; CAMT.fov = 46; }
+  const cs = getComputedStyle(document.documentElement);
+  safeT = parseFloat(cs.paddingTop) || 0; safeB = parseFloat(cs.paddingBottom) || 0;
+  placeCam();
+}
+const _cp = V3(0, 0, 0), _cl = V3(0, 0, 0);
+function placeCam() {
+  const k = CAM.k, e = k * k * (3 - 2 * k);
+  _cp.lerpVectors(CAMT.pos, CAMP.pos, e); _cl.lerpVectors(CAMT.look, CAMP.look, e);
+  _cl.x += CAM.fx * e; _cp.x += CAM.fx * 0.45 * e;
+  camera.position.copy(_cp);
+  if (CAM.shake > 0 && !reduceMotion) { const s = CAM.shake * 0.012; camera.position.x += Math.sin(tt * 61) * s; camera.position.y += Math.sin(tt * 53) * s; }
+  camera.lookAt(_cl);
+  camera.fov = lerp(CAMT.fov, CAMP.fov, e);
+  camera.updateProjectionMatrix(); camera.updateMatrixWorld();
+}
+addEventListener('resize', resize);
+function canvasTex(w, h, draw, repeat) {
+  const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(repeat[0], repeat[1]); }
+  t.anisotropy = 4;
+  return t;
+}
+const lam = (color, extra = {}) => new THREE.MeshLambertMaterial({ color, ...extra });
+let srnd = 7; const prand = () => (srnd = (srnd * 9301 + 49297) % 233280) / 233280;
+const _v = new THREE.Vector3();
+function place(m, a, b) { _v.subVectors(b, a); const L = Math.max(1e-6, _v.length()); m.position.copy(a).addScaledVector(_v, 0.5); m.quaternion.setFromUnitVectors(UP, _v.multiplyScalar(1 / L)); m.scale.set(1, L, 1); m.visible = true; }
+
+// 光: 天井の 蛍光灯（白っぽく 少し 緑がかる）
+scene.add(new THREE.HemisphereLight('#eef4e6', '#3e3a2e', 1.05));
+const sun = new THREE.DirectionalLight('#f2f8ee', 0.75); sun.position.set(0.6, 3, -1.5); scene.add(sun);
+
+/* ---------- 釣り堀: 池・コンクリの へり・床・かべ・料金表・蛍光灯・ベンチ ---------- */
+const WX0 = -3.8, WX1 = 3.8, WZ0 = -6.85, WZ1 = -0.15, FLY = 0.3, BOT = -1.0;
+const tubes = [];
+function buildRoom() {
+  const conc = canvasTex(256, 256, (g, w, h) => {
+    g.fillStyle = '#9a9a8c'; g.fillRect(0, 0, w, h);
+    for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(${prand() < 0.5 ? '60,60,50' : '220,220,200'},${0.05 + prand() * 0.08})`; g.fillRect(prand() * w, prand() * h, 2 + prand() * 4, 2 + prand() * 4); }
+    g.strokeStyle = 'rgba(60,60,50,.35)'; g.lineWidth = 2; g.strokeRect(0, 0, w, h);
+  }, [6, 2]);
+  const flM = lam('#ffffff', { map: conc });
+  const fl = (w, d, x, z) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), flM); m.rotation.x = -Math.PI / 2; m.position.set(x, FLY, z); scene.add(m); };
+  fl(12, 3.4, 0, 1.55); fl(12, 2, 0, -7.85); fl(1.6, 6.7, -4.6, -3.5); fl(1.6, 6.7, 4.6, -3.5);
+  // 池の へり（コンクリの ふち）・内がわの かべ・底
+  const rimM = lam('#b4b2a2'), inM = lam('#33463c'), botM = lam('#1f2e27');
+  for (const [w, d, x, z] of [[7.9, 0.22, 0, WZ1 + 0.11], [7.9, 0.22, 0, WZ0 - 0.11], [0.22, 7.14, WX0 - 0.11, (WZ0 + WZ1) / 2], [0.22, 7.14, WX1 + 0.11, (WZ0 + WZ1) / 2]]) { const b = new THREE.Mesh(new THREE.BoxGeometry(w, 0.1, d), rimM); b.position.set(x, FLY + 0.05, z); scene.add(b); }
+  const iw = (w, x, z, ry) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, FLY - BOT), inM); m.rotation.y = ry; m.position.set(x, (FLY + BOT) / 2, z); scene.add(m); };
+  iw(WX1 - WX0, 0, WZ1, Math.PI); iw(WX1 - WX0, 0, WZ0, 0); iw(WZ1 - WZ0, WX0, (WZ0 + WZ1) / 2, Math.PI / 2); iw(WZ1 - WZ0, WX1, (WZ0 + WZ1) / 2, -Math.PI / 2);
+  const bot = new THREE.Mesh(new THREE.PlaneGeometry(WX1 - WX0, WZ1 - WZ0), botM); bot.rotation.x = -Math.PI / 2; bot.position.set(0, BOT, (WZ0 + WZ1) / 2); scene.add(bot);
+  // かべ（しっくい + 腰板）・天井
+  const wallM = lam('#d6cfb6'), woodM = lam('#6e4e32'), ceilM = new THREE.MeshBasicMaterial({ color: '#6a685c' });
+  const wall = (w, x, z, ry) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, 3.4), wallM); m.rotation.y = ry; m.position.set(x, FLY + 1.7, z); scene.add(m); const k = new THREE.Mesh(new THREE.PlaneGeometry(w, 0.95), woodM); k.rotation.y = ry; k.position.set(x + Math.sin(ry) * 0.01, FLY + 0.475, z + Math.cos(ry) * 0.01); scene.add(k); };
+  wall(12, 0, -8.8, 0); wall(13, -5.4, -2.3, Math.PI / 2); wall(13, 5.4, -2.3, -Math.PI / 2);
+  const ceil = new THREE.Mesh(new THREE.PlaneGeometry(12, 13), ceilM); ceil.rotation.x = Math.PI / 2; ceil.position.set(0, FLY + 3.4, -2.3); scene.add(ceil);
+  // 蛍光灯（2本ずつの 器具）
+  const tubeM = new THREE.MeshBasicMaterial({ color: '#f4fbf0', fog: false }), fixM = lam('#e8e6dc');
+  for (const z of [-1.4, -3.9, -6.4]) for (const x of [-2.4, 0.2, 2.8]) {
+    const f = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.05, 0.2), fixM); f.position.set(x, FLY + 3.36, z); scene.add(f);
+    for (const dz of [-0.045, 0.045]) { const t = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 1.2, 6), tubeM); t.rotation.z = Math.PI / 2; t.position.set(x, FLY + 3.3, z + dz); scene.add(t); }
+    tubes.push({ x, y: FLY + 3.3, z });
+  }
+  // 料金表（おくの かべ）
+  const board = canvasTex(1024, 640, (g, w, h) => {
+    g.fillStyle = '#f2ead2'; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#1f4a5a'; g.fillRect(0, 0, w, 130);
+    g.fillStyle = '#f4efe0'; g.font = '84px "Dela Gothic One", sans-serif'; g.textAlign = 'center'; g.fillText('つり堀  みどり池', w / 2, 98);
+    g.fillStyle = '#2a2a24'; g.textAlign = 'left'; g.font = '700 50px "Zen Kaku Gothic New", sans-serif';
+    const rows = [['1時間', '500円'], ['半日（4時間）', '1500円'], ['貸し竿', '100円'], ['ねり餌', '50円']];
+    rows.forEach(([a, b], i) => { const y = 210 + i * 80; g.fillText(a, 70, y); g.textAlign = 'right'; g.fillText(b, w - 70, y); g.textAlign = 'left'; g.fillStyle = 'rgba(40,40,30,.25)'; g.fillRect(70, y + 18, w - 140, 3); g.fillStyle = '#2a2a24'; });
+    g.fillStyle = '#c8402e'; g.font = '700 40px "Zen Kaku Gothic New", sans-serif'; g.fillText('大物賞  60cm以上  ジュース1本', 70, 560);
+    g.fillStyle = '#5a5a4c'; g.font = '700 30px "Zen Kaku Gothic New", sans-serif'; g.fillText('釣った魚は 池へ もどしてね', 70, 610);
+  });
+  const bd = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.5), new THREE.MeshLambertMaterial({ map: board })); bd.position.set(0.9, FLY + 2.15, -8.78); scene.add(bd);
+  const bf = new THREE.Mesh(new THREE.BoxGeometry(2.5, 1.6, 0.03), woodM); bf.position.set(0.9, FLY + 2.15, -8.8); scene.add(bf);
+  // 時計・魚拓・のれん
+  const clk = canvasTex(256, 256, (g, w, h) => { g.fillStyle = '#5a3a24'; g.beginPath(); g.arc(128, 128, 126, 0, 7); g.fill(); g.fillStyle = '#f4f0e0'; g.beginPath(); g.arc(128, 128, 108, 0, 7); g.fill(); g.fillStyle = '#2a2420'; g.font = '700 26px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; for (let i = 1; i <= 12; i++) { const a = i / 12 * Math.PI * 2 - Math.PI / 2; g.fillText(String(i), 128 + Math.cos(a) * 86, 128 + Math.sin(a) * 86); } g.strokeStyle = '#2a2420'; g.lineCap = 'round'; g.lineWidth = 8; g.beginPath(); g.moveTo(128, 128); g.lineTo(128 + 40, 128 + 20); g.stroke(); g.lineWidth = 5; g.beginPath(); g.moveTo(128, 128); g.lineTo(128 - 10, 128 - 70); g.stroke(); });
+  const ck = new THREE.Mesh(new THREE.CircleGeometry(0.32, 20), new THREE.MeshLambertMaterial({ map: clk })); ck.position.set(-1.6, FLY + 2.55, -8.77); scene.add(ck);
+  const gyo = canvasTex(256, 384, (g, w, h) => { g.fillStyle = '#f4efe0'; g.fillRect(0, 0, w, h); g.fillStyle = '#2a2a2a'; g.beginPath(); g.ellipse(128, 190, 56, 140, 0, 0, 7); g.fill(); g.beginPath(); g.moveTo(128, 320); g.lineTo(70, 370); g.lineTo(186, 370); g.fill(); g.fillStyle = '#f4efe0'; g.beginPath(); g.arc(112, 92, 8, 0, 7); g.fill(); g.fillStyle = '#c8402e'; g.font = '700 26px "Zen Kaku Gothic New", sans-serif'; g.textAlign = 'center'; g.fillText('68cm', 200, 40); });
+  const gy = new THREE.Mesh(new THREE.PlaneGeometry(0.55, 0.82), new THREE.MeshLambertMaterial({ map: gyo })); gy.rotation.y = -Math.PI / 2; gy.position.set(5.38, FLY + 2.1, -3.2); scene.add(gy);
+  const gy2 = gy.clone(); gy2.position.set(5.38, FLY + 2.0, -1.8); gy2.scale.set(0.8, 0.8, 1); scene.add(gy2);
+  // ベンチ（木）・バケツ・餌箱
+  const benchM = lam('#8a6440');
+  for (const x of [-1.5, 0.12, 2.1]) {
+    const s = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.05, 0.36), benchM); s.position.set(x, 0.72, 0.85); scene.add(s);
+    for (const dx of [-0.65, 0.65]) { const l = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.42, 0.3), benchM); l.position.set(x + dx, 0.51, 0.85); scene.add(l); }
+  }
+  const bk = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.12, 0.26, 12, 1, true), lam('#3a6ab0', { side: THREE.DoubleSide })); bk.position.set(0.78, FLY + 0.13, 0.5); scene.add(bk);
+  const bkw = new THREE.Mesh(new THREE.CircleGeometry(0.14, 12), lam('#3e5a4a')); bkw.rotation.x = -Math.PI / 2; bkw.position.set(0.78, FLY + 0.2, 0.5); scene.add(bkw);
+  const ebox = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.06, 0.11), lam('#c8b07a')); ebox.position.set(0.55, 0.775, 0.8); scene.add(ebox);
+}
+
+/* ---------- 水面（波は 物理と 同じ式 + 魚の 波紋） ---------- */
+const water = (() => {
+  const geo = new THREE.PlaneGeometry(WX1 - WX0, WZ1 - WZ0, 38, 34); geo.rotateX(-Math.PI / 2); geo.translate((WX0 + WX1) / 2, 0, (WZ0 + WZ1) / 2);
+  const m = new THREE.Mesh(geo, new THREE.MeshPhongMaterial({ color: '#3b5c4a', specular: '#9fb8a4', shininess: 70, transparent: true, opacity: 0.8, depthWrite: false }));
+  m.renderOrder = 3; scene.add(m);
+  return m;
+})();
+const ripples = [];
+function ripple(x, z, a = 1, sp = 0.5) { ripples.push({ x, z, t0: tt, a, sp }); if (ripples.length > 10) ripples.shift(); }
+function updateWater(t) {
+  const p = water.geometry.attributes.position, A = p.array;
+  for (let i = 0; i < p.count; i++) {
+    const x = A[i * 3], z = A[i * 3 + 2];
+    let y = waveH(x, z, t);
+    for (const r of ripples) { const age = tt - r.t0, d = Math.hypot(x - r.x, z - r.z) - age * r.sp; if (d > -0.3 && d < 0.3) y += r.a * 0.012 * Math.cos(d * 20) * Math.exp(-d * d * 30) * Math.max(0, 1 - age / 1.6); }
+    A[i * 3 + 1] = y;
+  }
+  p.needsUpdate = true; water.geometry.computeVertexNormals();
+}
+// 蛍光灯の 水面への うつりこみ（カメラから 見て 鏡の 位置に 細長い 光。波で ゆれる）
+const glints = [];
+const glintM = new THREE.MeshBasicMaterial({ color: '#e8f2e0', transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+function buildGlints() {
+  for (const tb of tubes) {
+    const geo = new THREE.PlaneGeometry(1, 1, 14, 1); geo.rotateX(-Math.PI / 2);
+    const m = new THREE.Mesh(geo, glintM); m.renderOrder = 4; scene.add(m);
+    glints.push({ m, tb, base: Float32Array.from(geo.attributes.position.array) });
+  }
+}
+function updateGlints(t) {
+  const C = camera.position;
+  for (const G of glints) {
+    const { tb } = G;
+    const ref = (x, y, z) => { const k = C.y / (C.y + y); return { x: C.x + (x - C.x) * k, z: C.z + (z - C.z) * k }; };
+    const a = ref(tb.x - 0.6, tb.y, tb.z), b = ref(tb.x + 0.6, tb.y, tb.z), c = ref(tb.x, tb.y, tb.z);
+    const inside = c.x > WX0 + 0.1 && c.x < WX1 - 0.1 && c.z > WZ0 + 0.1 && c.z < -1.2;
+    G.m.visible = inside; if (!inside) continue;
+    const pos = G.m.geometry.attributes.position, A = pos.array, B = G.base;
+    const depthLen = Math.max(0.08, 0.5 * (c.z - C.z) / (C.y + tb.y) * 0.5);
+    for (let i = 0; i < pos.count; i++) {
+      const u = B[i * 3] + 0.5, v = B[i * 3 + 2];
+      const x = lerp(a.x, b.x, u), z = lerp(a.z, b.z, u) + v * Math.abs(depthLen) * 1.2;
+      A[i * 3] = clamp(x + 0.03 * Math.sin(t * 2.3 + u * 7 + tb.z), WX0, WX1); A[i * 3 + 1] = 0.004 + waveH(x, z, t); A[i * 3 + 2] = clamp(z + 0.025 * Math.sin(t * 1.7 + u * 9 + tb.x), WZ0, WZ1);
+    }
+    pos.needsUpdate = true;
+  }
+}
+
+/* ---------- 魚（体・尾びれ・背びれ。深いほど 水の色に しずむ） ---------- */
+const WATERC = new THREE.Color('#2e4a3c');
+const nishikiTex = canvasTex(128, 64, (g, w, h) => { g.fillStyle = '#f4f0e8'; g.fillRect(0, 0, w, h); g.fillStyle = '#e0502e'; for (const [x, y, r] of [[30, 26, 16], [70, 20, 13], [96, 34, 12], [52, 40, 10]]) { g.beginPath(); g.ellipse(x, y, r * 1.4, r, 0.3, 0, 7); g.fill(); } });
+const FISHC = { hera: '#a8aa98', koi: '#4a4236', gold: '#d8a040', nishiki: '#ffffff' };
+const bodyGeo = (() => { const g = new THREE.SphereGeometry(0.5, 14, 9); g.scale(1, 0.34, 0.21); return g; })();
+const tailGeo = (() => { const s = new THREE.Shape(); s.moveTo(0, 0); s.lineTo(-0.26, 0.16); s.lineTo(-0.2, 0); s.lineTo(-0.26, -0.16); s.closePath(); return new THREE.ShapeGeometry(s); })();
+const finGeo = (() => { const s = new THREE.Shape(); s.moveTo(0.12, 0); s.lineTo(-0.16, 0.12); s.lineTo(-0.22, 0); s.closePath(); return new THREE.ShapeGeometry(s); })();
+function makeFishMesh() {
+  const G = new THREE.Group();
+  const mat = lam('#ffffff'), finM = lam('#ffffff', { side: THREE.DoubleSide, transparent: true, opacity: 0.85 });
+  const body = new THREE.Mesh(bodyGeo, mat); G.add(body);
+  const tail = new THREE.Group(); tail.position.x = -0.45; G.add(tail);
+  const tm = new THREE.Mesh(tailGeo, finM); tail.add(tm);
+  const fin = new THREE.Mesh(finGeo, finM); fin.position.set(0.02, 0.15, 0); G.add(fin);
+  const eyeM = lam('#141210');
+  for (const s of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.035, 6, 5), eyeM); e.position.set(0.36, 0.04, s * 0.075); G.add(e); }
+  scene.add(G);
+  return { G, tail, mat, finM, body, kind: null, base: new THREE.Color('#ffffff'), wag: Math.random() * 6 };
+}
+function dressFish(F, kind) {
+  if (F.kind === kind) return;
+  F.kind = kind; F.base.set(FISHC[kind]); F.mat.map = kind === 'nishiki' ? nishikiTex : null; F.mat.needsUpdate = true;
+  F.finM.color.set(kind === 'nishiki' ? '#f0e8e0' : kind === 'gold' ? '#e0b060' : kind === 'hera' ? '#b8b8a8' : '#5a5040');
+}
+const _fc = new THREE.Color();
+function poseFish(F, x, y, z, h, L, wagSp, dt, tilt = 0, roll = 0) {
+  F.G.visible = true; F.G.position.set(x, y, z); F.G.rotation.set(roll, -h, tilt, 'YXZ'); F.G.scale.setScalar(L / 100);
+  F.wag += dt * wagSp; F.tail.rotation.y = Math.sin(F.wag) * 0.45;
+  const k = clamp(-y / 0.85, 0, 0.82);
+  _fc.copy(F.base).lerp(WATERC, k); F.mat.color.copy(_fc); F.finM.opacity = 0.85 * (1 - k * 0.6);
+}
+const hooked = makeFishMesh();
+const ambient = [];
+function buildAmbient() {
+  const kinds = ['koi', 'gold', 'hera', 'nishiki', 'koi', 'hera', 'gold'];
+  for (let i = 0; i < kinds.length; i++) { const F = makeFishMesh(); dressFish(F, kinds[i]); ambient.push({ F, x: -3 + prand() * 6, z: -6 + prand() * 4.5, y: -0.35 - prand() * 0.45, h: prand() * 6.28, sp: 0.18 + prand() * 0.16, L: 30 + prand() * 30, tw: 0 }); }
+}
+function stepAmbient(dt) {
+  for (const a of ambient) {
+    a.tw += (prand() - 0.5) * dt * 3; a.tw = clamp(a.tw, -0.6, 0.6); a.h += a.tw * dt;
+    const nx = a.x + Math.cos(a.h) * 0.8, nz = a.z + Math.sin(a.h) * 0.8;
+    if (nx < WX0 + 0.4 || nx > WX1 - 0.4) a.h = Math.PI - a.h;
+    if (nz < WZ0 + 0.4 || nz > WZ1 - 0.6) a.h = -a.h;
+    a.x += Math.cos(a.h) * a.sp * dt; a.z += Math.sin(a.h) * a.sp * dt;
+    poseFish(a.F, a.x, a.y, a.z, a.h, a.L, 5, dt);
+  }
+}
+
+/* ---------- 釣り人（うしろ姿）・となりの おじさん ---------- */
+const SKIN = '#e8bc96';
+function makeMan(x, jacket, cap, seat = 0.75) {
+  const G = new THREE.Group(); scene.add(G);
+  const jm = lam(jacket), sk = lam(SKIN), cm = lam(cap), pm = lam('#3a3a42');
+  const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.19, 0.55, 10), jm); torso.position.set(x, seat + 0.29, 0.86); torso.rotation.x = -0.18; G.add(torso);
+  const head = new THREE.Group(); head.position.set(x, seat + 0.7, 0.8); G.add(head);
+  const hd = new THREE.Mesh(new THREE.SphereGeometry(0.1, 14, 10), sk); head.add(hd);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.104, 14, 10, 0, Math.PI * 2, Math.PI * 0.35, Math.PI * 0.4), lam('#4a4440')); head.add(hair);
+  const capT = new THREE.Mesh(new THREE.SphereGeometry(0.108, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.45), cm); capT.position.y = 0.012; head.add(capT);
+  const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.012, 14, 1, false, -Math.PI * 0.45, Math.PI * 0.9), cm); brim.position.set(0, 0.03, -0.035); head.add(brim);
+  for (const s of [-1, 1]) { const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.42, 8), pm); thigh.rotation.x = Math.PI / 2; thigh.position.set(x + s * 0.1, seat + 0.03, 0.66); G.add(thigh); const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.055, 0.44, 8), pm); shin.position.set(x + s * 0.11, FLY + 0.22, 0.45); G.add(shin); }
+  const arms = [0, 1].map(() => { const a = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.04, 1, 8), jm); scene.add(a); return a; });
+  const hands = [0, 1].map(() => { const h = new THREE.Mesh(new THREE.SphereGeometry(0.04, 8, 6), sk); scene.add(h); return h; });
+  return { G, head, arms, hands, x, seat, sayT: -9, say: '', dur: 2 };
+}
+const me = makeMan(PH.HX, '#34506a', '#7a6a48');
+const oji = makeMan(-1.3, '#6a5a3a', '#d8c896');
+const OJI_HAND = { x: -1.32, y: 0.93, z: 0.38 }, OJI_PHI = 0.4, OJI_YAW = -0.26;
+const _sa = V3(0, 0, 0), _sb = V3(0, 0, 0);
+function poseArms(man, p0, p1) {
+  for (let j = 0; j < 2; j++) {
+    const s = j ? 1 : -1;
+    _sa.set(man.x + s * 0.17, man.seat + 0.5, 0.82);
+    const p = j ? p1 : p0;
+    _sb.copy(p);
+    place(man.arms[j], _sa, _sb); man.hands[j].position.copy(_sb);
+  }
+}
+
+/* ---------- 竹竿（しなる）・糸・赤い浮き・網 ---------- */
+const ROD_N = 14;
+function makeRod() {
+  const segs = [];
+  for (let i = 0; i < ROD_N; i++) {
+    const s0 = i / ROD_N, s1 = (i + 1) / ROD_N, r0 = lerp(0.014, 0.0035, s0), r1 = lerp(0.014, 0.0035, s1);
+    const col = i < 2 ? '#5a2e22' : i % 2 ? '#c8a862' : '#b8964e';
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r1, r0, 1, 6), lam(col)); scene.add(m); segs.push(m);
+  }
+  return { segs, pts: Array.from({ length: ROD_N + 1 }, () => V3(0, 0, 0)), tip: V3(0, 0, 0) };
+}
+const rodMe = makeRod(), rodOji = makeRod();
+const _rd = V3(0, 0, 0), _bv = V3(0, 0, 0);
+function poseRod(R, hx, hy, hz, phi, yaw, bend, bx, by, bz) {
+  const c = Math.cos(phi); _rd.set(c * Math.sin(yaw), Math.sin(phi), -c * Math.cos(yaw));
+  // しなり: 竿と 直角な 向き（糸の 方）へ、先ほど 大きく（片持ちばりの 形）
+  _bv.set(bx, by, bz); _bv.addScaledVector(_rd, -_bv.dot(_rd)); const bl = _bv.length(); if (bl > 1e-6) _bv.multiplyScalar(bend / bl); else _bv.set(0, 0, 0);
+  for (let i = 0; i <= ROD_N; i++) {
+    const s = i / ROD_N, f = s * s * (3 - s) / 2;
+    R.pts[i].set(hx, hy, hz).addScaledVector(_rd, PH.ROD * s * (1 - 0.18 * bend * bend * s)).addScaledVector(_bv, f);
+  }
+  for (let i = 0; i < ROD_N; i++) place(R.segs[i], R.pts[i], R.pts[i + 1]);
+  R.tip.copy(R.pts[ROD_N]);
+}
+const LINE_N = 26;
+function makeLine(col = '#efeadc', op = 0.85) {
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(LINE_N * 3), 3));
+  const l = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: op })); l.frustumCulled = false; scene.add(l); return l;
+}
+const lineMe = makeLine(), lineMe2 = makeLine('#cfd8c8', 0.45), lineOji = makeLine(), lineOji2 = makeLine('#cfd8c8', 0.4);
+function setLine(L, a, b, sag, n = LINE_N) {
+  const A = L.geometry.attributes.position.array;
+  for (let i = 0; i < LINE_N; i++) {
+    const k = Math.min(1, i / (n - 1)), s = 4 * k * (1 - k) * sag;
+    A[i * 3] = lerp(a.x, b.x, k); A[i * 3 + 1] = lerp(a.y, b.y, k) - s; A[i * 3 + 2] = lerp(a.z, b.z, k);
+  }
+  L.geometry.attributes.position.needsUpdate = true;
+}
+const floatTopTex = canvasTex(16, 128, (g, w, h) => { const cs = ['#e03a28', '#f2f0e4', '#e03a28', '#1a1a1a', '#f2c030', '#e03a28', '#1a1a1a', '#e03a28']; cs.forEach((c, i) => { g.fillStyle = c; g.fillRect(0, i * h / 8, w, h / 8); }); });
+function makeFloat(scale = 1.7) {
+  const G = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 8), lam('#c8402e')); body.scale.set(0.014, 0.05, 0.014); body.position.y = -0.05; G.add(body);
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(0.0032, 0.0032, 0.1, 6), new THREE.MeshBasicMaterial({ map: floatTopTex })); top.position.y = 0.05; G.add(top);
+  const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.002, 0.002, 0.06, 4), lam('#5a3a2a')); foot.position.y = -0.12; G.add(foot);
+  G.scale.setScalar(scale); scene.add(G); return G;
+}
+const floatMe = makeFloat(), floatOji = makeFloat(1.5);
+const net = (() => {
+  const G = new THREE.Group();
+  const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.008, 6, 20), lam('#9a9a90')); hoop.rotation.x = Math.PI / 2; G.add(hoop);
+  const mesh = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.3, 14, 1, true), new THREE.MeshLambertMaterial({ color: '#3a5a3a', transparent: true, opacity: 0.55, side: THREE.DoubleSide })); mesh.rotation.x = Math.PI; mesh.position.y = -0.15; G.add(mesh);
+  const hdl = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 1.5, 6), lam('#8a6a40')); hdl.rotation.z = Math.PI / 2; hdl.position.x = 0.99; G.add(hdl);
+  G.visible = false; scene.add(G); return G;
+})();
+
+/* ---------- ゲーム状態 ---------- */
+let game = null, bot = null, botStart = false, state = 'loading';    // loading | title | play | over | skip
+let tt = 0, overShownAt = 0, failAt = -1, pops = [], marks = [], parts = [], frozen = false, ff = false, newShown = false, base = 0, demoEnd = -1, lastAdv = 0;
+let ptr = null, seedUsed = false, kbSide = 0, keyDown = false, hintT = -9, hintMsg = '', landShow = null, sayCool = 0;
+const FF = 4;
+const evTime = e => (e.timeStamp > 1e3 && Math.abs(e.timeStamp - performance.now()) < 5000 ? e.timeStamp : performance.now());
+function newGame(s, botSkill) {
+  game = makeGame(s);
+  bot = botSkill ? makeBot(game, SKILLS[botSkill], mulberry((s * 7 + 3) >>> 0)) : null;
+  pops = []; marks = []; parts = []; ripples.length = 0; foam.length = 0; failAt = -1; newShown = false; landShow = null;
+  ptr = null; keyDown = false;
+  base = performance.now() / 1000; lastAdv = performance.now() / 1000;
+  me.say = ''; oji.say = '';
+}
+
+/* ---------- 物理は 1/500 秒きざみ。描画の コマ数に よらない。入力は 押した時刻で 物理に入る ---------- */
+function advancePhys() {
+  if (!game) return;
+  const now = performance.now() / 1000;
+  if (frozen) { base = now - game.t; lastAdv = now; return; }
+  if (ff && state === 'play') base -= (now - lastAdv) * (FF - 1);
+  lastAdv = now;
+  let target = now - base;
+  if (target - game.t > 0.25 * (ff ? FF : 1)) { base += target - game.t - 0.25 * (ff ? FF : 1); target = now - base; }
+  let k = 0;
+  while (game.t + PH.DT <= target && k < 3000) { physTick(); k++; }
+}
+function physTick() {
+  stepGame(game);
+  if (bot) bot.step();
+  if (game.events.length) handleEvents();
+}
+function gameTimeOf(ms) { return Math.max(game.t + 1e-6, ms / 1000 - base); }
+function input(kind, ms, x = 0.5) { if (!game || bot || state !== 'play' || game.over) return; gInput(game, gameTimeOf(ms), kind, x); }
+function step(dt) {
+  tt += dt;
+  advancePhys();
+  if (state === 'title') demoStep();
+  if (state === 'play' && failAt >= 0 && tt - failAt > 1.8) showOver();
+  CAM.k = clamp(CAM.k + (CAM.want - CAM.k) * Math.min(1, dt * 3.2) + Math.sign(CAM.want - CAM.k) * dt * 0.4, 0, 1);
+  if (Math.abs(CAM.want - CAM.k) < 0.002) CAM.k = CAM.want;
+  if (frozen) return;
+  if (game) { const want = game.phase === 'fight' || game.phase === 'land' ? clamp((game.fish.x - 0.1) * 0.35, -0.9, 0.9) : 0; CAM.fx += (want - CAM.fx) * Math.min(1, dt * 1.5); }
+  for (const p of pops) p.life += dt;
+  pops = pops.filter(p => p.life < p.dur);
+  for (const m of marks) m.life += dt;
+  marks = marks.filter(m => m.life < m.dur);
+  for (const p of parts) { p.life += dt; p.x += p.vx * dt; p.y += p.vy * dt; p.z += p.vz * dt; p.vy -= 9.8 * dt; }
+  parts = parts.filter(p => p.life < p.dur && p.y > -0.05);
+  if (CAM.shake > 0) CAM.shake = Math.max(0, CAM.shake - dt * 3);
+  for (let i = ripples.length - 1; i >= 0; i--) if (tt - ripples[i].t0 > 1.8) ripples.splice(i, 1);
+  stepAmbient(dt);
+}
+function addPop(text, opt = {}) {
+  pops = pops.filter(p => p.kind !== (opt.kind || 'mid'));
+  pops.push({ text, sub: opt.sub, life: 0, dur: opt.dur || 1.4, kind: opt.kind || 'mid', size: opt.size || 26, col: opt.col });
+}
+function mark(text, x, y, z, opt = {}) { marks.push({ text, x, y, z, life: 0, dur: opt.dur || 0.9, size: opt.size || 18, col: opt.col || '#f4efe0' }); }
+function splash(x, z, n, sp = 1.2, up = 1.6) { if (reduceMotion) n = Math.min(n, 4); for (let i = 0; i < n; i++) { const a = Math.random() * 6.28, r = Math.random(); parts.push({ x, y: 0.02, z, vx: Math.cos(a) * sp * r, vy: up * (0.5 + Math.random() * 0.7), vz: Math.sin(a) * sp * r, life: 0, dur: 0.9, r: 1.6 + Math.random() * 2.6 }); } foam.push({ x, z, t0: tt, a: Math.min(1, n / 14) }); }
+const foam = [];
+function say(who, text, dur = 1.7) { who.say = text; who.sayT = tt; who.dur = dur; }
+function ojiSay(text, dur = 1.8, force = false) { if (!force && tt < sayCool) return; sayCool = tt + 1.2; say(oji, text, dur); }
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const FISHNAME = { hera: 'ヘラブナ', koi: 'マゴイ', gold: '黄金ゴイ', nishiki: '錦ゴイ' };
+const beginner = () => rec.plays < 3 && !bot;
+let lastRunSay = -9, lastSlackSay = -9, lastHiSay = -9, tiredSaid = false;
+function handleEvents() {
+  const loud = state === 'play';
+  const g = game;
+  for (const e of g.events) {
+    switch (e.type) {
+      case 'cast': if (loud) sSwish(0.5); tiredSaid = false; break;
+      case 'plop': ripple(e.x, e.z, 0.8, 0.45); if (loud) sChapu(0.5); break;
+      case 'near': if (Math.random() < 0.6) ojiSay(pick(['おっ、来たね', 'さわってる さわってる', '寄ってきたよ'])); break;
+      case 'nibble': ripple(g.fl.X, g.fl.Z, 0.35, 0.35); if (beginner()) mark('ちょん', g.fl.X + 0.25, 0.12, g.fl.Z, { size: 15, dur: 0.6 }); if (loud) sNibble(e.a); break;
+      case 'gu': ripple(g.fl.X, g.fl.Z, 0.7, 0.4); if (beginner()) mark('ぐっ！', g.fl.X + 0.28, 0.14, g.fl.Z, { size: 22, col: '#ffd27a', dur: 0.8 }); if (loud) sGu(); break;
+      case 'hook': {
+        mark('のった！', g.fl.X, 0.25, g.fl.Z, { size: 24, col: '#ffd27a', dur: 1 }); ripple(g.fl.X, g.fl.Z, 1.2, 0.6);
+        ojiSay(e.L > 45 ? 'おっ、こりゃ でかいぞ' : pick(['おっ、のったね', 'かかった！', 'よし、きた']), 1.8, true);
+        if (loud) { sSwish(1); sChapu(0.9); }
+        break;
+      }
+      case 'run': if (g.phase === 'fight' && tt - lastRunSay > 3) { lastRunSay = tt; if (Math.random() < 0.6) ojiSay(pick(['走るぞ、ゆるめて！', 'のされるな！', 'ためて ためて'])); } break;
+      case 'splash': { splash(e.x, e.z, e.big ? 16 : 9, e.big ? 1.3 : 0.9, e.big ? 2 : 1.5); ripple(e.x, e.z, e.big ? 1.6 : 1, 0.6); mark(e.big ? 'ばしゃっ' : 'ぱしゃ', e.x, 0.3, e.z, { size: e.big ? 24 : 17, col: '#f4efe0' }); if (loud) { sBasha(e.big ? 1 : 0.6); if (e.big && !reduceMotion) CAM.shake = 0.25; } break; }
+      case 'kara': mark(e.hp > 0 ? 'からぶり' : '餌が 落ちた', g.fl.X, 0.25, g.fl.Z, { size: 17, col: '#f4efe0' }); ojiSay(e.hp > 0 ? pick(['まだ まだ', 'あわてない あわてない']) : '餌、落ちちゃったね'); if (loud) sSwish(0.6); break;
+      case 'miss': {
+        const t = e.kind === 'early' ? 'すっぽ抜け' : e.kind === 'drop' ? '餌が 落ちた' : '餌だけ 取られた…';
+        mark(t, g.fl.X, 0.3, g.fl.Z, { size: 19, col: '#ffd27a', dur: 1.3 });
+        ojiSay(e.kind === 'early' ? pick(['はやい はやい', 'ぐっと 入ってから']) : e.kind === 'drop' ? '空合わせしすぎ' : pick(['あー、餌だけ 取られた', 'おそい おそい']), 1.8, true);
+        if (e.esa <= 0) addPop('餌が なくなった', { kind: 'hot', size: 24, col: '#f4efe0', dur: 1.6 });
+        if (loud) { sSwish(0.7); sChapu(0.4); }
+        break;
+      }
+      case 'land': {
+        const f = g.fish;
+        landShow = { L: e.L, kind: e.kind, t0: tt, x: f.x, z: f.z };
+        splash(f.x, f.z, 18, 1.1, 2.2); ripple(f.x, f.z, 1.6, 0.6);
+        mark('ばしゃっ', f.x, 0.35, f.z, { size: 26 });
+        ojiSay(e.L >= 60 ? 'でかいねえ！ 大物賞だ' : e.L >= 45 ? 'いいサイズだ' : pick(['おみごと', 'うまいもんだ', 'いいね']), 2, true);
+        if (e.gift) setTimeout(() => { if (game === g) { ojiSay('餌、わけてあげるよ', 2, true); } }, 1400);
+        if (loud) { sBasha(1); sLand(); if (rec.best > 0 && g.n > rec.best && !newShown && !botStart) { newShown = true; addPop('自己ベスト更新！', { kind: 'best', size: 22, dur: 1.8, col: '#ffd27a' }); } }
+        break;
+      }
+      case 'fail': {
+        failAt = tt;
+        const f = g.fish;
+        if (e.kind === 'break') { mark('ぷつん', (g.rod.tipX ?? f.x), 1.2, (g.rod.tipZ ?? f.z), { size: 30, col: '#ffd27a', dur: 1.6 }); ojiSay(pick(['あちゃー', '切られたか', 'ぷつんと いったね']), 2, true); if (loud) sPutsun(); }
+        else if (e.kind === 'esa') { ojiSay('きょうは ここまでかな', 2, true); if (loud) sLose(); }
+        else { mark(e.kind === 'kuchi' ? '口が切れた…' : 'ばれた…', f.x, 0.3, f.z, { size: 22, col: '#ffd27a', dur: 1.6 }); ojiSay(e.kind === 'kuchi' ? '強引すぎたね' : pick(['ばれたか', 'ゆるめすぎだよ', 'あらら、外れた']), 2, true); if (loud) { sChapu(0.8); sLose(); } splash(f.x, f.z, 6, 0.7, 1.2); }
+        if (loud && navigator.vibrate) try { navigator.vibrate([30, 40, 20]); } catch {}
+        break;
+      }
+    }
+  }
+  if (state !== 'play' && g.events.some(e => e.type === 'fail')) failAt = tt;
+  g.events.length = 0;
+  // 張り・ゆるみ・疲れの ひとこと
+  if (g.phase === 'fight') {
+    const r = g.ln.T / PH.T_BREAK, f = g.fish;
+    if (r > 0.84 && tt - lastHiSay > 2.5) { lastHiSay = tt; ojiSay(pick(['切れるよ！', '張りすぎ！', 'ゆるめて ゆるめて']), 1.4, true); }
+    else if (g.ln.slackT > f.sp.tOut * 0.45 && tt - lastSlackSay > 2.5) { lastSlackSay = tt; ojiSay(pick(['ゆるめすぎ！', '張って 張って', '竿 立てて！']), 1.4, true); }
+    else if (f.S < PH.NET_S && !tiredSaid) { tiredSaid = true; ojiSay('浮いてきた、寄せて！', 1.8, true); }
+  }
+}
+// タイトル背景のデモ: 上手な人が 釣っている（音なし）
+function newDemo() { newGame(nextSeed(), 'good'); demoEnd = -1; }
+function demoStep() { if (game.over || game.n >= 5) { if (demoEnd < 0) demoEnd = tt; if (tt - demoEnd > 2.4) newDemo(); } }
+
+/* ---------- 画面 ---------- */
+const tmpV = new THREE.Vector3();
+function project(x, y, z) { tmpV.set(x, y, z).project(camera); return { x: (tmpV.x + 1) / 2 * W, y: (1 - tmpV.y) / 2 * H, front: tmpV.z < 1 }; }
+const _tipA = V3(0, 0, 0), _fm = V3(0, 0, 0), _fl = V3(0, 0, 0);
+function render(dt) {
+  if (!game) return;
+  placeCam();
+  const g = game, r = g.rod, f = g.fish, t = g.t;
+  const wt = frozen ? g.t : tt;
+  updateWater(g.t); updateGlints(g.t);
+  // 竿（しなりは 糸の 向きへ）
+  let bend = r.bend, bdir = { x: g.ln.ux, y: g.ln.uy, z: g.ln.uz };
+  const fighting = g.phase === 'fight';
+  let phiV = r.phi;
+  if (g.phase === 'cast') { const k = clamp((t - g.phaseT) / PH.T_CAST, 0, 1); phiV = k < 0.35 ? lerp(PH.PHI_REST, 1.3, k / 0.35) : lerp(1.3, PH.PHI_REST, smooth((k - 0.35) / 0.65)); bend = 0.15 * Math.sin(k * Math.PI); bdir = { x: 0, y: -1, z: 0.3 }; }
+  else if (!fighting) { bend = g.phase === 'land' ? 0.3 : 0.03; bdir = { x: 0, y: -1, z: -0.2 }; if (g.phase === 'bite') bend += 0.04 * dIn(g.bite, t); }
+  poseRod(rodMe, PH.HX, PH.HY, PH.HZ, phiV, r.yaw, bend, bdir.x, bdir.y, bdir.z);
+  r.tipX = rodMe.tip.x; r.tipZ = rodMe.tip.z;
+  const c = Math.cos(phiV), rdx = c * Math.sin(r.yaw), rdy = Math.sin(phiV), rdz = -c * Math.cos(r.yaw);
+  poseArms(me, V3(PH.HX + rdx * 0.02, PH.HY + rdy * 0.02, PH.HZ + rdz * 0.02), V3(PH.HX + rdx * 0.3, PH.HY + rdy * 0.3, PH.HZ + rdz * 0.3));
+  me.head.rotation.set(0.25, 0, 0);
+  // 浮き・糸・魚
+  const tip = rodMe.tip;
+  const fl = g.fl;
+  floatMe.visible = true;
+  if (fighting) {
+    _fm.set(f.x, f.y, f.z);
+    const taut = g.ln.T > PH.T_SLACK;
+    const sag = taut ? 0.01 : Math.min(0.6, Math.sqrt(Math.max(0, PH.L0 * PH.L0 - tip.distanceToSquared(_fm))) * 0.35);
+    setLine(lineMe, tip, _fm, sag); lineMe2.visible = false;
+    // 浮きは 糸が 水面を 横ぎる ところ（魚が 深いときは 引きこまれて 見えない）
+    const k = (tip.y) / Math.max(1e-3, tip.y - f.y);
+    _fl.set(lerp(tip.x, f.x, k), 0, lerp(tip.z, f.z, k));
+    floatMe.position.set(_fl.x, waveH(_fl.x, _fl.z, g.t) - (f.y < -0.25 ? 0.25 : 0.06), _fl.z); floatMe.rotation.set(0, 0, 0.6);
+    const lineCol = clamp((g.ln.T / PH.T_BREAK - 0.6) / 0.35, 0, 1); lineMe.material.color.setRGB(lerp(0.94, 1, lineCol), lerp(0.92, 0.6, lineCol), lerp(0.86, 0.45, lineCol));
+  } else {
+    lineMe.material.color.set('#efeadc');
+    const casting = g.phase === 'cast';
+    let fx0 = fl.X, fz0 = fl.Z, fy0 = waveH(fl.X, fl.Z, g.t) - clamp(fl.x, -0.3, 1.6) * 0.06 * 1.7;
+    if (casting) { const k = clamp((t - g.phaseT) / PH.T_CAST, 0, 1), e = smooth(clamp((k - 0.3) / 0.7, 0, 1)); fx0 = lerp(tip.x, fl.X, e); fz0 = lerp(tip.z, fl.Z, e); fy0 = lerp(tip.y - 0.3, 0, e) + Math.sin(e * Math.PI) * 1.2; }
+    floatMe.position.set(fx0, fy0, fz0); floatMe.rotation.set(0, 0, g.phase === 'bite' ? 0.05 * Math.sin(tt * 9) * dIn(g.bite, t) : 0);
+    _fl.set(fx0, fy0 + 0.17, fz0);
+    setLine(lineMe, tip, _fl, casting ? 0.05 : 0.18);
+    lineMe2.visible = !casting; _fm.set(fx0, -PH.TANA, fz0); setLine(lineMe2, V3(fx0, fy0 - 0.15, fz0), _fm, 0);
+    if (g.phase === 'land') { lineMe2.visible = false; floatMe.visible = false; }
+  }
+  // かかった魚 / 寄ってくる魚
+  if (f) {
+    dressFish(hooked, f.sp.kind);
+    if (g.phase === 'land' && landShow) {
+      const k = clamp((tt - landShow.t0) / PH.T_LAND, 0, 1);
+      const nx = lerp(landShow.x, PH.HX + 0.55, smooth(clamp((k - 0.15) / 0.3, 0, 1))), nz = lerp(landShow.z, 0.05, smooth(clamp((k - 0.15) / 0.3, 0, 1)));
+      const ny = k < 0.15 ? -0.05 : k < 0.75 ? lerp(-0.05, 0.75, smooth((k - 0.15) / 0.3)) : lerp(0.75, -0.2, smooth((k - 0.75) / 0.25));
+      net.visible = k < 0.8; net.position.set(nx, ny, nz); net.rotation.set(0, 0, 0);
+      poseFish(hooked, nx, ny - 0.06, nz, Math.PI * 0.85, f.sp.L, 14, dt, 0.25 * Math.sin(tt * 11), 0.3);
+      _tipA.set(nx, ny - 0.03, nz); setLine(lineMe, tip, _tipA, 0.05);
+      if (k >= 0.75 && !landShow.rel) { landShow.rel = true; if (state === 'play') sChapu(0.7); }
+    } else {
+      net.visible = false;
+      const show = g.phase === 'fight' || g.phase === 'wait' || g.phase === 'bite' || g.phase === 'miss' || (g.over && g.fail !== 'esa');
+      hooked.G.visible = show;
+      if (show) {
+        const sp = Math.hypot(f.vx || 0, f.vz || 0);
+        const surf = fighting && f.y > -0.08;
+        poseFish(hooked, f.x - Math.cos(f.h) * f.sp.L / 200, f.y + (surf ? 0.045 + 0.02 * Math.sin(wt * 9) : 0), f.z - Math.sin(f.h) * f.sp.L / 200, f.h, f.sp.L * (fighting ? 1.35 : 1.1), fighting ? 8 + sp * 18 : 6, dt, surf ? 0.3 * Math.sin(wt * 13) : 0, surf ? 0.45 * Math.sin(wt * 7) : 0);
+      }
+    }
+  }
+  // となりの おじさんの 竿と 浮き
+  poseRod(rodOji, OJI_HAND.x, OJI_HAND.y, OJI_HAND.z, OJI_PHI, OJI_YAW, 0.03, 0, -1, 0);
+  const oc = Math.cos(OJI_PHI), ox = OJI_HAND.x + Math.sin(OJI_YAW) * oc * (PH.ROD + 1.6), oz = OJI_HAND.z - Math.cos(OJI_YAW) * oc * (PH.ROD + 1.6);
+  const oy = waveH(ox, oz, g.t) - 0.02 * Math.max(0, Math.sin(wt * 0.7) * Math.sin(wt * 2.9) - 0.6) * 5;
+  floatOji.position.set(ox, oy, oz); setLine(lineOji, rodOji.tip, V3(ox, oy + 0.15, oz), 0.2); setLine(lineOji2, V3(ox, oy - 0.13, oz), V3(ox, -0.6, oz), 0);
+  const ocr = Math.cos(OJI_PHI), ordx = ocr * Math.sin(OJI_YAW), ordy = Math.sin(OJI_PHI), ordz = -ocr * Math.cos(OJI_YAW);
+  poseArms(oji, V3(OJI_HAND.x + ordx * 0.02, OJI_HAND.y + ordy * 0.02, OJI_HAND.z + ordz * 0.02), V3(OJI_HAND.x + ordx * 0.3, OJI_HAND.y + ordy * 0.3, OJI_HAND.z + ordz * 0.3));
+  const talking = oji.say && tt - oji.sayT < oji.dur;
+  oji.head.rotation.set(0.1, talking ? -0.9 : -0.1 + 0.08 * Math.sin(wt * 0.4), 0);
+  renderer.render(scene, camera);
+  drawFx();
+  sounds(dt);
+}
+
+/* ---------- 2D の演出 ---------- */
+function txt(s, x, y, size, fill = '#f4efe0', stroke = 'rgba(20,28,24,.85)', lw = 5, font = FD) {
+  const wt = /^\d00 /.exec(font);
+  fx.font = wt ? `${wt[0]}${size}px ${font.slice(wt[0].length)}` : `${size}px ${font}`; fx.lineJoin = 'round'; fx.lineWidth = lw; fx.strokeStyle = stroke; fx.strokeText(s, x, y); fx.fillStyle = fill; fx.fillText(s, x, y);
+}
+function rrect(x, y, w, h, r) { fx.beginPath(); fx.moveTo(x + r, y); fx.arcTo(x + w, y, x + w, y + h, r); fx.arcTo(x + w, y + h, x, y + h, r); fx.arcTo(x, y + h, x, y, r); fx.arcTo(x, y, x + w, y, r); fx.closePath(); }
+function drawFx() {
+  fx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fx.clearRect(0, 0, W, H);
+  if (!game || state === 'loading') return;
+  const sc = Math.min(1, W / 390 + 0.05);
+  fx.textAlign = 'center';
+  drawRipples(sc);
+  for (const p of parts) { const q = project(p.x, p.y, p.z); if (!q.front) continue; fx.globalAlpha = clamp(1 - p.life / p.dur, 0, 1) * 0.9; fx.fillStyle = '#e8f0e4'; fx.beginPath(); fx.arc(q.x, q.y, p.r * sc, 0, 7); fx.fill(); }
+  fx.globalAlpha = 1;
+  if (state === 'play' || state === 'skip') { drawFloatMark(sc); drawHud(sc); drawInset(sc); drawMeter(sc); drawGuide(sc); drawLand(sc); }
+  drawBubble(sc);
+  for (const m of marks) {
+    const p = project(m.x, m.y, m.z), k = m.life / m.dur;
+    if (!p.front) continue;
+    fx.globalAlpha = clamp((1 - k) * 2.5, 0, 1);
+    const s = (reduceMotion ? 1 : 1 + 0.3 * Math.max(0, 1 - m.life / 0.12)) * m.size * sc;
+    fx.font = `${s}px ${FD}`; const hw = fx.measureText(m.text).width / 2 + 6;
+    txt(m.text, clamp(p.x, hw, W - hw), clamp(p.y - 10 * sc - k * 20, safeT + 110 * sc, H - 150 * sc), s, m.col);
+    fx.globalAlpha = 1;
+  }
+  for (const p of pops) {
+    const k = clamp(p.life / 0.16, 0, 1), out = clamp((p.dur - p.life) / 0.25, 0, 1);
+    const y = safeT + (p.kind === 'best' ? 236 : 192) * sc - p.life * 8;
+    fx.globalAlpha = Math.min(k, out);
+    txt(p.text, W / 2, y, p.size * sc, p.col || '#f4efe0');
+    if (p.sub) txt(p.sub, W / 2, y + 24 * sc, 13 * sc, '#f4efe0', 'rgba(20,28,24,.85)', 4, `700 ${FB}`);
+    fx.globalAlpha = 1;
+  }
+  fx.textAlign = 'start';
+}
+function drawRipples(sc) {
+  for (let i = foam.length - 1; i >= 0; i--) { const f = foam[i], age = (frozen ? 0.25 : tt - f.t0); if (age > 0.7) { foam.splice(i, 1); continue; } const p = project(f.x, 0.01, f.z), q = project(f.x + 0.22, 0.01, f.z), rx = Math.abs(q.x - p.x) * (0.8 + age), a = (1 - age / 0.7) * 0.7 * f.a; fx.fillStyle = `rgba(236,242,232,${a})`; fx.beginPath(); fx.ellipse(p.x, p.y, rx, rx * 0.32, 0, 0, 7); fx.fill(); }
+  for (const r of ripples) {
+    const age = tt - r.t0, rad = 0.05 + age * r.sp, a = clamp(1 - age / 1.6, 0, 1) * Math.min(1, r.a) * 0.55;
+    if (a <= 0.02) continue;
+    fx.strokeStyle = `rgba(226,236,220,${a})`; fx.lineWidth = 1.5 * sc; fx.beginPath();
+    for (let i = 0; i <= 20; i++) { const th = i / 20 * Math.PI * 2, p = project(r.x + Math.cos(th) * rad, 0.005, r.z + Math.sin(th) * rad); i ? fx.lineTo(p.x, p.y) : fx.moveTo(p.x, p.y); }
+    fx.stroke();
+  }
+}
+// 池の 浮きの 位置に うすい 輪（見つけやすく）
+function drawFloatMark(sc) {
+  const g = game; if (!(g.phase === 'wait' || g.phase === 'bite')) return;
+  const p = project(g.fl.X, 0.06, g.fl.Z);
+  fx.strokeStyle = 'rgba(255,220,150,.35)'; fx.lineWidth = 1.5; fx.beginPath(); fx.arc(p.x, p.y, 16 * sc, 0, 7); fx.stroke();
+}
+// 左上: 釣った数・餌
+function drawHud(sc) {
+  const g = game, x = 14 * sc;
+  fx.textAlign = 'left';
+  txt(String(g.n), x, safeT + 52 * sc, 46 * sc);
+  fx.font = `${46 * sc}px ${FD}`; const w = fx.measureText(String(g.n)).width;
+  txt('匹', x + w + 4 * sc, safeT + 52 * sc, 18 * sc, '#f4efe0', 'rgba(20,28,24,.85)', 4, `700 ${FB}`);
+  if (rec.best > 0) txt(`最高 ${rec.best}匹`, x, safeT + 72 * sc, 11 * sc, '#f4efe0', 'rgba(20,28,24,.8)', 3, `700 ${FB}`);
+  // 餌（ねり餌の だんご）
+  txt('餌', x, safeT + 94 * sc, 12 * sc, '#f4efe0', 'rgba(20,28,24,.8)', 3, `700 ${FB}`);
+  for (let i = 0; i < PH.ESA; i++) { fx.fillStyle = i < g.esa ? '#d8b878' : 'rgba(244,239,224,.22)'; fx.beginPath(); fx.arc(x + 22 * sc + i * 15 * sc, safeT + 90 * sc, 5.5 * sc, 0, 7); fx.fill(); if (i < g.esa) { fx.strokeStyle = 'rgba(80,60,30,.6)'; fx.lineWidth = 1; fx.stroke(); } }
+  if (g.biggest) txt(`いちばん大きい ${Math.round(g.biggest.L)}cm`, x, safeT + 114 * sc, 11 * sc, '#f4efe0', 'rgba(20,28,24,.8)', 3, `700 ${FB}`);
+  if (ff) txt('早送り ▶▶', x, safeT + 132 * sc, 11 * sc, '#ffd27a', 'rgba(20,28,24,.8)', 3, `700 ${FB}`);
+  fx.textAlign = 'center';
+}
+// 右上: 浮きの アップ（トップの 目もりが どれだけ 沈んだか）
+function drawInset(sc) {
+  const g = game; if (!(g.phase === 'wait' || g.phase === 'bite' || g.phase === 'cast' || g.phase === 'miss')) return;
+  const R = 46 * sc, cx = W - R - 12 * sc, cy = safeT + R + 12 * sc;
+  fx.save(); fx.beginPath(); fx.arc(cx, cy, R, 0, 7); fx.clip();
+  const gr = fx.createLinearGradient(0, cy - R, 0, cy + R); gr.addColorStop(0, '#5e6a5c'); gr.addColorStop(0.5, '#4a5e50'); gr.addColorStop(0.52, '#2f4a3c'); gr.addColorStop(1, '#1e3228'); fx.fillStyle = gr; fx.fillRect(cx - R, cy - R, 2 * R, 2 * R);
+  const wl = cy + 4 * sc + waveH(g.fl.X, g.fl.Z, g.t) * 400 * sc;
+  // 蛍光灯の うつりこみ
+  fx.fillStyle = 'rgba(230,240,225,.18)'; fx.fillRect(cx - R, wl - 1, 2 * R, 3);
+  if (g.phase !== 'cast') {
+    const x = clamp(g.fl.x, -0.3, 1.6), topH = 62 * sc, wid = 7 * sc, above = topH * (1 - x);
+    const y0 = wl - above;
+    // 水の上の トップ（目もりの しま）
+    const bands = ['#e03a28', '#f2f0e4', '#e03a28', '#1a1a1a', '#f2c030', '#e03a28', '#1a1a1a', '#e03a28'];
+    for (let i = 0; i < 8; i++) { const a = y0 + i * topH / 8, b = a + topH / 8; const ya = Math.max(a, cy - R), yb = Math.min(b, wl); if (yb <= ya) continue; fx.fillStyle = bands[i]; fx.fillRect(cx - wid / 2, ya, wid, yb - ya); }
+    // 水の下（うすく）
+    fx.globalAlpha = 0.35; fx.fillStyle = '#c8402e'; fx.fillRect(cx - wid / 2, wl, wid, Math.min(R, Math.max(0, topH * x))); fx.beginPath(); fx.ellipse(cx, wl + Math.max(0, topH * x) + 16 * sc, wid * 1.3, 18 * sc, 0, 0, 7); fx.fill(); fx.globalAlpha = 1;
+    // 水面の 線と 輪
+    fx.strokeStyle = 'rgba(220,232,214,.7)'; fx.lineWidth = 1.5; fx.beginPath(); fx.moveTo(cx - R, wl); fx.lineTo(cx + R, wl); fx.stroke();
+    if (Math.abs(g.fl.v) > 0.8) { fx.strokeStyle = `rgba(230,240,226,${clamp(Math.abs(g.fl.v) / 8, 0, 0.8)})`; fx.beginPath(); fx.ellipse(cx, wl, wid * 2.5, 2.5 * sc, 0, 0, 7); fx.stroke(); }
+  }
+  fx.restore();
+  fx.strokeStyle = 'rgba(244,239,224,.85)'; fx.lineWidth = 2.5 * sc; fx.beginPath(); fx.arc(cx, cy, R, 0, 7); fx.stroke();
+  txt('うき', cx, cy + R + 14 * sc, 11 * sc, '#f4efe0', 'rgba(20,28,24,.8)', 3, `700 ${FB}`);
+}
+// 下: 糸の張り（ゆるみ ⇔ 切れる）と 魚の ようす
+function drawMeter(sc) {
+  const g = game; if (g.phase !== 'fight' && !(g.over && (g.fail === 'break' || g.fail === 'bare' || g.fail === 'kuchi'))) return;
+  const f = g.fish, w = 250 * sc, h = 16 * sc, x = W / 2 - w / 2, y = H - safeB - 92 * sc;
+  const r = clamp(g.ln.T / PH.T_BREAK, 0, 1);
+  fx.fillStyle = 'rgba(16,24,20,.62)'; rrect(x - 10 * sc, y - 34 * sc, w + 20 * sc, h + 48 * sc, 10 * sc); fx.fill();
+  fx.fillStyle = 'rgba(244,239,224,.16)'; rrect(x, y, w, h, 4 * sc); fx.fill();
+  // ちょうどいい帯
+  fx.fillStyle = 'rgba(122,192,122,.22)'; fx.fillRect(x + w * 0.12, y, w * 0.6, h);
+  fx.fillStyle = 'rgba(224,88,58,.35)'; fx.fillRect(x + w * 0.85, y, w * 0.15, h);
+  const col = r < 0.1 ? '#a8b0a8' : r < 0.72 ? '#7ac07a' : r < 0.86 ? '#e8b03a' : '#e0583a';
+  fx.fillStyle = col; rrect(x, y, Math.max(4 * sc, w * r), h, 4 * sc); fx.fill();
+  fx.textAlign = 'left'; txt('糸の張り', x, y - 8 * sc, 12 * sc, '#f4efe0', 'rgba(0,0,0,0)', 0, `700 ${FB}`);
+  fx.textAlign = 'right'; txt('切れる', x + w, y - 8 * sc, 11 * sc, '#ffb09a', 'rgba(0,0,0,0)', 0, `700 ${FB}`);
+  fx.textAlign = 'center';
+  // ゆるみ（針が 外れそう）・口が 切れそう
+  const sl = g.ln.slackT / f.sp.tOut;
+  let s = null, sc2 = '#f4efe0';
+  if (sl > 0.3 && Math.sin(tt * 14) > -0.3) { s = 'ゆるんでる！ 押して 張る'; sc2 = '#ffd27a'; }
+  else if (g.ln.mouth > 0.45) { s = '強引すぎ！ 口が 切れそう'; sc2 = '#ffb09a'; }
+  else if (r > 0.86) { s = '切れる！ 離して ゆるめる'; sc2 = '#ffb09a'; }
+  else s = f.S < PH.NET_S ? 'へとへと → 竿を立てて 網へ' : f.mode === 'run' ? '走った！' : f.S < 0.55 ? '弱ってきた' : '元気いっぱい';
+  txt(s, W / 2, y + h + 17 * sc, 13 * sc, sc2, 'rgba(0,0,0,0)', 0, `700 ${FB}`);
+  // 体力（魚の 元気）: 小さな 点
+  for (let i = 0; i < 5; i++) { fx.fillStyle = i < Math.ceil(f.S * 5) ? '#9fd0e0' : 'rgba(244,239,224,.2)'; fx.beginPath(); fx.arc(x + w - 8 * sc - i * 11 * sc, y + h + 13 * sc, 3.5 * sc, 0, 7); fx.fill(); }
+}
+// いま何をすればいいか（はじめの数回は くわしく）
+function drawGuide(sc) {
+  const g = game;
+  if (g.over || bot || state !== 'play') return;
+  const y = H - safeB - 130 * sc, few = rec.plays < 3;
+  let s = null, col = '#f4efe0';
+  if (tt - hintT < 1.8) { s = hintMsg; col = '#ffd27a'; }
+  else if (g.phase === 'wait' && few) s = '右上の 浮きを 見ていてね';
+  else if (g.phase === 'bite' && few) s = 'ちょんちょんは がまん、ぐっと 沈んだら タップ';
+  else if (g.phase === 'fight' && few && g.n < 2) s = g.down ? '押している間 竿が 立つ（寄せる）' : '離すと 竿が 寝る（ゆるむ）';
+  if (s) txt(s, W / 2, g.phase === 'fight' ? y - 6 * sc : H - safeB - 74 * sc, 14 * sc, col, 'rgba(20,28,24,.85)', 5, `700 ${FB}`);
+}
+// 網に 入った魚の 計量
+function drawLand(sc) {
+  const g = game; if (g.phase !== 'land' || !landShow) return;
+  const k = (tt - landShow.t0) / PH.T_LAND; if (k < 0.35 || k > 1) return;
+  const a = clamp(Math.min((k - 0.35) / 0.06, (1 - k) / 0.1), 0, 1);
+  fx.globalAlpha = a;
+  const y = H * 0.36;
+  fx.fillStyle = 'rgba(244,239,224,.95)'; rrect(W / 2 - 110 * sc, y - 52 * sc, 220 * sc, 92 * sc, 12 * sc); fx.fill();
+  fx.textAlign = 'center';
+  txt(`${Math.round(landShow.L)}cm`, W / 2, y + 4 * sc, 44 * sc, '#232a24', 'rgba(0,0,0,0)', 0);
+  txt(`${FISHNAME[landShow.kind]}・${(0.0142 * landShow.L ** 3 / 1000).toFixed(1)}kg`, W / 2, y + 28 * sc, 13 * sc, '#5a5a4c', 'rgba(0,0,0,0)', 0, `700 ${FB}`);
+  txt(`${g.n}匹目`, W / 2, y - 32 * sc, 13 * sc, '#1f4a5a', 'rgba(0,0,0,0)', 0, `700 ${FB}`);
+  fx.globalAlpha = 1;
+}
+// おじさん・自分の ふきだし
+function drawBubble(sc) {
+  if (state === 'loading') return;
+  for (const m of [oji, me]) {
+    if (!m.say || tt - m.sayT > m.dur) continue;
+    const hp = m.head.getWorldPosition(_tipA), p = project(hp.x, hp.y + 0.2, hp.z); if (!p.front) continue;
+    const a = clamp(Math.min((tt - m.sayT) / 0.12, (m.dur - (tt - m.sayT)) / 0.3), 0, 1);
+    fx.globalAlpha = a; fx.font = `700 ${13 * sc}px ${FB}`;
+    const w = fx.measureText(m.say).width + 16 * sc, hh = 24 * sc, bx = clamp(p.x - w / 2, 6, W - w - 6), by = clamp(p.y - hh, safeT + 140 * sc, H - 60);
+    fx.fillStyle = 'rgba(244,239,224,.96)'; rrect(bx, by, w, hh, 9 * sc); fx.fill();
+    fx.beginPath(); fx.moveTo(clamp(p.x, bx + 10, bx + w - 10) - 5, by + hh - 1); fx.lineTo(clamp(p.x, bx + 10, bx + w - 10), by + hh + 7 * sc); fx.lineTo(clamp(p.x, bx + 10, bx + w - 10) + 5, by + hh - 1); fx.fill();
+    fx.fillStyle = '#232a24'; fx.textAlign = 'center'; fx.fillText(m.say, bx + w / 2, by + hh / 2 + 4.5 * sc); fx.globalAlpha = 1;
+  }
+}
+
+/* ---------- 結果 ---------- */
+function failMsg() {
+  const g = game, f = g.failInfo || {}, L = f.L ? Math.round(f.L) : 0;
+  if (g.fail === 'break') return { noren: 'ぷつん', msg: `${L}cmの 魚に 糸を 切られた。張りが 赤に 近づいたら 指を 離して 竿を 寝かせ、ゆるめる。走ったら すぐ 離す。` };
+  if (g.fail === 'kuchi') return { noren: '口切れ', msg: `${L}cmの 魚を 強引に 寄せすぎて、口が 切れて 針が 外れた。張りっぱなしは だめ。ときどき 離して ゆるめる。` };
+  if (g.fail === 'bare') return { noren: 'ばれた', msg: f.long ? 'やりとりが 長すぎて 針が 外れた。魚が 弱ったら 竿を 立てて 寄せる。' : `${L}cmの 魚の 針が 外れた。糸が ゆるんだままだと 外れる。ゆるんだら 押して 竿を 立て、張りを もどす。` };
+  return { noren: '餌切れ', msg: '餌が なくなった。ちょんちょん（つつき）では 合わせず、浮きが ぐっと 沈んだら すぐ タップ。待っている間の タップは 空合わせ。' };
+}
+function classLine() {
+  const n = game.n;
+  if (n === 0) return 'おじさん「ボウズか。だれでも 最初は そうさ」';
+  if (n >= 20) return 'おじさん「池の ぬしだね、こりゃ」';
+  if (n >= 12) return 'おじさん「店の 人が 見に来たよ」';
+  if (n >= 6) return 'おじさん「いい腕だ」';
+  if (n >= 3) return 'おじさん「なかなか やるね」';
+  return 'おじさん「つぎは もっと 釣れるよ」';
+}
+const FCOL = { hera: '#a8aa98', koi: '#4a4236', gold: '#d8a040', nishiki: '#e0502e' };
+function showOver() {
+  if (state !== 'play') return;
+  state = 'over';
+  const n = game.n, big = game.biggest;
+  const isNew = n > rec.best || (n === rec.best && n > 0 && big && big.L > rec.bigL);
+  if (!botStart) { rec.plays++; rec.total += n; rec.last = n; if (isNew) rec.best = n; if (big && big.L > rec.bigL) rec.bigL = Math.round(big.L); save(); }
+  $('oScore').textContent = n;
+  $('oUnit').textContent = n ? '匹 釣れた' : '匹…';
+  $('oSub').textContent = n ? `（いちばん大きいのは ${Math.round(big.L)}cmの ${FISHNAME[big.kind]}）` : '（ボウズ: 1匹も 釣れず）';
+  $('oCol').innerHTML = game.caught.slice(0, 24).map(c => `<i title="${Math.round(c.L)}cm" style="width:${Math.round(10 + c.L * 0.32)}px;background:${FCOL[c.kind]};color:${FCOL[c.kind]}"></i>`).join('') + (game.caught.length > 24 ? `<span class="more">+${game.caught.length - 24}</span>` : '');
+  $('oLyric').textContent = classLine();
+  const F = failMsg();
+  $('oMsg').textContent = F.msg;
+  $('oNoren').innerHTML = F.noren.split('').map(c => `<span>${c}</span>`).join('');
+  $('oBest').textContent = rec.best; $('oTotal').textContent = rec.total; $('oPlays').textContent = rec.plays;
+  $('newRec').hidden = !(isNew && n >= 1 && !botStart);
+  $('xBtn').href = 'https://x.com/intent/post?' + new URLSearchParams({ text: `${shareText(n, big)}${isNew && rec.plays > 1 && n >= 1 && !botStart ? ' 自己ベスト！' : ''}\n`, url: gameUrl(), hashtags: '釣り堀' });
+  $('copyMsg').textContent = '画面タップ・スペースでもう一回';
+  $('over').hidden = false;
+  overShownAt = performance.now();
+  $('retryBtn').focus({ preventScroll: true });
+}
+const shareText = (n, big) => n >= 1 ? `🎣釣り堀で ${n}匹 釣れた！いちばん大きいのは ${Math.round(big.L)}cm` : '🎣釣り堀、きょうは ボウズ…（0匹）';
+
+/* ---------- シェア ---------- */
+const PUBLIC_URL = 'https://asobi.enludus.com/games/tsuribori/';
+function gameUrl() {
+  try {
+    if (/^https?:$/.test(location.protocol) && location.hostname !== 'localhost') return location.origin + location.pathname;
+  } catch {}
+  return PUBLIC_URL;
+}
+function fillTitle() { $('tBest').textContent = rec.best ? rec.best : '—'; $('tPlays').textContent = rec.plays; }
+
+/* ---------- 音（水の「ちゃぷ」、跳ねる「ばしゃっ」、糸は 低い うなりだけ。高い音・糸鳴りは 使わない。2kHz 以上は 使わない。最後に 1.9kHz のローパス） ---------- */
+let ac = null, master = null, noiseBuf = null, amb = null, hum = null, lineHum = null;
+function wakeAudio() {
+  try {
+    if (!ac) {
+      ac = new (window.AudioContext || window.webkitAudioContext)();
+      const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1900; lp.Q.value = 0.5;
+      master = ac.createDynamicsCompressor(); master.threshold.value = -16; master.ratio.value = 5;
+      master.connect(lp).connect(ac.destination);
+      const len = ac.sampleRate * 2; noiseBuf = ac.createBuffer(1, len, ac.sampleRate);
+      const d = noiseBuf.getChannelData(0); let b = 0;
+      for (let i = 0; i < len; i++) { b = b * 0.85 + (Math.random() * 2 - 1) * 0.15; d[i] = b * 2.6; }
+      const s = ac.createBufferSource(); s.buffer = noiseBuf; s.loop = true; const f = ac.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 280; f.Q.value = 0.6; const l = ac.createBiquadFilter(); l.type = 'lowpass'; l.frequency.value = 480; const g = ac.createGain(); g.gain.value = 0.0001; s.connect(f).connect(l).connect(g).connect(master); s.start(); amb = { g };
+      // 蛍光灯の ジー（100Hz・ごく小さく）
+      const o = ac.createOscillator(); o.type = 'sine'; o.frequency.value = 100; const hg = ac.createGain(); hg.gain.value = 0.0001; o.connect(hg).connect(master); o.start(); hum = { g: hg };
+      // 糸の うなり（低い 三角波を こもらせる）
+      const lo = ac.createOscillator(); lo.type = 'triangle'; lo.frequency.value = 70; const lf = ac.createBiquadFilter(); lf.type = 'lowpass'; lf.frequency.value = 260; const lgn = ac.createGain(); lgn.gain.value = 0.0001; lo.connect(lf).connect(lgn).connect(master); lo.start(); lineHum = { g: lgn, o: lo };
+    }
+    if (ac.state === 'suspended') ac.resume();
+  } catch {}
+}
+const live = () => ac && state === 'play' && !frozen;
+function tone(freq, at, dur, vol, type = 'sine', f1, att = 0.004) {
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type; o.frequency.setValueAtTime(freq, at); if (f1) o.frequency.exponentialRampToValueAtTime(f1, at + dur);
+  g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + att); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  o.connect(g).connect(master); o.start(at); o.stop(at + dur + 0.05);
+}
+function noise(at, dur, vol, type, freq, q = 1, lpf = 1200, att = 0.003) {
+  const s = ac.createBufferSource(); s.buffer = noiseBuf;
+  const f = ac.createBiquadFilter(); f.type = type; f.frequency.value = freq; f.Q.value = q;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = lpf;
+  const g = ac.createGain(); g.gain.setValueAtTime(0.0001, at); g.gain.exponentialRampToValueAtTime(vol, at + att); g.gain.exponentialRampToValueAtTime(0.0001, at + dur);
+  s.connect(f).connect(lp).connect(g).connect(master); s.start(at, Math.random() * 1.5); s.stop(at + dur + 0.05);
+}
+const S_ = fn => (...a) => { try { if (!live()) return; fn(ac.currentTime, ...a); } catch {} };
+// ちゃぷ: 小さな 水音（こもった 低い ぽちゃ）
+const sChapu = S_((n0, s = 0.6) => { tone(320, n0, 0.09, 0.05 * s + 0.02, 'sine', 170, 0.003); noise(n0, 0.08, 0.05 * s, 'bandpass', 520, 1.2, 900, 0.002); });
+// ばしゃっ: 魚が 水面で 跳ねる
+const sBasha = S_((n0, s = 1) => { noise(n0, 0.32, 0.12 * s, 'lowpass', 900, 0.7, 1300, 0.004); noise(n0 + 0.04, 0.22, 0.07 * s, 'bandpass', 420, 0.9, 800, 0.01); tone(140, n0, 0.16, 0.08 * s, 'sine', 70, 0.003); });
+const sNibble = S_((n0, a) => { tone(240, n0, 0.05, 0.02 + 0.03 * a, 'sine', 180, 0.002); });
+const sGu = S_(n0 => { tone(160, n0, 0.14, 0.05, 'sine', 110, 0.004); });
+// ひゅっ: 竿を 振る・合わせる（低めの 風切り）
+const sSwish = S_((n0, s = 1) => { noise(n0, 0.18, 0.05 * s, 'bandpass', 450, 0.8, 900, 0.05); });
+// ぷつん: 糸が 切れる（低く こもった はじけ。高い 糸鳴りは なし）
+const sPutsun = S_(n0 => { tone(260, n0, 0.08, 0.1, 'triangle', 110, 0.002); noise(n0, 0.05, 0.08, 'lowpass', 600, 0.8, 800, 0.001); tone(196, n0 + 0.22, 0.22, 0.035, 'triangle', 175); tone(147, n0 + 0.45, 0.4, 0.035, 'triangle', 131); });
+const sLand = S_(n0 => { [[392, 0.12], [494, 0.23], [587, 0.34]].forEach(([f, t]) => tone(f, n0 + t, 0.34, 0.035, 'triangle')); tone(196, n0 + 0.12, 0.4, 0.06, 'sine'); });
+const sLose = S_(n0 => { tone(330, n0, 0.2, 0.03, 'triangle', 300); tone(262, n0 + 0.2, 0.22, 0.03, 'triangle', 247); tone(196, n0 + 0.42, 0.36, 0.035, 'triangle', 175); });
+function sounds() {
+  if (!amb || !ac) return;
+  try {
+    const on = (state === 'play' || state === 'over') && !frozen;
+    amb.g.gain.setTargetAtTime(on ? 0.02 + 0.008 * Math.sin(tt * 0.5) : 0.0001, ac.currentTime, 0.5);
+    hum.g.gain.setTargetAtTime(on ? 0.004 : 0.0001, ac.currentTime, 0.5);
+    const r = on && game && game.phase === 'fight' ? clamp(game.ln.T / PH.T_BREAK, 0, 1) : 0;
+    lineHum.g.gain.setTargetAtTime(r > 0.25 ? 0.05 * (r - 0.25) * (r - 0.25) * 2.5 + 0.0001 : 0.0001, ac.currentTime, 0.05);
+    lineHum.o.frequency.setTargetAtTime(60 + 70 * r, ac.currentTime, 0.06);
+  } catch {}
+}
+
+/* ---------- ループ ---------- */
+let lastTs = performance.now();
+function frame() {
+  const now = performance.now();
+  const dt = Math.min(0.1, (now - lastTs) / 1000); lastTs = now;
+  step(dt);
+  render(Math.max(dt, 1 / 240));
+  requestAnimationFrame(frame);
+}
+
+/* ---------- 入力: タップで 合わせ、押している間 竿を 立てる・離すと 寝かせる。押す位置の 左右で 竿を 倒す向き ---------- */
+function start() {
+  wakeAudio(); state = 'play';
+  $('title').hidden = true; $('over').hidden = true;
+  const bn = HASH.has('debug') && HASH.get('bot') && SKILLS[HASH.get('bot')] ? HASH.get('bot') : null;
+  botStart = !!bn;   // #bot=… で始めたプレイは記録しない（撮影・確認用）
+  newGame(HASH.has('seed') && !seedUsed ? (seedUsed = true, +HASH.get('seed') >>> 0) : nextSeed(), bn); frozen = false;
+  CAM.want = 1;
+  // #debug&skip=秒: その秒数だけ一気に進め、魚が 水面で あばれて 竿が 大きく しなった瞬間（pose=splash）で止める（OGP 撮影用。bot=good と組み合わせる。freeze=1 で止めたまま）
+  if (HASH.has('debug') && +HASH.get('skip') > 0) { CAM.k = 1; skipTo(game.t + +HASH.get('skip'), HASH.get('pose') || 'splash'); }
+  if (HASH.has('debug') && HASH.get('ff') === '1') ff = true;
+}
+function poseOk(g, pose) {
+  if (pose !== 'splash') return true;
+  const f = g.fish;
+  return g.phase === 'fight' && g.n >= (+(HASH.get('minN') ?? 1) || 0) && Math.hypot(f.x - PH.HX, f.z - PH.HZ) < (+HASH.get('dmax') || 3.8) && f.y > -0.07 && g.ln.T > PH.T_BREAK * (+HASH.get('tmin') || 0.5) && g.rod.bend > 0.45 && Math.hypot(f.vx, f.vz) > 0.35 && g.rod.phi > 0.5 && f.S > 0.25;
+}
+function skipTo(t1, pose = 'none') {
+  const quiet = state; state = 'skip';
+  const lim = t1 + 600;
+  while (!game.over && game.t < lim) {
+    physTick();
+    if (game.t >= t1 && poseOk(game, pose)) break;
+  }
+  state = quiet;
+  pops = []; marks = []; parts = []; ripples.length = 0; foam.length = 0; failAt = game.over ? tt : -1;
+  base = performance.now() / 1000 - game.t;
+  CAM.fx = game.phase === 'fight' ? clamp((game.fish.x - 0.1) * 0.35, -0.9, 0.9) : 0;
+  if (pose === 'splash' && game.phase === 'fight') {
+    const f = game.fish;
+    splash(f.x, f.z, 22, 1.3, 2.2); for (const p of parts) { const k = 0.12 + Math.random() * 0.25; p.life = k; p.x += p.vx * k; p.y += p.vy * k - 4.9 * k * k; p.z += p.vz * k; p.vy -= 9.8 * k; }
+    ripple(f.x, f.z, 1.6, 0.6); ripples[ripples.length - 1].t0 = tt - 0.35; ripple(f.x, f.z, 1.2, 0.6); ripples[ripples.length - 1].t0 = tt - 0.9;
+    mark('ばしゃっ', f.x + 0.45, 0.4, f.z, { size: 28, dur: 99 }); marks[marks.length - 1].life = 0.2;
+    say(oji, 'ためて ためて！', 99); oji.sayT = tt - 0.3;
+  }
+  if (HASH.get('freeze') === '1') frozen = true;
+}
+const xOf = e => clamp(e.clientX / Math.max(1, W), 0, 1);
+fxc.addEventListener('pointerdown', e => {
+  e.preventDefault(); wakeAudio();
+  if (state !== 'play' || !game) return;
+  const g = game;
+  if (g.over) { if (failAt >= 0 && tt - failAt > 0.6) showOver(); return; }
+  if (ptr || bot || keyDown) return;
+  try { fxc.setPointerCapture(e.pointerId); } catch {}
+  ptr = { id: e.pointerId };
+  if (g.phase === 'cast' || g.phase === 'land' || g.phase === 'miss') { hintT = tt; hintMsg = g.phase === 'land' ? '計量中…' : '仕掛けを 入れているところ'; }
+  input('down', evTime(e), xOf(e));
+});
+addEventListener('pointermove', e => {
+  if (!ptr || e.pointerId !== ptr.id || state !== 'play') return;
+  input('move', evTime(e), xOf(e));
+});
+const ptrUp = e => {
+  if (!ptr || e.pointerId !== ptr.id) return;
+  ptr = null;
+  if (state === 'play' && game && !game.over) input('up', evTime(e), xOf(e));
+};
+addEventListener('pointerup', ptrUp);
+addEventListener('pointercancel', ptrUp);
+fxc.addEventListener('contextmenu', e => e.preventDefault());
+for (const id of ['title', 'over']) {
+  $(id).addEventListener('pointerdown', e => {
+    if (e.target.closest('button, a') || state === 'loading') return;
+    if (id === 'over' && performance.now() - overShownAt < 400) return;
+    e.preventDefault(); start();
+  });
+}
+// キーボード: スペース（Enter）= タップ・長押しで 竿を 立てる。←→ = 竿を 倒す向き
+const kbX = () => 0.5 + kbSide * 0.4;
+addEventListener('keydown', e => {
+  const c = e.code;
+  if (state === 'play') {
+    const g = game; if (!g || bot) return;
+    if (c === 'ArrowLeft' || c === 'ArrowRight') { e.preventDefault(); kbSide = c === 'ArrowLeft' ? -1 : 1; if (keyDown) input('move', evTime(e), kbX()); return; }
+    if (c !== 'Space' && c !== 'Enter') return;
+    e.preventDefault(); if (e.repeat) return;
+    if (g.over) { if (failAt >= 0 && tt - failAt > 0.6) showOver(); return; }
+    if (ptr) return;
+    wakeAudio(); keyDown = true;
+    input('down', evTime(e), kbX());
+    return;
+  }
+  if (c !== 'Space' && c !== 'Enter') return;
+  if (state === 'loading' || state === 'skip') return;
+  const el = document.activeElement;
+  if (el && el !== $('retryBtn') && el !== $('startBtn') && el.matches('button, a, input')) return;
+  if (state === 'over' && performance.now() - overShownAt < 400) { e.preventDefault(); return; }
+  e.preventDefault(); if (!e.repeat) start();
+});
+addEventListener('keyup', e => {
+  if (e.code === 'ArrowLeft' || e.code === 'ArrowRight') { kbSide = 0; if (keyDown) input('move', evTime(e), kbX()); }
+  if ((e.code === 'Space' || e.code === 'Enter') && keyDown) { keyDown = false; if (state === 'play' && game && !game.over) input('up', evTime(e), kbX()); }
+});
+addEventListener('blur', () => { if (ptr || keyDown) { ptr = null; keyDown = false; if (state === 'play' && game && !game.over) input('up', performance.now(), 0.5); } });
+$('startBtn').addEventListener('click', start);
+$('retryBtn').addEventListener('click', start);
+$('copyBtn').addEventListener('click', () => {
+  const text = `${shareText(rec.last, game ? game.biggest : null)} ${gameUrl()}`;
+  const msg = $('copyMsg');
+  const fallback = () => { msg.textContent = text; const r = document.createRange(); r.selectNodeContents(msg); const s = getSelection(); s.removeAllRanges(); s.addRange(r); msg.style.userSelect = 'text'; };
+  try { navigator.clipboard.writeText(text).then(() => { msg.textContent = 'コピーしました'; }, fallback); } catch { fallback(); }
+});
+
+/* ---------- 調整・検証用（#debug のときだけ） ---------- */
+if (HASH.has('debug')) {
+  const q = (a, p) => { const s = [...a].sort((x, y) => x - y); return s[Math.floor(p * (s.length - 1))]; };
+  // 同じ入力（時刻つき）の列を、いろいろなコマ割りで物理に流して、結果がそろうか（quant = 時刻を使わずコマの時刻で入れた場合のくらべ）
+  const replay = (log, seedR, fps, quant = false, tEnd = 3000) => {
+    const g = makeGame(seedR), L = log.slice().sort((a, b) => a.t - b.t); let i = 0, tNow = 0;
+    while (!g.over && tNow < tEnd) {
+      tNow += 1 / fps;
+      while (i < L.length && L[i].t <= tNow) { gInput(g, Math.max(g.t, quant ? tNow : L[i].t), L[i].kind, L[i].x); i++; }
+      while (g.t + PH.DT <= tNow && !g.over) { stepGame(g); g.events.length = 0; }
+    }
+    return { n: g.n, fail: g.fail, t: r3(g.t), big: g.biggest ? r1(g.biggest.L) : 0 };
+  };
+  const scr = (x, y, z) => { const s = project(x, y, z); return { x: Math.round(s.x), y: Math.round(s.y) }; };
+  const rect = id => { const el = $(id); if (!el || el.closest('[hidden]') || el.hidden) return null; const r = el.getBoundingClientRect(); return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2), w: Math.round(r.width), h: Math.round(r.height) }; };
+  const ui = () => ({
+    state, camReady: CAM.k >= 1, start: rect('startBtn'), retry: rect('retryBtn'), copy: rect('copyBtn'), x: rect('xBtn'), hub: rect('hubBack'),
+    tapCenter: { x: Math.round(W / 2), y: Math.round(H * 0.45) }, tapLeft: { x: Math.round(W * 0.15), y: Math.round(H * 0.45) }, tapRight: { x: Math.round(W * 0.85), y: Math.round(H * 0.45) },
+    float: game ? scr(game.fl.X, 0, game.fl.Z) : null, fish: game && game.fish ? scr(game.fish.x, game.fish.y, game.fish.z) : null, rodTip: scr(rodMe.tip.x, rodMe.tip.y, rodMe.tip.z),
+  });
+  // つぎの操作の目安（上手な人の やり方から）。action: 'tap'（合わせ。inMs 後に 押して すぐ離す。windowMs が 間に合う幅）/ 'down'（押す・押しつづける）/ 'up'（離す・離しておく）/ 'wait'
+  const nextOf = g => {
+    const cx = Math.round(W / 2), cy = Math.round(H * 0.45);
+    if (g.over) return { action: 'none' };
+    if (g.phase === 'bite') {
+      const b = g.bite, at = b.h0 + 0.14, end = b.h0 + b.hd - 0.02;
+      return { action: 'tap', x: cx, y: cy, inMs: Math.round((at - g.t) * 1000), windowMs: Math.round((end - Math.max(at, g.t)) * 1000), nibbles: b.nibs.length, holdMs: Math.round(b.hd * 1000) };
+    }
+    if (g.phase === 'fight') {
+      const r = g.ln.T / PH.T_BREAK, dr = g.ln.dT / PH.T_BREAK, f = g.fish;
+      let want = g.down;
+      if (g.down) { if (r > 0.8 || (r > 0.45 && dr > 1.5)) want = false; }
+      else if ((r < 0.54 && dr < 0.75) || g.ln.slackT > 0.12) want = true;
+      const side = f.vx > 0.15 ? 0.12 : f.vx < -0.15 ? 0.88 : 0.5;
+      return { action: want ? 'down' : 'up', change: want !== g.down, x: Math.round(W * (want ? side : 0.5)), y: cy, inMs: 0, windowMs: want ? 250 : 150 };
+    }
+    return { action: 'wait', phase: g.phase, inMs: g.phase === 'wait' ? Math.round(((g.fish.t0 >= 0 ? g.fish.t0 : g.t) + g.fish.sp.approach - g.t) * 1000) : null };
+  };
+  window.__tsuribori = {
+    info: (opt = {}) => {
+      if (!game) return { state };
+      const g = game, f = g.fish;
+      const phase = g.over ? 'over' : g.phase === 'cast' || g.phase === 'wait' || g.phase === 'miss' ? 'wait' : g.phase;
+      return {
+        state, t: r3(g.t), phase, rawPhase: g.phase, over: g.over, fail: g.fail, failInfo: g.failInfo, n: g.n, esa: g.esa, misses: g.misses,
+        sink: r2(g.fl.x), floatV: r2(g.fl.v), bite: g.bite ? { d: r2(dIn(g.bite, g.t)), inHold: g.t >= g.bite.h0 && g.t <= g.bite.h0 + g.bite.hd } : null,
+        tension: r2(g.ln.T), limit: PH.T_BREAK, ratio: r2(g.ln.T / PH.T_BREAK), slack: r2(g.ln.slackT), slackLimit: f ? r2(f.sp.tOut) : null, mouth: r2(g.ln.mouth),
+        rod: { deg: Math.round(g.rod.phi * 180 / Math.PI), yawDeg: Math.round(g.rod.yaw * 180 / Math.PI), bend_m: r2(g.rod.bend), down: g.down },
+        fish: f ? { L_cm: r1(f.sp.L), kind: f.sp.kind, stamina: r2(f.S), headingDeg: Math.round(f.h * 180 / Math.PI), mode: f.mode, x: r2(f.x), y: r2(f.y), z: r2(f.z), dist: r2(Math.hypot(f.x - PH.HX, f.z - PH.HZ)), speed: r2(Math.hypot(f.vx, f.vz)) } : null,
+        next: opt.next === false ? undefined : nextOf(g),
+        caught: g.caught.map(c => Math.round(c.L)), biggest: g.biggest ? Math.round(g.biggest.L) : 0, bot: !!bot, botStart, ff, frozen, camReady: CAM.k >= 1, rec, seed: g.seed,
+      };
+    },
+    ui,
+    // 物理だけでボットに N 回遊ばせる: sim('first', 100) → [釣れた匹数...]（'first' / 'good' / 'mash'（一定間隔で 押す・離す）/ 'mashAw'（合わせは 上手・やりとりは 一定間隔）/ 'hold'（かかったら 押しっぱなし）/ 'none'）
+    sim: (skill = 'first', N = 50, opts = {}) => Array.from({ length: N }, (_, i) => runBot(typeof skill === 'string' ? SKILLS[skill] : skill, (opts.seed0 ?? 1000) + i, opts).n),
+    stats: (skill = 'first', N = 100, opts = {}) => {
+      const sk = typeof skill === 'string' ? SKILLS[skill] : skill;
+      const R_ = Array.from({ length: N }, (_, i) => runBot(sk, (opts.seed0 ?? 1000) + i, opts)), d = R_.map(r => r.n), kinds = {};
+      for (const r of R_) kinds[r.fail] = (kinds[r.fail] || 0) + 1;
+      const hist = {}; for (const v of d) hist[v] = (hist[v] || 0) + 1;
+      const fights = R_.flatMap(r => r.fights), caught = R_.reduce((a, r) => a + r.n, 0);
+      return { skill: typeof skill === 'string' ? skill : 'custom', N, p10: q(d, 0.1), p25: q(d, 0.25), p50: q(d, 0.5), p75: q(d, 0.75), p90: q(d, 0.9), min: Math.min(...d), max: Math.max(...d), ge1: R_.filter(r => r.n >= 1).length / N, ge3: R_.filter(r => r.n >= 3).length / N, ge12: R_.filter(r => r.n >= 12).length / N, ge20: R_.filter(r => r.n >= 20).length / N, mean: r2(d.reduce((a, b) => a + b, 0) / N), fightSec50: fights.length ? r1(q(fights, 0.5)) : null, fightSec90: fights.length ? r1(q(fights, 0.9)) : null, secPerFish: caught ? r1(R_.reduce((a, r) => a + r.t, 0) / caught) : null, gameSec50: r1(q(R_.map(r => r.t), 0.5)), missesMean: r2(R_.reduce((a, r) => a + r.misses, 0) / N), bigMean: r1(R_.reduce((a, r) => a + r.big, 0) / N), kinds, hist };
+    },
+    // 一定の リズム（on 秒 押して off 秒 離す）: どれも 伸びないこと。aw=true は 合わせだけ 上手で、やりとりを 一定リズム
+    mashGrid: (N = 20) => { const out = []; for (const aw of [false, true]) for (const on of [0.15, 0.35, 0.7, 1.5]) for (const off of [0.15, 0.35, 0.7, 1.5]) { const sk = { ...SKILLS.mashAw, aw, on, off }, d = Array.from({ length: N }, (_, i) => runBot(sk, 3000 + i).n); out.push({ aw, on, off, p50: q(d, 0.5), mean: r2(d.reduce((a, b) => a + b, 0) / N), max: Math.max(...d) }); } return out.sort((a, b) => b.mean - a.mean); },
+    // ボットの入力の列（時刻つき）を記録して、13 / 30 / 60 / 144 fps のコマ割りで流しなおす
+    fpsCheck: (skill = 'good', seedR = 4242, maxN = 6) => {
+      const r = runBot(SKILLS[skill], seedR, { log: true, maxN });
+      const e = r.t + 1;
+      return { live: { n: r.n, fail: r.fail, t: r3(r.t), big: r1(r.big) }, fps13: replay(r.log, seedR, 13, false, e), fps30: replay(r.log, seedR, 30, false, e), fps60: replay(r.log, seedR, 60, false, e), fps144: replay(r.log, seedR, 144, false, e), fps30frameQuantized: replay(r.log, seedR, 30, true, e), fps60frameQuantized: replay(r.log, seedR, 60, true, e), inputs: r.log.length };
+    },
+    // いまのプレイをボットに任せる（記録はしない）
+    autoplay: (skill = 'good') => { if (game && state === 'play' && !game.over) { bot = makeBot(game, SKILLS[skill], mulberry(nextSeed())); botStart = true; ptr = null; } },
+    skip: (s, pose = 'none') => skipTo(game.t + s, pose),
+    freeze: (on = true) => { frozen = on; },
+    ff: (on = true) => { ff = on; },
+    fps: () => new Promise(res => { let n = 0; const t0 = performance.now(); const f = () => { n++; if (performance.now() - t0 < 1000) requestAnimationFrame(f); else res(n); }; requestAnimationFrame(f); }),
+    screen: (x, y, z) => scr(x, y, z),
+    gl: () => ({ calls: renderer.info.render.calls, tris: renderer.info.render.triangles }),
+    scene, renderer, fxc, CAM, camera, resize,
+    PH, SKILLS, makeGame, runBot, stepGame, gInput, game: () => game,
+  };
+}
+
+/* ---------- はじめ ---------- */
+try { await Promise.race([Promise.all([document.fonts.load(`40px "Dela Gothic One"`, '0123456789匹のった！ちょんぐっばしゃっぱしゃぷつんすっぽ抜け餌が落ちた餌だけ取られた…ばれた口が切れたからぶりなくなった自己ベスト更新つり堀みどり池cm'), document.fonts.load(`700 16px "Zen Kaku Gothic New", sans-serif`, '0123456789匹最高餌いちばん大きいcm早送り▶うき糸の張り切れるゆるんでる！押して張る強引すぎ口が切れそう離してゆるめるへとへと竿を立てて網へ走った弱ってきた元気いっぱい右上の浮きを見ていてねちょんちょんはがまん、ぐっと沈んだらタップ押している間竿が立つ寄せる離すと寝るゆるむ仕掛けを入れているところ計量中目ヘラブナマゴイ黄金ゴイ錦ゴイkg・おっ、来たねさわってる寄ってきたよのったねかかったよしきたこりゃでかいぞ走るぞのされるなためてまだあわてないはやい入ってからあー遅いおそい空合わせしすぎ餌わけてあげるよでかいねえ大物賞だいいサイズだおみごとうまいもんだいねあちゃー切られたかぷつんといったねきょうはここまでかな強引すぎたねばれたかゆるめすぎだよあらら外れた切れるよ張りすぎ浮いてきた1時間500円半日4時間1500円貸し竿100円ねり餌50円60以上ジュース1本釣った魚は池へもどしてね')]), new Promise(r => setTimeout(r, 1500))]); } catch {}
+buildRoom();
+buildGlints();
+buildAmbient();
+resize();
+newDemo();
+state = 'title';
+fillTitle();
+$('startBtn').disabled = false; $('startBtn').textContent = '竿を 出す！';
+$('startBtn').focus({ preventScroll: true });
+requestAnimationFrame(frame);
+</script>
+<a class="hub-back" id="hubBack" href="/" aria-label="あそび横丁（ゲーム一覧）にもどる">← 横丁</a>
+<script>
+// プレイ中でもゲーム一覧に戻れるボタン。押してもゲームの入力（タップ・ドラッグ）に伝わらないようにする
+for (const ev of ['pointerdown', 'touchstart', 'mousedown']) document.getElementById('hubBack').addEventListener(ev, e => e.stopPropagation(), { passive: true });
+</script>
+</body>
+</html>
